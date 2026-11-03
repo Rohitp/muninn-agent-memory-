@@ -98,11 +98,14 @@ Entry template:
 **Decided:**
 - A database (libSQL, with the plain SQLite fallback) is in the first build. This replaces "no database yet" in the earlier 2026-11-03 entry.
 - Generated triggers and `PostToolUse` delivery are cut from the first version. Lessons are always-on or use a literal keyword. Cost: the token lesson is delivered much as an instruction line would be, so muninn's edge there is learning and sharing it.
-- Lessons go live only after being shown and not rejected. This narrows the earlier approval decision.
-- Four decision gates with an outcome for every result. The 70% and 90% figures are reported, not gates. The author accepted the proposed numbers before Step 0. They still have no evidence behind them.
+- Lessons go live only when kept, edited or added by hand. This reverses the earlier risk-based approval, because without generated triggers an unreviewed lesson has no route to an agent. The cost is that review can become a chore.
+- Token gates are judgement calls with fixed conditions and a no-line control. Five runs are not a statistical test, and a one-run difference counts as no difference.
+- Hook speed gate is p95 under 400 ms, tightened from 500 ms.
+- A re-audit found the plan still not ready. Step 0 and the gates were rewritten. Steps 1-3 stay provisional until the Settle After Step 0 list clears and gets reviewed again.
+- Three decision gates with an outcome for every result, with Step 0's covering both the trial and the stack. The 70% and 90% figures are reported, not gates. The author accepted the proposed numbers before Step 0. They still have no evidence behind them.
 - The client matrix moves to Step 0. The MCP server is deferred in favour of `muninn ask`, pending check M4.
 - Each `learn` re-reads all available logs, because incremental scans can't count a repeat across runs.
-- Stage 1 uses repeats only, plus `muninn add`. Corrections, failure-then-fix, and CI and README commands are deferred.
+- Stage 1 uses four signals, plus `muninn add`. CI and README commands are deferred.
 
 **Gotcha:**
 - Reviewer summary counts were wrong in three reports. Count severity labels instead.
@@ -110,3 +113,24 @@ Entry template:
 
 **Next:**
 - Human review of the changed design, then Step 0.
+
+## 2026-11-03 — Thesis: find what nobody stated
+
+**Did:**
+- Searched typed text in three of the author's repos for repeated instructions, using a throwaway word-matching script. Nothing from the logs went into the repo.
+- Rewrote the design around the result, after the author rejected a hand audit of repeats as "faster horses".
+
+**Decided:**
+- muninn is judged by what it finds that the engineer did not already know. Repeats alone would hand back things a line in `CLAUDE.md` could hold, so corrections, failure-then-fix and mistakes that came back are in Stage 1. This reverses the earlier cut.
+- The keep rate counts only lessons that were news to the engineer. The proposed bars change to 1 in 3 to continue and 1 in 10 to stop.
+- The token lesson is an illustration only. No gate depends on a named example. The delivery gate uses 2 lessons the author picks, with a control, a line and a muninn arm.
+- The instruction-line trial moved from Step 0 to the delivery gate. The cost is losing an early stop.
+- The gates use 2 author repos, one for tuning and one held out, because a third had too little history. That leaves 20 lessons per judged run.
+- The first Step 0 check is now running the rules on real logs, because rules with no LLM may not produce readable lessons.
+
+**Gotcha:**
+- 59 of 79 repeated groups had identical wording, which suggests resumed sessions or pasted text. Agent answers also appear as typed text, likely from pasting between tools. `caffeinate` appeared in no session in those three repos, and refreshing a token in only 4.
+
+**Next:**
+- Author reviews the changed design, then Step 0.
+
