@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.tgz
+.DS_Store
+
+# Spike output and local data. Real logs and their content are never committed.
+.muninn/
+*.db
+*.db-wal
+*.db-shm
+*.jsonl
+!test/fixtures/**/*.jsonl

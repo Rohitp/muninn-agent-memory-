@@ -238,7 +238,7 @@ Each stage starts only after its own design pass.
 | Across repos | Agents search all repos, labelled | Author, provisional |
 | Tools | Claude Code and Codex | Author, for the learner. Applied here to Stage 2 too. |
 | Extraction | Rules plus embeddings, no LLM | Proposed in this draft |
-| Language | TypeScript on Node 22, published to npm | Proposed in this draft. `agents.md` says Node 20+. |
+| Language | TypeScript on Node 22, published to npm | Proposed in this draft. `docs/archive/original-build-spec.md` says Node 20+. |
 
 ### Overview
 

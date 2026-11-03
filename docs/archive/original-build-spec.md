@@ -294,3 +294,6 @@ libSQL embedded replica syncing to Turso Cloud, plus an HTTP MCP endpoint with a
 3. Lease expiry default (proposed 30 min, renewed on activity).
 4. Whether `understand` should also cover Cursor/Codex session logs as a "why" source.
 5. Project name: `amem` is a placeholder.
+---
+
+> **Archived 2026-11-03.** `docs/designs/muninn.md` replaces this build spec. It is kept for history, and nothing here is the plan.

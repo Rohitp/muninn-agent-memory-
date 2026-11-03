@@ -2,9 +2,9 @@
 
 Chronological journal of the build. One dated entry per working session.
 Each entry records **decisions**, **gotchas**, **failed attempts**, and **timings** —
-the same categories muninn itself stores as findings. Once muninn's `remember`
-works (end of Phase 1), the durable items here get migrated into muninn and this
-file becomes the human-readable mirror.
+the same categories muninn may later hold as lessons. Whether and how the durable
+items move into muninn is decided once Stage 2 delivery passes its gate. Gate results
+are logged here.
 
 Entry template:
 ```
@@ -133,4 +133,12 @@ Entry template:
 
 **Next:**
 - Author reviews the changed design, then Step 0.
+
+## 2026-11-03 — Step 0 cleanup and project setup
+
+**Did:**
+- Moved `agents.md` to `docs/archive/original-build-spec.md`, replaced the tracker's old phases, deleted `design_draft.md` (still in git at `a7912f5`), and created the package and build config.
+
+**Next:**
+- Item 5, saving logs, once the author has raised `cleanupPeriodDays`.
 
