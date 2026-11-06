@@ -1,8 +1,8 @@
 import type { Client } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 
-export type Lesson = { id: string; repo_id: string | null; scope: string; text: string; source: string; signal: string | null; status: string; sessions: number; last_seen: string | null; reviewed_at: string | null; first_shown_at: string | null; news_to_engineer: number | null; edited_by_person: number; always_on: number };
-const COLS = "id,repo_id,scope,text,source,signal,status,sessions,last_seen,reviewed_at,first_shown_at,news_to_engineer,edited_by_person,always_on";
+export type Lesson = { suggested_scope: string | null; updated_at: string; id: string; repo_id: string | null; scope: string; text: string; source: string; signal: string | null; status: string; sessions: number; last_seen: string | null; reviewed_at: string | null; first_shown_at: string | null; news_to_engineer: number | null; edited_by_person: number; always_on: number };
+const COLS = "suggested_scope,updated_at,id,repo_id,scope,text,source,signal,status,sessions,last_seen,reviewed_at,first_shown_at,news_to_engineer,edited_by_person,always_on";
 const now = () => new Date().toISOString();
 
 export async function ensureRepo(db: Client, id: string, path: string) {
@@ -13,12 +13,12 @@ async function version(db: Client, id: string, by: string) {
   const triggers = (await db.execute({ sql: "SELECT pattern FROM triggers WHERE lesson_id=?", args: [id] })).rows.map((r) => r.pattern);
   await db.execute({ sql: "INSERT INTO lesson_versions (id,lesson_id,snapshot,changed_by,changed_at) VALUES (?,?,?,?,?)", args: [randomUUID(), id, JSON.stringify({ ...l, triggers }), by, now()] });
 }
-export async function createLesson(db: Client, l: { repo_id: string | null; scope?: string; text: string; source: string; signal?: string | null; status: string; sessions?: number; last_seen?: string | null; vector?: Float32Array; by: string; reviewed?: boolean }) {
+export async function createLesson(db: Client, l: { repo_id: string | null; scope?: string; text: string; source: string; signal?: string | null; suggestedScope?: string; status: string; sessions?: number; last_seen?: string | null; vector?: Float32Array; by: string; reviewed?: boolean }) {
   const id = randomUUID(); const t = now();
   const vec = l.vector ? `[${[...l.vector].join(",")}]` : null;
   await db.execute({
-    sql: `INSERT INTO lessons (id,repo_id,scope,text,source,signal,status,sessions,last_seen,reviewed_at,embedding,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,${vec ? "vector32(?)" : "NULL"},?,?)`,
-    args: [id, l.repo_id, l.scope ?? (l.repo_id ? "repo" : "global"), l.text, l.source, l.signal ?? null, l.status, l.sessions ?? 0, l.last_seen ?? null, l.reviewed ? t : null, ...(vec ? [vec] : []), t, t],
+    sql: `INSERT INTO lessons (id,repo_id,scope,text,source,signal,suggested_scope,status,sessions,last_seen,reviewed_at,embedding,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,${vec ? "vector32(?)" : "NULL"},?,?)`,
+    args: [id, l.repo_id, l.scope ?? (l.repo_id ? "repo" : "global"), l.text, l.source, l.signal ?? null, l.suggestedScope ?? null, l.status, l.sessions ?? 0, l.last_seen ?? null, l.reviewed ? t : null, ...(vec ? [vec] : []), t, t],
   });
   await db.execute({ sql: "INSERT INTO lessons_fts (lesson_id,text) VALUES (?,?)", args: [id, l.text] });
   await version(db, id, l.by);
@@ -68,3 +68,19 @@ export async function decide(db: Client, id: string, d: { status?: "live" | "rej
   await version(db, id, "person");
 }
 export const routeOf = async (db: Client, l: Lesson) => (l.always_on ? true : (await db.execute({ sql: "SELECT 1 FROM triggers WHERE lesson_id=? LIMIT 1", args: [l.id] })).rows.length > 0);
+
+export async function keywordsInUse(db: Client, repo: string | null): Promise<{ pattern: string; lessons: number }[]> {
+  const r = await db.execute({ sql: "SELECT lower(t.pattern) pattern, count(*) n FROM triggers t JOIN lessons l ON l.id=t.lesson_id WHERE l.status='live' AND (l.scope='global' OR l.repo_id IS ? OR l.repo_id=?) GROUP BY lower(t.pattern) ORDER BY n DESC, pattern", args: [repo, repo] });
+  return r.rows.map((x) => ({ pattern: String(x.pattern), lessons: Number(x.n) }));
+}
+export async function lessonsForKeyword(db: Client, repo: string | null, pattern: string): Promise<Lesson[]> {
+  const r = await db.execute({ sql: `SELECT ${COLS.split(",").map((c) => "l." + c).join(",")} FROM lessons l JOIN triggers t ON t.lesson_id=l.id WHERE l.status='live' AND lower(t.pattern)=lower(?) AND (l.scope='global' OR l.repo_id IS ? OR l.repo_id=?) ORDER BY l.always_on DESC, length(t.pattern) DESC, l.updated_at DESC`, args: [pattern, repo, repo] });
+  return r.rows as unknown as Lesson[];
+}
+/** Combines two lessons a person chose to combine: the other is retired, and its evidence moves over. */
+export async function combine(db: Client, keepId: string, otherId: string, text?: string) {
+  await db.execute({ sql: "INSERT OR IGNORE INTO evidence (lesson_id,tool,session,seen_at,quote) SELECT ?,tool,session,seen_at,quote FROM evidence WHERE lesson_id=?", args: [keepId, otherId] });
+  await db.execute({ sql: "INSERT OR IGNORE INTO triggers (id,lesson_id,pattern,created_at) SELECT lower(hex(randomblob(16))),?,pattern,created_at FROM triggers WHERE lesson_id=?", args: [keepId, otherId] });
+  await decide(db, otherId, { status: "retired" });
+  if (text) await decide(db, keepId, { text });
+}

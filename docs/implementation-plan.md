@@ -6,7 +6,7 @@ Status legend: ⬜ todo · 🟦 in progress · ✅ done · ⛔ blocked · ⏭️
 
 ## Current status
 - **Step:** 1, Stage 1, the learner
-- **Next action:** Author runs `muninn learn` on a real repo and judges the lessons.
+- **Next action:** Author runs `muninn install`, then works normally and judges whether lessons help.
 - **Blockers:** none.
 
 ## Pre-build — EGM design
@@ -22,17 +22,21 @@ Status legend: ⬜ todo · 🟦 in progress · ✅ done · ⛔ blocked · ⏭️
 
 ## Step 1 — Stage 1, the learner
 - 🟦 Items 11-23a
-- ⬜ Model download prompt: say the size (about 33 MB), where it comes from (Hugging Face, `Xenova/bge-small-en-v1.5`), and show a progress bar while downloading
-- ⬜ Review prompt: explain the delivery choices with an example, suggest a keyword from the lesson, and say delivery starts in Stage 2
-- ⬜ Keywords: when choosing one, list the keywords already in use and how many lessons each has. Add `muninn keywords` to show them all
-- ⬜ Shared keywords: warn when a keyword already has 3 lessons, because only 3 are sent per prompt. Show which ones would be left out
-- ⬜ Similar lessons: at review, offer to combine lessons that say nearly the same thing, such as "explain clearly" and "I don't understand". Never combine automatically
-- ⬜ Scope: suggest global for lessons that aren't about the repo, such as shell behaviour
-- ⬜ Writer: phrase lessons as instructions to the agent ("Keep answers brief"), not as notes about "the user"
+- ✅ Model download prompt: say the size (about 33 MB), where it comes from (Hugging Face, `Xenova/bge-small-en-v1.5`), and show a progress bar while downloading
+- ✅ Review prompt: explain the delivery choices with an example, suggest a keyword from the lesson, and say delivery starts in Stage 2
+- ✅ Keywords: when choosing one, list the keywords already in use and how many lessons each has. Add `muninn keywords` to show them all
+- ✅ Shared keywords: warn when a keyword already has 3 lessons, because only 3 are sent per prompt. Show which ones would be left out
+- ✅ Similar lessons: at review, offer to combine lessons that say nearly the same thing, such as "explain clearly" and "I don't understand". Never combine automatically
+- ✅ Scope: suggest global for lessons that aren't about the repo, such as shell behaviour
+- ✅ Writer: phrase lessons as instructions to the agent ("Keep answers brief"), not as notes about "the user"
 - ✅ First real run (cb-ai-agents, 2026-11-06): 4 shown, 4 kept, 2 news to the author, both from failure-then-fix
 
 ## Step 2 — Stage 2, delivery
-- ⬜ Item 7, client checks, then items 24-31
+- ✅ Claude Code live checks (`docs/checks/client-live-tests.md`)
+- ✅ Delivery hook: session start, prompt keywords, failed commands, subagents, with limits and a log of every outcome
+- ✅ `muninn install`, `uninstall`, `status`, `keywords`
+- ⬜ Codex: needs a working `codex exec`, then live checks and hooks
+- ⬜ Interactive-session checks: compaction and subagents
 - ⬜ Author judges it from real use
 
 ## Step 3 — Stage 2, asking and the UI

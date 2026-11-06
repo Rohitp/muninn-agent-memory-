@@ -193,3 +193,19 @@ Entry template:
 **Gotcha:**
 - Four lessons from one repo is a small sample. It's a good sign, not a measurement.
 
+## 2026-11-06 — Review fixes and delivery for Claude Code
+
+**Did:**
+- Review now explains the delivery choices with an example, suggests a keyword, lists keywords in use, warns when a keyword already has 3 lessons, offers to combine similar lessons, and suggests global scope. The writer phrases lessons as instructions and says whether a lesson is repo-wide or global. The model prompt gives size and source, and a progress bar shows during the download.
+- Checked Claude Code 2.1.317 live with `claude -p` and a settings override: `SessionStart`, `UserPromptSubmit` and `PostToolUseFailure` all deliver text.
+- Built delivery: the hook picks live lessons for the repo plus global ones, sends at most 3 and 300 tokens, and logs every outcome. It sends each lesson once per session, resets on compaction, skips Cursor and paused states, and mentions waiting lessons at session start. Also `install`, `uninstall`, `status` and `keywords`. 56 tests pass.
+- Ran the real hook on the author's 4 kept lessons through `claude -p`, and the model quoted both always-on lessons word for word.
+
+**Gotcha:**
+- A first timing of the hook said 1 s, but it included Python's start-up from the timer. Measured with `/usr/bin/time`, it's 0.31-0.40 s.
+- libSQL enforces foreign keys, so lessons need their repo row first.
+- Test runs wrote delivery rows into the author's real store. They were removed.
+
+**Next:**
+- Author runs `muninn install` and uses it. Codex waits for a working `codex exec`.
+

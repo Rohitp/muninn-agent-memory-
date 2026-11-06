@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { releaseLock, scanDue, stamp, takeLock } from "../src/commands/auto.js";
-import { installLearnHook, removeLearnHook } from "../src/commands/install.js";
+import { install, installLearnHook, installed, removeLearnHook } from "../src/commands/install.js";
 import { tmp, useHome, write } from "./helpers.js";
 
 beforeEach(() => { const h = useHome(); process.env.MUNINN_LOG_ROOT = tmp(); delete process.env.MUNINN_INTERNAL; process.env.MUNINN_CLAUDE_SETTINGS = join(h, "settings.json"); });
@@ -59,5 +59,13 @@ describe("install", () => {
     writeFileSync(f(), "{ not json");
     expect(() => installLearnHook()).toThrow(/left it alone/);
     expect(readFileSync(f(), "utf8")).toBe("{ not json");
+  });
+  it("installs every hook once, with a Bash matcher on failures, and uninstall removes them all", () => {
+    install(); install();
+    const c = JSON.parse(readFileSync(f(), "utf8"));
+    expect(installed()).toEqual(["SessionStart", "UserPromptSubmit", "PostToolUseFailure", "SubagentStart", "SessionEnd"]);
+    expect(c.hooks.PostToolUseFailure).toEqual([expect.objectContaining({ matcher: "Bash" })]);
+    removeLearnHook();
+    expect(installed()).toEqual([]);
   });
 });

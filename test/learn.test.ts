@@ -67,7 +67,7 @@ describe("writer", () => {
     expect(p).toContain("untrusted");
   });
   it("parses replies, and rejects bad ones", () => {
-    expect(parseReply('Sure: [{"i":1,"lesson":"Do X"},{"i":0,"lesson":null}]', 2)).toEqual([null, "Do X"]);
+    expect(parseReply('Sure: [{"i":1,"lesson":"Do X","scope":"global"},{"i":0,"lesson":null}]', 2)).toEqual([null, { text: "Do X", scope: "global" }]);
     expect(() => parseReply("no json", 1)).toThrow();
   });
 });
@@ -109,7 +109,7 @@ describe("learnRepo", () => {
   });
   it("discards what the writer calls noise, and marks the rest inferred", async () => {
     const db = await setup();
-    const writer: Writer = { name: "fake", write: async (m) => m.map((_, i) => (i === 0 ? "Always use staging for X." : null)) };
+    const writer: Writer = { name: "fake", write: async (m) => m.map((_, i) => (i === 0 ? { text: "Always use staging for X.", scope: "repo" as const } : null)) };
     const r = await learnRepo(db, "r", [...three("use the staging server"), ...three("make the banner bigger")], deps(writer));
     expect(r).toMatchObject({ written: 1, discarded: 1, newLessons: 1 });
     expect((await listLessons(db, { repo: "r" }))[0]).toMatchObject({ source: "inferred", status: "proposed" });

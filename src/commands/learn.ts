@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { isPaused, settings } from "../config.js";
-import { loadEmbedder, modelCached, MODEL } from "../embed/model.js";
+import { loadEmbedder, modelCached, MODEL_SIZE, MODEL_SOURCE } from "../embed/model.js";
 import { learnRepo } from "../learn/pipeline.js";
 import { pickWriter } from "../learn/writer.js";
 import { scanLogs } from "../logs/discover.js";
@@ -31,7 +31,7 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean }) {
     if (opts.auto) return;
     if (process.stdin.isTTY) {
       const rl = createInterface({ input: process.stdin, output: process.stdout });
-      const a = await rl.question(`muninn needs a one-time download of the local embedding model (${MODEL}), to spot instructions that mean the same thing. Download it (y/n)? `);
+      const a = await rl.question(`muninn needs a one-time download of a local embedding model, ${MODEL_SIZE}, from ${MODEL_SOURCE}. It runs on this machine and spots instructions that mean the same thing. Download it (y/n)? `);
       rl.close();
       if (!a.trim().toLowerCase().startsWith("y")) { console.log("Stopped. The model is needed to compare what you typed."); return; }
     }

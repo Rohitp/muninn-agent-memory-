@@ -17,18 +17,18 @@ export async function learnRepo(db: Client, repo: string, sessions: Session[], d
   for (const m of moments) res.moments[m.signal] = (res.moments[m.signal] ?? 0) + 1;
 
   // Repeats keep the engineer's words without a writer. The other signals need one.
-  let texts: (string | null)[];
+  let texts: { text: string; scope: string }[] | (null | { text: string; scope: string })[];
   if (deps.writer) {
     texts = await deps.writer.write(moments);
     res.written = texts.filter(Boolean).length;
     res.discarded = texts.filter((t) => !t).length;
   } else {
-    texts = moments.map((m) => (m.signal === "repeat" ? m.text : null));
+    texts = moments.map((m) => (m.signal === "repeat" ? { text: m.text, scope: "repo" } : null));
     res.skippedNoWriter = moments.filter((m) => m.signal !== "repeat").length;
   }
-  const kept: { m: Moment; text: string; vector: Float32Array }[] = [];
-  const vectors = await deps.embed(texts.filter((t): t is string => !!t).map(norm));
-  moments.forEach((m, i) => { const t = texts[i]; if (t) kept.push({ m, text: t, vector: vectors.get(norm(t))! }); });
+  const kept: { m: Moment; text: string; scope: string; vector: Float32Array }[] = [];
+  const vectors = await deps.embed(texts.flatMap((t) => (t ? [norm(t.text)] : [])));
+  moments.forEach((m, i) => { const t = texts[i]; if (t) kept.push({ m, text: t.text, scope: t.scope, vector: vectors.get(norm(t.text))! }); });
 
   const existing = await lessonVectors(db, repo);
   for (const k of kept) {
@@ -41,7 +41,7 @@ export async function learnRepo(db: Client, repo: string, sessions: Session[], d
       res.addedEvidence++; continue;
     }
     const source = k.m.signal === "repeat" && !deps.writer ? "own_words" : "inferred";
-    const id = await createLesson(db, { repo_id: repo, text: k.text, source, signal: k.m.signal, status: "proposed", sessions: k.m.sessions, last_seen: k.m.last, vector: k.vector, by: deps.writer ? `learn:${deps.writer.name}` : "learn" });
+    const id = await createLesson(db, { repo_id: repo, text: k.text, source, signal: k.m.signal, suggestedScope: k.scope, status: "proposed", sessions: k.m.sessions, last_seen: k.m.last, vector: k.vector, by: deps.writer ? `learn:${deps.writer.name}` : "learn" });
     await addEvidence(db, id, k.m.quotes);
     existing.push({ id, status: "proposed", text: k.text, vector: k.vector });
     res.newLessons++;
