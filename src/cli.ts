@@ -13,6 +13,8 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn show <id>
   muninn edit <id> [--text "..."] [--always-on|--not-always-on] [--trigger word] [--global|--repo-scope]
   muninn retire <id>
+  muninn ask "question"         Search kept lessons in every repo
+  muninn cursor on|off|sync     Write kept lessons as Cursor rules in this repo
   muninn keywords               Keywords in use, and how many lessons each has
   muninn status                 What muninn has learned and sent, and any problems
   muninn install [--learn]      Add Claude Code hooks (--learn: only automatic scans)
@@ -20,6 +22,23 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn pause | resume         Stop or restart delivery and automatic scans
   muninn export [file]
   muninn purge --yes`;
+
+const CHANGES = new Set(["learn", "review", "add", "edit", "retire"]);
+
+async function cursorCmd(sub: string) {
+  const [{ openDb }, { repoIdentity }, c] = await Promise.all([import("./store/db.js"), import("./repo/identity.js"), import("./deliver/cursor.js")]);
+  const db = await openDb();
+  const repo = repoIdentity(process.cwd());
+  if (sub === "sync") { await c.syncCursor(db); console.log("Cursor rules rewritten for every repo that has them on."); return; }
+  if (!repo) { console.error("Run this inside a git repo."); process.exitCode = 1; return; }
+  if (sub === "off") { await c.disableCursor(db, repo); console.log("Removed muninn's Cursor rules from this repo."); return; }
+  if (sub !== "on") { console.error("Usage: muninn cursor on|off|sync"); process.exitCode = 1; return; }
+  const { ensureRepo } = await import("./store/lessons.js");
+  await ensureRepo(db, repo, process.cwd());
+  const r = await c.enableCursor(db, repo);
+  if (!r) { console.error("Couldn't find this repo's folder."); process.exitCode = 1; return; }
+  console.log(`Wrote ${r.files.join(", ")} in ${r.root}/.cursor/rules. They're listed in .git/info/exclude, so git ignores them without changing any shared file. muninn rewrites them when lessons change.`);
+}
 
 async function main() {
   switch (cmd) {
@@ -45,6 +64,8 @@ async function main() {
     case "purge": return (await import("./commands/lessons.js")).purge(args);
     case "install": { const m = await import("./commands/install.js"); return args.includes("--learn") ? m.installLearnHook() : m.install(); }
     case "uninstall": { (await import("./commands/install.js")).uninstall(); console.log("Removed muninn's hooks. Lessons are kept."); return; }
+    case "ask": return (await import("./commands/ask.js")).ask(args);
+    case "cursor": return cursorCmd(args[0] ?? "");
     case "status": return (await import("./commands/status.js")).status();
     case "keywords": return (await import("./commands/status.js")).keywords();
     case "pause": writeFileSync(join(ensureHome(), "paused"), ""); console.log("Paused."); return;
@@ -71,4 +92,7 @@ async function runHook(client: string) {
   finally { clearTimeout(timer); }
 }
 
-main().catch((e) => { console.error(e instanceof Error ? e.message : String(e)); process.exitCode = 1; });
+main().then(async () => {
+  if (!CHANGES.has(cmd ?? "") || process.exitCode) return;
+  try { const [{ openDb }, { syncCursor }] = await Promise.all([import("./store/db.js"), import("./deliver/cursor.js")]); await syncCursor(await openDb()); } catch { /* Cursor files are a convenience */ }
+}).catch((e) => { console.error(e instanceof Error ? e.message : String(e)); process.exitCode = 1; });

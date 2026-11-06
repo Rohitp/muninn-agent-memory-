@@ -76,6 +76,7 @@ export async function exportLessons(args: string[]) {
 export async function purge(args: string[]) {
   if (!args.includes("--yes")) { console.error(`This removes muninn's hooks and deletes ${home()}, including all lessons, the model and backups. Run again with --yes.`); process.exitCode = 1; return; }
   removeLearnHook();
+  try { const { disableCursor } = await import("../deliver/cursor.js"); await disableCursor(await openDb(), null); } catch { /* the store may already be gone */ }
   if (existsSync(home())) rmSync(home(), { recursive: true, force: true });
   console.log("Removed muninn's hooks and data.");
 }

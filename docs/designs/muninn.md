@@ -573,7 +573,7 @@ store holds redacted quotes, lesson text and logged commands, and only its owner
 ### Future Improvements
 
 *   **Check results, long work, ask and analyse:** the later stages under Goals.
-*   **Cursor:** delivery and search, once hands-on tests show what it allows.
+*   **Cursor:** kept lessons are written as Cursor rules in each repo that turns it on: always-on lessons in one always-applied file, and keyword lessons in agent-requested files. Delivery through Cursor's own hooks, and learning from Cursor's logs, can follow.
 *   **Other memory tools:** assess OpenMemory and agentmemory before public release.
 *   **MCP server:** add if `muninn ask` proves too slow or agents do not use it.
 *   **More sources:** CI and README commands.

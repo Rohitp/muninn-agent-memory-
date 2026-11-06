@@ -209,3 +209,15 @@ Entry template:
 **Next:**
 - Author runs `muninn install` and uses it. Codex waits for a working `codex exec`.
 
+## 2026-11-06 — Cursor through rules files, and a basic ask
+
+**Did:**
+- `muninn cursor on` writes kept lessons into `.cursor/rules/` in that repo. Always-on and global lessons go in `muninn.mdc` with `alwaysApply: true`. Each keyword gets an agent-requested file whose `description` lets Cursor's agent pull it in when the task fits. The file also tells the agent about `muninn ask`. Files are listed in `.git/info/exclude`, rewritten after any lesson change, and removed by `muninn cursor off` or `purge`. The format was checked against cursor.com/docs/rules.
+- Added a basic `muninn ask`, which searches kept lessons in every repo by FTS5 and embeddings, with this repo's first. The meaning cutoff is 0.65, because at 0.5 every lesson matched. 59 tests pass.
+
+**Decided:**
+- Cursor uses rules files first, not its hooks, because they're plain files muninn controls with no untested hook behaviour. The cost is that Cursor's use can't be logged.
+
+**Gotcha:**
+- Cursor user rules live only in its settings screen, not as files, so global lessons are copied into each enabled repo's file.
+

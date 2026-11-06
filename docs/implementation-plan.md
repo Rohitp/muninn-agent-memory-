@@ -37,6 +37,7 @@ Status legend: ⬜ todo · 🟦 in progress · ✅ done · ⛔ blocked · ⏭️
 - ✅ `muninn install`, `uninstall`, `status`, `keywords`
 - ⬜ Codex: needs a working `codex exec`, then live checks and hooks
 - ⬜ Interactive-session checks: compaction and subagents
+- ✅ Cursor: kept lessons written as `.cursor/rules/muninn*.mdc` per repo with `muninn cursor on`, kept out of git through `.git/info/exclude`, and rewritten when lessons change
 - ⬜ Author judges it from real use
 
 ## Step 3 — Stage 2, asking and the UI
