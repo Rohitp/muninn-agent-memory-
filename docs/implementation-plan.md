@@ -5,8 +5,8 @@ Living execution tracker. The spec is `docs/designs/muninn.md`. This file lists 
 Status legend: ⬜ todo · 🟦 in progress · ✅ done · ⛔ blocked · ⏭️ deferred
 
 ## Current status
-- **Step:** 0, clean up, baseline and spike
-- **Next action:** Author raises `cleanupPeriodDays` to 365 in Claude Code. Then item 5, saving logs, and item 6, the signal check.
+- **Step:** 1, Stage 1, the learner
+- **Next action:** Author runs `muninn learn` on a real repo and judges the lessons.
 - **Blockers:** none.
 
 ## Pre-build — EGM design
@@ -16,31 +16,24 @@ Status legend: ⬜ todo · 🟦 in progress · ✅ done · ⛔ blocked · ⏭️
 - ✅ `/egm:egm-draft` → `docs/designs/muninn.md` from `concepts_brief.md`
 - ✅ `/egm:egm-review` → reports in `docs/reviews/`. Some findings on lines before the plan stay open
 
-## Step 0 — Clean up, baseline and spike
-- ⬜ Author: raise `cleanupPeriodDays` to 365
-- ✅ 1. Archive `agents.md`
-- ✅ 2. Update tracker and devlog
-- ✅ 3. Delete `design_draft.md`
-- ✅ 4. Package and build config
-- ⬜ 5. Save logs for the 2 gate repos
-- ⬜ 6. Signal check: run the rules on real logs, author labels the output
-- ⬜ 7. Client checks (`docs/checks/client-live-tests.md`)
-- ⬜ 8. libSQL, fallback and hook latency checks
-- ⬜ 9. Embedding and matching checks
-- ⬜ 10. `docs/spike.md`, then delete the spike scripts
-- ⬜ **Gate:** Step 0
+## Done before Stage 1
+- ✅ Archive `agents.md`, update tracker and devlog, delete `design_draft.md`, package setup
+- ✅ Save logs for the 2 repos used so far, first signal check
 
-## Settle After Step 0
-- ⬜ Clear the design's Settle After Step 0 list
-- ⬜ Review Steps 1-3 again. They are provisional and not built until then
+## Step 1 — Stage 1, the learner
+- 🟦 Items 11-23a
+- ⬜ Model download prompt: say the size (about 33 MB), where it comes from (Hugging Face, `Xenova/bge-small-en-v1.5`), and show a progress bar while downloading
+- ⬜ Review prompt: explain the delivery choices with an example, suggest a keyword from the lesson, and say delivery starts in Stage 2
+- ⬜ Keywords: when choosing one, list the keywords already in use and how many lessons each has. Add `muninn keywords` to show them all
+- ⬜ Shared keywords: warn when a keyword already has 3 lessons, because only 3 are sent per prompt. Show which ones would be left out
+- ⬜ Similar lessons: at review, offer to combine lessons that say nearly the same thing, such as "explain clearly" and "I don't understand". Never combine automatically
+- ⬜ Scope: suggest global for lessons that aren't about the repo, such as shell behaviour
+- ⬜ Writer: phrase lessons as instructions to the agent ("Keep answers brief"), not as notes about "the user"
+- ✅ First real run (cb-ai-agents, 2026-11-06): 4 shown, 4 kept, 2 news to the author, both from failure-then-fix
 
-## Step 1 — Stage 1, the learner (provisional)
-- ⬜ Items 11-23
-- ⬜ **Gate:** to Stage 2
+## Step 2 — Stage 2, delivery
+- ⬜ Item 7, client checks, then items 24-31
+- ⬜ Author judges it from real use
 
-## Step 2 — Stage 2, delivery (provisional)
-- ⬜ Items 24-31
-- ⬜ **Gate:** after delivery
-
-## Step 3 — Stage 2, asking and the UI (provisional)
+## Step 3 — Stage 2, asking and the UI
 - ⬜ Items 32-37

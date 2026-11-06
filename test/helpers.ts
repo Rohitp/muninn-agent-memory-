@@ -1,0 +1,26 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { Embed } from "../src/embed/model.js";
+import type { Session } from "../src/logs/types.js";
+
+export const tmp = () => mkdtempSync(join(tmpdir(), "muninn-test-"));
+export function useHome() { const h = tmp(); process.env.MUNINN_HOME = h; return h; }
+
+/** Bag-of-words vectors: same words give similarity 1. No model needed. */
+export const fakeEmbed: Embed = async (texts) => {
+  const out = new Map<string, Float32Array>();
+  for (const t of texts) {
+    const v = new Float32Array(384);
+    for (const w of t.toLowerCase().split(/\W+/).filter(Boolean)) { let h = 0; for (const c of w) h = (h * 31 + c.charCodeAt(0)) % 384; v[h] = (v[h] ?? 0) + 1; }
+    const n = Math.hypot(...v) || 1;
+    out.set(t, v.map((x) => x / n));
+  }
+  return out;
+};
+const day = (d: number) => `2026-10-${String(d).padStart(2, "0")}T10:00:00.000Z`;
+export function session(id: string, d: number, typed: string[], tool: Session["tool"] = "claude-code"): Session {
+  return { id, tool, cwd: "/x", clientVersion: "1", unknown: 0, events: typed.map((text) => ({ k: "typed" as const, text, ts: day(d) })) };
+}
+export { day };
+export function write(file: string, lines: unknown[]) { mkdirSync(join(file, ".."), { recursive: true }); writeFileSync(file, lines.map((l) => JSON.stringify(l)).join("\n") + "\n"); }

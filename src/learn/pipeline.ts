@@ -1,0 +1,62 @@
+import type { Client } from "@libsql/client";
+import { cosine, type Embed } from "../embed/model.js";
+import type { Session } from "../logs/types.js";
+import { addEvidence, createLesson, lessonVectors, touchSeen } from "../store/lessons.js";
+import { findMoments, type Moment, type Signal } from "./signals.js";
+import type { Writer } from "./writer.js";
+
+const NEG = /\b(not|never|don'?t|no|avoid|stop|cannot|won'?t|shouldn'?t|without)\b/i;
+export type LearnResult = { moments: Record<string, number>; written: number; discarded: number; newLessons: number; addedEvidence: number; dropped: number; skippedNoWriter: number };
+
+const norm = (s: string) => s.toLowerCase().replace(/\W+/g, " ").trim();
+
+/** Finds moments in a repo's sessions and stores new candidates as proposed. Nothing goes live here. */
+export async function learnRepo(db: Client, repo: string, sessions: Session[], deps: { embed: Embed; writer: Writer | null; cutoff: number; minSessions: number }): Promise<LearnResult> {
+  const moments = await findMoments(sessions, deps.embed, { cutoff: deps.cutoff, minSessions: deps.minSessions });
+  const res: LearnResult = { moments: {}, written: 0, discarded: 0, newLessons: 0, addedEvidence: 0, dropped: 0, skippedNoWriter: 0 };
+  for (const m of moments) res.moments[m.signal] = (res.moments[m.signal] ?? 0) + 1;
+
+  // Repeats keep the engineer's words without a writer. The other signals need one.
+  let texts: (string | null)[];
+  if (deps.writer) {
+    texts = await deps.writer.write(moments);
+    res.written = texts.filter(Boolean).length;
+    res.discarded = texts.filter((t) => !t).length;
+  } else {
+    texts = moments.map((m) => (m.signal === "repeat" ? m.text : null));
+    res.skippedNoWriter = moments.filter((m) => m.signal !== "repeat").length;
+  }
+  const kept: { m: Moment; text: string; vector: Float32Array }[] = [];
+  const vectors = await deps.embed(texts.filter((t): t is string => !!t).map(norm));
+  moments.forEach((m, i) => { const t = texts[i]; if (t) kept.push({ m, text: t, vector: vectors.get(norm(t))! }); });
+
+  const existing = await lessonVectors(db, repo);
+  for (const k of kept) {
+    const neg = NEG.test(k.text);
+    const blocked = existing.find((e) => e.vector && ["rejected", "retired"].includes(e.status) && cosine(e.vector, k.vector) >= 0.98);
+    if (blocked) { res.dropped++; continue; }
+    const same = existing.find((e) => e.vector && ["proposed", "live"].includes(e.status) && cosine(e.vector, k.vector) >= deps.cutoff && NEG.test(e.text) === neg);
+    if (same) {
+      await addEvidence(db, same.id, k.m.quotes); await touchSeen(db, same.id, k.m.sessions, k.m.last);
+      res.addedEvidence++; continue;
+    }
+    const source = k.m.signal === "repeat" && !deps.writer ? "own_words" : "inferred";
+    const id = await createLesson(db, { repo_id: repo, text: k.text, source, signal: k.m.signal, status: "proposed", sessions: k.m.sessions, last_seen: k.m.last, vector: k.vector, by: deps.writer ? `learn:${deps.writer.name}` : "learn" });
+    await addEvidence(db, id, k.m.quotes);
+    existing.push({ id, status: "proposed", text: k.text, vector: k.vector });
+    res.newLessons++;
+  }
+  return res;
+}
+
+/** Top candidates, with no one signal taking more than half. */
+export function pickToShow<T extends { signal: string | null }>(ranked: T[], limit: number): T[] {
+  const cap = Math.ceil(limit / 2); const used: Record<string, number> = {}; const out: T[] = [];
+  for (const l of ranked) {
+    const s = l.signal ?? "manual";
+    if ((used[s] ?? 0) >= cap || out.length >= limit) continue;
+    used[s] = (used[s] ?? 0) + 1; out.push(l);
+  }
+  return out;
+}
+export type { Signal };

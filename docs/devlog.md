@@ -142,3 +142,54 @@ Entry template:
 **Next:**
 - Item 5, saving logs, once the author has raised `cleanupPeriodDays`.
 
+## 2026-11-03 — Validation stopped; building
+
+**Did:**
+- Ran the rules on one repo's logs (106 sessions): 19 candidates, none from corrections or returning mistakes. "Worked after" named whichever command last succeeded. One repo and first-draft rules can't judge the product.
+
+**Decided:**
+- Stop validating and build. Gates become the author's judgement from real use, and detail is settled while building.
+- Rules find moments, and an LLM writes lessons through the engineer's `claude -p` or `codex exec`, behind one interface so a local model can follow.
+- Automatic learning from a `SessionEnd` hook, on by default, batched, proposing only. Delivery adds `PostToolUseFailure` and `SubagentStart`.
+
+**Gotcha:**
+- muninn's own `claude -p` runs could feed its learner and trigger its hooks, so it has to mark and skip them.
+
+**Next:**
+- Build Stage 1.
+
+## 2026-11-03 — Stage 1 first build
+
+**Did:**
+- Built the store, readers, four signals, lesson writer, `learn`, `review`, lesson commands, `install --learn`, and the `SessionEnd` scan. 44 tests pass on generated logs, with a fake model and writer.
+- Ran `learn` on this repo's own logs: the pipeline worked, but found no moments.
+- Tried the real `claude -p` writer on 4 made-up moments, in 6.3 s. It wrote 2 sensible lessons, discarded a normal test failure, and ignored an injected instruction. It left no session file.
+
+**Decided:**
+- Unknown-format warnings check record shape, not a list of types, because Claude Code adds new record types often.
+- Failure moments give the LLM the commands that ran in between, not a guessed cause.
+- The model stays a one-time download for now. It's 33 MB, so shipping it is still possible.
+
+**Gotcha:**
+- `codex exec` fails here: the default `gpt-6-sol` model isn't supported with this ChatGPT account on CLI 0.133.0. The Codex writer is untested as a result.
+- `install --learn` covers Claude Code only until Codex's hook file is checked.
+
+**Not done:**
+- Model checksum, `status`, the session-start nudge, and a live test that a scan survives the session closing.
+
+**Next:**
+- Author runs `muninn learn` on a real repo.
+
+## 2026-11-06 — First real run
+
+**Did:**
+- Author ran `muninn learn` in `cb-ai-agents/apps/api`. 4 lessons shown and all 4 kept.
+- 2 were news to the author, both from failure-then-fix: zsh treating an unquoted `===` as a command lookup, and `benchmarks/` living at the repo root rather than under `apps/api`. The other 2 were known preferences about explaining simply.
+
+**Decided:**
+- The author's verdict: known lessons are still useful, because the tool saves noting them down. The two known ones should have been offered as one.
+- To-dos: show existing keywords and warn on shared ones, explain delivery choices with an example, show model size, source and progress, offer to combine similar lessons, suggest global scope, and phrase lessons as instructions.
+
+**Gotcha:**
+- Four lessons from one repo is a small sample. It's a good sign, not a measurement.
+

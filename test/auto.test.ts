@@ -1,0 +1,63 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { beforeEach, describe, expect, it } from "vitest";
+import { releaseLock, scanDue, stamp, takeLock } from "../src/commands/auto.js";
+import { installLearnHook, removeLearnHook } from "../src/commands/install.js";
+import { tmp, useHome, write } from "./helpers.js";
+
+beforeEach(() => { const h = useHome(); process.env.MUNINN_LOG_ROOT = tmp(); delete process.env.MUNINN_INTERNAL; process.env.MUNINN_CLAUDE_SETTINGS = join(h, "settings.json"); });
+const H = 3_600_000;
+describe("automatic scans", () => {
+  it("runs first, waits a day, and also runs after 5 new sessions", () => {
+    const now = Date.now();
+    expect(scanDue(now)).toBe(true);
+    stamp(now);
+    expect(scanDue(now + H)).toBe(false);
+    expect(scanDue(now + 25 * H)).toBe(true);
+    for (let i = 0; i < 5; i++) write(join(process.env.MUNINN_LOG_ROOT!, `claude/projects/p/${i}.jsonl`), [{}]);
+    expect(scanDue(now + H)).toBe(true);
+  });
+  it("muninn's own runs and pause do not trigger a scan", () => {
+    process.env.MUNINN_INTERNAL = "1";
+    expect(scanDue()).toBe(false);
+    delete process.env.MUNINN_INTERNAL;
+    writeFileSync(join(process.env.MUNINN_HOME!, "paused"), "");
+    expect(scanDue()).toBe(false);
+  });
+  it("can be turned off", () => {
+    writeFileSync(join(process.env.MUNINN_HOME!, "config.json"), '{"autoLearn":false}');
+    expect(scanDue()).toBe(false);
+  });
+  it("allows one scan at a time", () => {
+    expect(takeLock()).toBe(true);
+    expect(takeLock()).toBe(false);
+    releaseLock();
+    expect(takeLock()).toBe(true);
+    releaseLock();
+  });
+});
+describe("install", () => {
+  const f = () => process.env.MUNINN_CLAUDE_SETTINGS!;
+  it("keeps another tool's hook on the same event, and doesn't add itself twice", () => {
+    const other = { hooks: [{ type: "command", command: "other-tool" }] };
+    writeFileSync(f(), JSON.stringify({ model: "x", hooks: { SessionEnd: [other] } }));
+    installLearnHook(); installLearnHook();
+    const c = JSON.parse(readFileSync(f(), "utf8"));
+    expect(c.hooks.SessionEnd).toHaveLength(2);
+    expect(c.hooks.SessionEnd[0]).toEqual(other);
+  });
+  it("uninstall removes only muninn and keeps later edits", () => {
+    writeFileSync(f(), JSON.stringify({ hooks: { SessionEnd: [{ hooks: [{ type: "command", command: "other-tool" }] }] } }));
+    installLearnHook();
+    const c = JSON.parse(readFileSync(f(), "utf8")); c.later = true; writeFileSync(f(), JSON.stringify(c));
+    removeLearnHook();
+    const after = JSON.parse(readFileSync(f(), "utf8"));
+    expect(after.later).toBe(true);
+    expect(after.hooks.SessionEnd).toEqual([{ hooks: [{ type: "command", command: "other-tool" }] }]);
+  });
+  it("refuses to touch a malformed settings file", () => {
+    writeFileSync(f(), "{ not json");
+    expect(() => installLearnHook()).toThrow(/left it alone/);
+    expect(readFileSync(f(), "utf8")).toBe("{ not json");
+  });
+});
