@@ -346,3 +346,14 @@ Entry template:
 - The web UI is now one screen, "What your agents know": suggestions with Add or × (tap to edit first), your lessons with on/off switches (tap to edit or remove), and two repo settings as switches that map onto the dial (start on, mid-task on = anytime; start only = start; both off = quiet).
 - A real off state: a new `off` column (migration 007). Off lessons stay in your list but are skipped by the delivery hook, Cursor rules, `muninn ask` and the panel's list. Removing is separate and asks first.
 - Tabs, Home, Activity and Ask are gone from the web page. Activity and feedback stay in the panel.
+
+## 2026-11-15 — Learning you can see, and a hook upgrade bug
+
+**Author:** "why can't muninn learn run automatically? For a product you don't expect commands to be run."
+
+**Found:** it already does. The SessionEnd hook starts `learn --auto` at most daily or after 5 new sessions, and one ran at 14:36 today (12 lesson-writing calls, plain lines, 2 handoffs). But nothing showed it, the empty state said "run muninn learn", and there was no way to ask for a scan without a terminal. Also found: at 08:50-08:59 the delivery hook failed three times with `no such column: handoff_id`. The hook opened the database without upgrading it, and new code met the old schema until a learn upgraded it. Those sessions got no lessons.
+
+**Did:**
+- The page shows "muninn checked your sessions 2 hours ago, and checks again on its own after you work. Check now". Check now starts a background scan (`learn --auto --all-repos --force`), the line turns into "Checking your sessions…", and the page refreshes and says how many new suggestions it found. A scan that started on its own is followed the same way. The empty state is a "Find lessons in my sessions" button.
+- `/api/scan` reports whether a scan is running (its lock) and when the last finished.
+- The hook now upgrades the database if needed (a no-op when current), so an update can't silently stop delivery.

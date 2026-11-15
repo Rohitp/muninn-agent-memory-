@@ -62,6 +62,12 @@ input[type=text] { width: 100%; height: 40px; border: 1px solid var(--line-stron
 .fix { height: 30px; padding: 0 12px; border-radius: 999px; border: 0; background: var(--warn-bg); color: var(--warn); font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 6px; }
 .evidence { font-size: 13px; color: var(--muted); margin-top: 12px; }
 .empty { padding: 16px 18px; color: var(--muted); }
+.scan { margin: 10px 0 0; font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--link); font-size: 14px; font-weight: 500; cursor: pointer; }
+.linkbtn:disabled { opacity: .5; }
+.spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--ink); animation: spin 1s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--group); padding: 9px 16px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
 .toast.show { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .switch, .switch::after, .toast { transition: none; } }
@@ -93,10 +99,36 @@ async function api(path, body) {
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2800); }
 
 async function load() {
-  const [repos, suggested, kept, home] = await Promise.all([
-    api("/api/repos"), api("/api/lessons?" + q({ repo, status: "proposed" })), api("/api/lessons?" + q({ repo, status: "live" })), api("/api/home?" + q({ repo })),
+  const [repos, suggested, kept, home, scan] = await Promise.all([
+    api("/api/repos"), api("/api/lessons?" + q({ repo, status: "proposed" })), api("/api/lessons?" + q({ repo, status: "live" })), api("/api/home?" + q({ repo })), api("/api/scan"),
   ]);
-  data = { repos, suggested, kept, home };
+  data = { repos, suggested, kept, home, scan };
+}
+
+/* muninn checks your sessions on its own after they end. This line shows when it last did, and lets you ask now. */
+function scanLine() {
+  const s = data.scan;
+  if (s.running) return `<span class="spin" aria-hidden="true"></span> Checking your sessions for new lessons. New suggestions appear here when it's done.`;
+  return `${s.lastLearn ? `muninn checked your sessions ${esc(ago(s.lastLearn))}` : "muninn hasn't checked your sessions yet"}, and checks again on its own after you work. <button class="linkbtn" data-scan>Check now</button>`;
+}
+let scanPoll = null;
+/** Follows a running scan, then refreshes and says what it found. Also used when a scan started on its own. */
+function followScan(before) {
+  if (scanPoll) return;
+  scanPoll = setInterval(async () => {
+    const s = await api("/api/scan").catch(() => null);
+    if (!s || s.running) return;
+    clearInterval(scanPoll); scanPoll = null; await refresh();
+    const found = data.suggested.length - before;
+    toast(found > 0 ? `Found ${found} new suggestion${found === 1 ? "" : "s"}.` : "Checked your sessions. Nothing new this time.");
+  }, 4000);
+}
+async function startScan(btn) {
+  if (btn) btn.disabled = true;
+  const before = data.suggested.length;
+  await api("/api/scan", {});
+  data.scan.running = true; draw();
+  followScan(before);
 }
 
 /* When a kept lesson is told, in words. */
@@ -166,6 +198,7 @@ function draw() {
     </div>
     <h1>What your agents know</h1>
     <p class="lead">Switch a lesson on and Claude, Codex and Cursor are told it. Switch it off and they aren't.</p>
+    <p class="scan">${scanLine()}</p>
 
     ${suggested.length ? `<section aria-labelledby="sg">
       <h2 id="sg">Suggested from your sessions · ${suggested.length}</h2>
@@ -178,7 +211,7 @@ function draw() {
     <section aria-labelledby="ls">
       <h2 id="ls">Your lessons · ${kept.length}</h2>
       ${kept.length ? `<ul class="group">${kept.map(lessonRow).join("")}</ul><p class="note">Tap a lesson to change its wording or when it's told.</p>`
-        : `<ul class="group"><li class="empty">${suggested.length ? "Add a suggestion above and it shows here." : `Nothing yet. In a terminal, in your repo's folder, run <code>muninn learn</code> and muninn will suggest lessons from your past sessions.`}</li></ul>`}
+        : `<ul class="group"><li class="empty">${suggested.length ? "Add a suggestion above and it shows here." : `Nothing yet. muninn looks through your past Claude Code, Codex and Cursor sessions and suggests lessons here.<div style="margin-top:12px"><button class="btn primary" data-scan ${data.scan.running ? "disabled" : ""}>${data.scan.running ? "Checking…" : "Find lessons in my sessions"}</button></div>`}</li></ul>`}
     </section>
 
     ${repo ? `<section aria-labelledby="st">
@@ -192,7 +225,7 @@ function draw() {
       ${dial === "quiet" ? `<p class="note">Both off: muninn tells agents nothing unless they ask with muninn ask.</p>` : ""}
     </section>` : ""}`;
 }
-async function refresh() { await load(); draw(); }
+async function refresh() { await load(); draw(); if (data.scan.running) followScan(data.suggested.length); }
 
 document.addEventListener("click", async (e) => {
   const el = e.target.closest("button"); if (!el) return;
@@ -200,6 +233,7 @@ document.addEventListener("click", async (e) => {
   try {
     if (el.dataset.open) { open = open === el.dataset.open ? null : el.dataset.open; draw(); return; }
     if (el.dataset.more !== undefined) { showAll = !showAll; draw(); return; }
+    if (el.dataset.scan !== undefined) { await startScan(el); return; }
     if (el.dataset.route) {
       const box = el.closest(".detail"); box.querySelectorAll("[data-route]").forEach((b) => b.setAttribute("aria-checked", String(b === el)));
       const kw = box.querySelector("[data-f=kw]"); kw.hidden = el.dataset.route !== "keyword"; if (!kw.hidden) kw.focus(); return;

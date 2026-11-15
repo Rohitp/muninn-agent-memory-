@@ -54,7 +54,8 @@ async function main() {
       const { learn } = await import("./commands/learn.js");
       if (!auto) return learn({ allRepos: args.includes("--all-repos") });
       const { takeLock, releaseLock, stamp, scanDue } = await import("./commands/auto.js");
-      if (!scanDue() || !takeLock()) return;
+      // --force is the page's "Check now": run even if a scan isn't due yet.
+      if ((!args.includes("--force") && !scanDue()) || !takeLock()) return;
       try { await learn({ allRepos: true, auto: true }); stamp(); } finally { releaseLock(); }
       return;
     }
@@ -109,7 +110,8 @@ async function runHook(client: string) {
     }
     if (!existsSync(join(home(), "muninn.db"))) return;
     const [{ openDb }, { deliver, hookOutput }] = await Promise.all([import("./store/db.js"), import("./deliver/hook.js")]);
-    const db = await openDb({ migrate: false, lockWaitMs: 100 });
+    // Upgrades the database if muninn was updated since, so new code never meets an old schema (a no-op otherwise).
+    const db = await openDb({ lockWaitMs: 100 });
     // Codex doesn't document the shape of a Bash result. Keep the first one's shape (types only) to check failure detection.
     if (client === "codex" && event === "PostToolUse") {
       const r = input.tool_response;

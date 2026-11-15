@@ -75,3 +75,14 @@ describe("install", () => {
     expect(installed("codex")).toEqual([]);
   });
 });
+
+describe("check now", () => {
+  it("knows when a scan is running from its lock", async () => {
+    const { scanRunning } = await import("../src/commands/auto.js");
+    expect(scanRunning()).toBe(false);
+    expect(takeLock()).toBe(true);
+    expect(scanRunning()).toBe(true);
+    releaseLock();
+    expect(scanRunning()).toBe(false);
+  });
+});

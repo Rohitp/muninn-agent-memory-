@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { askData, originOf, shortRepo } from "../commands/ask.js";
 import { answerData } from "../commands/answer.js";
 import { homeData } from "../commands/home.js";
+import { scanRunning, startAutoScan } from "../commands/auto.js";
 import { getDial, recordFeedback, setDial } from "../store/dial.js";
 import { loadEmbedder, modelCached, type Embed } from "../embed/model.js";
 import { fillExplanations } from "../learn/explain.js";
@@ -103,6 +104,9 @@ const routes: Record<string, Handler> = {
   },
   "GET /api/settings": async () => ({ maxPerDelivery: settings().maxPerDelivery }),
   "GET /api/version": async () => ({ boot: BOOT, page: pageHash() }),
+  // Scans: when the last one finished, whether one is running, and "Check now".
+  "GET /api/scan": async (db) => ({ running: scanRunning(), lastLearn: String((await db.execute("SELECT value FROM meta WHERE key='last_learn'")).rows[0]?.value ?? "") || null }),
+  "POST /api/scan": async () => ({ started: startAutoScan({ force: true }), running: true }),
 };
 
 const readBody = (req: IncomingMessage) => new Promise<string>((ok, fail) => {

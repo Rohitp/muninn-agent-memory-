@@ -28,13 +28,20 @@ export function takeLock(now = Date.now()): boolean {
 export const releaseLock = () => rmSync(lockFile(), { force: true });
 export const stamp = (now = Date.now()) => writeFileSync(stampFile(), JSON.stringify({ at: now, logs: countLogs() }));
 
-/** Called from the SessionEnd hook. Returns at once, leaving a separate process to scan. */
-export function startAutoScan() {
-  if (!scanDue()) return;
+/**
+ * Starts a scan in a separate process and returns at once. Called from the SessionEnd hook (only when one is due),
+ * and from the page's "Check now" (force: right away).
+ */
+export function startAutoScan(opts: { force?: boolean } = {}): boolean {
+  if (!opts.force && !scanDue()) return false;
+  if (scanRunning()) return false;
   const cli = join(dirname(fileURLToPath(import.meta.url)), "..", "cli.js");
-  const child = spawn(process.execPath, [cli, "learn", "--auto", "--all-repos"], { detached: true, stdio: "ignore", env: { ...process.env, MUNINN_INTERNAL: "" } });
+  const child = spawn(process.execPath, [cli, "learn", "--auto", "--all-repos", ...(opts.force ? ["--force"] : [])], { detached: true, stdio: "ignore", env: { ...process.env, MUNINN_INTERNAL: "" } });
   child.unref();
+  return true;
 }
+/** Whether a scan is running now: its lock is held and recent. */
+export const scanRunning = (now = Date.now()) => existsSync(lockFile()) && now - statSync(lockFile()).mtimeMs < 3_600_000;
 
 /** Called from the SessionEnd hook: writes a handoff for that session in a separate process. */
 export function startHandoff(transcript: string, client: string) {
