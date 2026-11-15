@@ -11,11 +11,11 @@ import { openDb } from "../store/db.js";
 import { ensureRepo, foldDuplicates, overlappingLive } from "../store/lessons.js";
 import { review } from "./review.js";
 
-export async function learn(opts: { allRepos?: boolean; auto?: boolean }) {
-  if (opts.auto && isPaused()) return;
+export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview?: boolean }): Promise<number> {
+  if (opts.auto && isPaused()) return 0;
   const cfg = settings();
   const here = opts.allRepos ? null : repoIdentity(process.cwd());
-  if (!opts.allRepos && !here) { console.error("This folder is not in a git repo. Run it inside one, or use --all-repos."); process.exitCode = 1; return; }
+  if (!opts.allRepos && !here) { console.error("This folder is not in a git repo. Run it inside one, or use --all-repos."); process.exitCode = 1; return 0; }
 
   const scan = scanLogs();
   const repos = here ? (scan.byRepo.has(here) ? [here] : []) : [...scan.byRepo.keys()];
@@ -24,18 +24,18 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean }) {
     console.log(`Found ${scan.files.claude} Claude Code, ${scan.files.codex} Codex and ${scan.files.cursor} Cursor log files.`);
     console.log(`Reading ${count} session(s) in ${repos.length} repo(s). ${scan.missingFolder} session(s) skipped: their folder is gone or not in a repo.`);
   }
-  if (!count) { if (!opts.auto) console.log("No sessions found for this repo. Try --all-repos."); return; }
+  if (!count) { if (!opts.auto) console.log(opts.allRepos ? "No sessions found yet. Work with Claude Code, Codex or Cursor for a while, then run muninn learn." : "No sessions found for this repo. Try --all-repos."); return 0; }
 
   const writer = pickWriter();
   if (!opts.auto) console.log(writer ? `Redacted excerpts will go to your ${writer.name} client to write lessons.` : "No Claude Code or Codex client found, so only repeated instructions can become lessons.");
 
   if (!modelCached()) {
-    if (opts.auto) return;
+    if (opts.auto) return 0;
     if (process.stdin.isTTY) {
       const rl = createInterface({ input: process.stdin, output: process.stdout });
       const a = await rl.question(`muninn needs a one-time download of a local embedding model, ${MODEL_SIZE}, from ${MODEL_SOURCE}. It runs on this machine and spots instructions that mean the same thing. Download it (y/n)? `);
       rl.close();
-      if (!a.trim().toLowerCase().startsWith("y")) { console.log("Stopped. The model is needed to compare what you typed."); return; }
+      if (!a.trim().toLowerCase().startsWith("y")) { console.log("Stopped. The model is needed to compare what you typed."); return 0; }
     }
   }
   const embed = await loadEmbedder();
@@ -80,6 +80,8 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean }) {
   if (!opts.auto) {
     const unknown = scan.sessions.reduce((n, s) => n + s.unknown, 0);
     if (unknown) console.log(`${unknown} log record(s) had a structure muninn doesn't recognise, so a format may have changed.`);
-    await review(db, here);
+    if (!opts.noReview) await review(db, here);
   }
+  const waiting = await db.execute({ sql: `SELECT count(*) n FROM lessons WHERE status='proposed' ${here ? "AND repo_id=?" : ""}`, args: here ? [here] : [] });
+  return Number(waiting.rows[0]?.n ?? 0);
 }

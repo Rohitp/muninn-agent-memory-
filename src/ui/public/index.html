@@ -105,10 +105,11 @@ async function loadRepos() {
   sel.value = repo;
 }
 
-function routeOf(l) { return l.always_on ? "always" : l.triggers?.length ? "keyword" : (l.status === "proposed" && l.kind === "note" ? "keyword" : (l.status === "proposed" ? "always" : "none")); }
+// A waiting lesson starts on muninn's suggestion, so Keep is usually one click. A kept one shows how it's delivered now.
+function routeOf(l) { return l.status === "proposed" ? l.defaults.route : l.always_on ? "always" : l.triggers?.length ? "keyword" : "none"; }
 function routeControls(l) {
   const r = routeOf(l);
-  const kws = (l.triggers?.length ? l.triggers : l.suggested || []).join(", ");
+  const kws = (l.status === "proposed" ? (l.defaults.keywords.length ? l.defaults.keywords : l.suggested || []) : l.triggers?.length ? l.triggers : l.suggested || []).join(", ");
   return `<div class="row">
     <label>Deliver</label>
     <select data-f="route">
@@ -117,7 +118,7 @@ function routeControls(l) {
       <option value="none" ${r === "none" ? "selected" : ""}>Search only</option>
     </select>
     <input class="kw" type="text" data-f="keywords" placeholder="keywords, comma-separated" value="${esc(kws)}" ${r === "keyword" ? "" : "hidden"}>
-    ${l.status === "proposed" && l.scope !== "global" ? `<label><input type="checkbox" data-f="global" ${l.suggested_scope === "global" || l.preference ? "checked" : ""}> Any repo</label>` : ""}
+    ${l.status === "proposed" && l.scope !== "global" ? `<label><input type="checkbox" data-f="global" ${l.defaults.global ? "checked" : ""}> Any repo</label>` : ""}
   </div>
   ${l.preference ? `<div class="agent" data-prefnote>This is about how you like to work, so always-on fits best. A keyword misses the many ways you'd say it.</div>` : ""}`;
 }

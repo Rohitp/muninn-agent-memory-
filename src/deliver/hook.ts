@@ -36,8 +36,9 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   const event = input.hook_event_name ?? "";
   const session = input.session_id ?? null;
   const ts = new Date().toISOString();
-  const log = (outcome: string, l?: { id: string }, t = 0) =>
-    db.execute({ sql: "INSERT INTO deliveries (id,ts,tool,session,event,source,lesson_id,outcome,tokens) VALUES (?,?,?,?,?,?,?,?,?)", args: [randomUUID(), ts, client, session, event, input.source ?? null, l?.id ?? null, outcome, t] });
+  // trigger_id holds the keyword that matched, so the panel can say why a lesson was sent.
+  const log = (outcome: string, l?: { id: string; pattern?: string | null }, t = 0) =>
+    db.execute({ sql: "INSERT INTO deliveries (id,ts,tool,session,event,source,lesson_id,outcome,tokens,trigger_id) VALUES (?,?,?,?,?,?,?,?,?,?)", args: [randomUUID(), ts, client, session, event, input.source ?? null, l?.id ?? null, outcome, t, l?.pattern ?? null] });
   if (fromCursor(input)) { await log("unsupported_client"); return null; }
   if (isPaused()) { await log("paused"); return null; }
   const repo = input.cwd ? repoIdentity(input.cwd) : null;
@@ -66,7 +67,11 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   }
   for (const r of out) await log("sent", r, tokens(r.text));
   let waiting = 0;
-  if (event === "SessionStart" && input.source === "startup") waiting = Number((await db.execute({ sql: "SELECT count(*) n FROM lessons l WHERE l.status='proposed' AND (l.repo_id IS ? OR l.repo_id=?)", args: [repo, repo] })).rows[0]?.n ?? 0);
+  // The "lessons waiting" reminder goes to the agent at most once a day per repo, so it doesn't nag.
+  const nudgeKey = `nudged:${repo ?? ""}`;
+  const lastNudge = String((await db.execute({ sql: "SELECT value FROM meta WHERE key=?", args: [nudgeKey] })).rows[0]?.value ?? "");
+  const nudgeDue = !lastNudge || Date.now() - Date.parse(lastNudge) > 20 * 3_600_000;
+  if (event === "SessionStart" && input.source === "startup" && nudgeDue) waiting = Number((await db.execute({ sql: "SELECT count(*) n FROM lessons l WHERE l.status='proposed' AND (l.repo_id IS ? OR l.repo_id=?)", args: [repo, repo] })).rows[0]?.n ?? 0);
   // Where the last session on this branch left off, at the start of a fresh session only.
   let handoff: string | null = null;
   if (event === "SessionStart" && (input.source === "startup" || input.source === "clear") && repo && input.cwd) {
@@ -81,6 +86,7 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   const lines: string[] = [];
   if (handoff) lines.push(handoff, "");
   if (out.length) lines.push("Lessons the engineer kept in muninn, from earlier sessions:", ...out.map((r) => `- ${r.text}`));
+  if (waiting) await db.execute({ sql: "INSERT OR REPLACE INTO meta (key,value) VALUES (?,?)", args: [nudgeKey, ts] });
   if (waiting) lines.push(`muninn has ${waiting} new lesson(s) waiting. If it fits the conversation, mention that the engineer can review them with "muninn review".`);
   return lines.join("\n");
 }

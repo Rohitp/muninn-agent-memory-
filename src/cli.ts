@@ -15,7 +15,9 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn retire <id>
   muninn ask "question"         Search kept lessons and notes in every repo
   muninn handoff [--list]       Where the last session on this branch left off
+  muninn setup                  Set everything up and take a first look (start here)
   muninn report [--all]         Did kept lessons work: delivered, and seen again since
+  muninn keep <id> | reject <id>  Keep a waiting lesson with muninn's suggested delivery, or reject it
   muninn ui                     Open muninn in your browser
   muninn cursor on|off|sync     Write kept lessons as Cursor rules in this repo
   muninn keywords               Keywords in use, and how many lessons each has
@@ -26,7 +28,7 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn export [file]
   muninn purge --yes`;
 
-const CHANGES = new Set(["learn", "review", "add", "edit", "retire"]);
+const CHANGES = new Set(["learn", "review", "add", "edit", "retire", "keep", "reject"]);
 
 async function cursorCmd(sub: string) {
   const [{ openDb }, { repoIdentity }, c] = await Promise.all([import("./store/db.js"), import("./repo/identity.js"), import("./deliver/cursor.js")]);
@@ -71,7 +73,15 @@ async function main() {
     case "cursor": return cursorCmd(args[0] ?? "");
     case "handoff": return (await import("./commands/handoff.js")).handoff(args);
     case "report": return (await import("./commands/report.js")).report(args);
-    case "ui": return (await import("./ui/server.js")).serve(args);
+    case "setup": return (await import("./commands/setup.js")).setup(args);
+    case "panel": return (await import("./commands/panel.js")).panel(args);
+    case "keep": return (await import("./commands/panel.js")).keepWithDefaults(args);
+    case "reject": return (await import("./commands/panel.js")).reject(args);
+    case "ui": {
+      if (!args.includes("--detach")) return (await import("./ui/server.js")).serve(args);
+      console.log(await (await import("./ui/detach.js")).uiDetached({ open: !args.includes("--no-open") }));
+      return;
+    }
     case "status": return (await import("./commands/status.js")).status();
     case "keywords": return (await import("./commands/status.js")).keywords();
     case "pause": writeFileSync(join(ensureHome(), "paused"), ""); console.log("Paused."); return;

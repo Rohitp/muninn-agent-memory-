@@ -45,10 +45,11 @@ export function installFor(client: Client, events = Object.keys(EVENTS[client]))
     added.push(ev);
   }
   if (!added.length) return [];
-  if (existsSync(file)) copyFileSync(file, `${file}.muninn-backup`);
+  const had = existsSync(file);
+  if (had) copyFileSync(file, `${file}.muninn-backup`);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
-  console.log(`Added muninn hooks to ${file} for ${added.join(", ")}. The previous file is saved next to it as .muninn-backup.`);
+  console.log(`Added muninn hooks to ${file} for ${added.join(", ")}.${had ? " The previous file is saved next to it as .muninn-backup." : ""}`);
   return added;
 }
 /** Installs for Claude Code, and for Codex when it is present. */

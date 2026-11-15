@@ -12,6 +12,17 @@ Draft for discussion, 2026-11-10. Nothing here is built yet unless it says so.
 - **Proof for the page:** 2 of the first 4 lessons were news to the author. A real handoff. About $0.003 per handoff. Later, a before-and-after from `muninn report`.
 - **Different from Memryzed and similar tools:** they store a lot and wait for the agent to ask. muninn stores little, delivers it without being asked, and checks it worked.
 
+## User journey (2026-11-15)
+
+| Stage | What it should feel like | Built |
+| --- | --- | --- |
+| Install | One command says what muninn reads, sends and changes, then sets up Claude Code, Codex and Cursor | `muninn setup` (publishing to npm still to do) |
+| First run | A page of what you've taught your agents, each with sensible defaults, kept in one click | `setup` opens the review page; shared defaults |
+| Daily work | Invisible while working, but you can see it helped | Claude Code panel and status line |
+| Keeping it current | A minute now and then, duplicates already merged | Folding, defaults, panel Keep and Reject, a once-a-day note |
+| When something's wrong | See what was sent and why, retire in one click | Panel "why" and retire |
+| Did it work | A weekly line | Panel "This week", `muninn report` |
+
 ## The promise
 
 **You never explain the same thing twice, to any agent.**

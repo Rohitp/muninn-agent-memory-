@@ -45,18 +45,35 @@ export async function similar(db: Client, l: Lesson): Promise<{ lesson: Lesson; 
 export const isPreference = (l: { text: string; suggested_scope?: string | null }) =>
   /\b(explain|explanation|answers?|step by step|plain (words|language|english)|jargon|concise|brief|overwhelm|tone|wording|i dont understand|the user|you've asked)\b/i.test(l.text);
 
+export type Defaults = { route: "always" | "keyword" | "none"; keywords: string[]; global: boolean };
+/**
+ * What muninn would pick, so most reviews are one keypress or one click:
+ * how-you-work lessons always-on everywhere; notes and command fixes on their keywords; the rest always-on here.
+ */
+export function defaultRoute(l: Pick<Lesson, "text" | "kind" | "signal" | "suggested_keywords" | "suggested_scope">): Defaults {
+  if (isPreference(l)) return { route: "always", keywords: [], global: true };
+  const suggested: string[] = l.suggested_keywords ? JSON.parse(l.suggested_keywords) : [];
+  const guess = suggestKeyword(l.text);
+  const global = l.suggested_scope === "global";
+  if (l.kind === "note") return { route: "keyword", keywords: suggested.length ? suggested : guess ? [guess] : [], global: false };
+  if ((l.signal === "failure_then_fix" || l.signal === "mistake_returned") && guess) return { route: "keyword", keywords: [guess], global };
+  return { route: "always", keywords: [], global };
+}
+
 async function chooseRoute(db: Client, rl: Interface, l: Lesson, explained: { done: boolean }) {
   if (!explained.done) { console.log(HOW); explained.done = true; }
   const pref = isPreference(l);
+  const def = defaultRoute(l);
   if (pref) console.log("  This is about how you like to work, so always-on fits best. A keyword misses the many ways you'd say it.");
-  let route = (await rl.question(`  Deliver: (a)lways-on, (k)eyword, or (n)either?${pref ? " [a]" : ""} `)).trim().toLowerCase();
-  if (!route && pref) route = "a";
+  const letter = def.route === "always" ? "a" : def.route === "keyword" ? "k" : "n";
+  let route = (await rl.question(`  Deliver: (a)lways-on, (k)eyword, or (n)either? [${letter}] `)).trim().toLowerCase();
+  if (!route) route = letter;
   if (route.startsWith("k") && pref && !(await rl.question("  A keyword will often miss this one. Use a keyword anyway (y/n)? ")).trim().toLowerCase().startsWith("y")) route = "a";
   if (route.startsWith("a")) return { alwaysOn: true, triggers: [] as string[] };
   if (!route.startsWith("k")) { console.log("  Kept. It's searchable, but won't be sent automatically."); return { alwaysOn: false, triggers: [] as string[] }; }
   const used = await keywordsInUse(db, l.repo_id);
   if (used.length) console.log(`  Keywords in use: ${used.map((u) => `${u.pattern} (${u.lessons})`).join(", ")}`);
-  const suggestion = (l.suggested_keywords ? (JSON.parse(l.suggested_keywords) as string[]).join(", ") : "") || suggestKeyword(l.text);
+  const suggestion = def.keywords.join(", ") || suggestKeyword(l.text);
   const typed = (await rl.question(`  Keyword(s), comma-separated${suggestion ? ` [${suggestion}]` : ""}: `)).trim();
   const keywords = (typed || suggestion).toLowerCase().split(",").map((k) => k.trim()).filter(Boolean);
   if (!keywords.length) return { alwaysOn: false, triggers: [] as string[] };
@@ -105,7 +122,7 @@ export async function review(db: Client, repo: string | null, lessons?: Lesson[]
     } else if (!a.startsWith("k")) continue;
     const news = (await rl.question("  Was this news to you (y/n)? ")).trim().toLowerCase().startsWith("y");
     let global: boolean | undefined;
-    if ((l.suggested_scope === "global" || isPreference(l)) && l.scope !== "global") global = !(await rl.question("  This looks like it applies to any repo. Make it global (Y/n)? ")).trim().toLowerCase().startsWith("n");
+    if (defaultRoute(l).global && l.scope !== "global") global = !(await rl.question("  This looks like it applies to any repo. Make it global (Y/n)? ")).trim().toLowerCase().startsWith("n");
     const route = await chooseRoute(db, rl, l, explained);
     await decide(db, l.id, { status: "live", ...(text ? { text } : {}), news, ...(global !== undefined ? { global } : {}), alwaysOn: route.alwaysOn, triggers: route.triggers });
   }

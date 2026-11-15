@@ -268,3 +268,34 @@ describe("preference lessons", () => {
     expect(l!.verdict).toContain('keyword "simplify" didn\'t match');
   });
 });
+
+describe("panel and defaults", () => {
+  let cwd = "";
+  beforeEach(() => { useHome(); cwd = join(tmp(), "repo"); mkdirSync(cwd); execFileSync("git", ["init", "-q", "-b", "main", cwd]); });
+  it("picks defaults: how-you-work always-on everywhere, notes and command fixes on keywords", async () => {
+    const { defaultRoute } = await import("../src/commands/review.js");
+    expect(defaultRoute({ text: "Go step by step and keep answers short.", kind: "rule", signal: "repeat", suggested_keywords: null, suggested_scope: null })).toEqual({ route: "always", keywords: [], global: true });
+    expect(defaultRoute({ text: "The benchmark uses the v4 scorer.", kind: "note", signal: "explained", suggested_keywords: '["benchmark"]', suggested_scope: "repo" })).toMatchObject({ route: "keyword", keywords: ["benchmark"] });
+    expect(defaultRoute({ text: "Run Python through `poetry run python`.", kind: "rule", signal: "failure_then_fix", suggested_keywords: null, suggested_scope: "repo" })).toMatchObject({ route: "keyword", keywords: ["poetry"] });
+  });
+  it("says why each lesson was sent this session", async () => {
+    const { panelData, whySent } = await import("../src/commands/panel.js");
+    const db = await openDb(); const repo = repoIdentity(cwd)!; await ensureRepo(db, repo, cwd);
+    const a = await createLesson(db, { repo_id: repo, text: "Quote === in zsh.", source: "manual", status: "live", by: "person" });
+    await decide(db, a, { alwaysOn: true });
+    const b = await createLesson(db, { repo_id: repo, text: "Use poetry run python.", source: "manual", status: "live", by: "person" });
+    await decide(db, b, { triggers: ["python"] });
+    await deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "startup", session_id: "p1", cwd });
+    await deliver(db, "claude-code", { hook_event_name: "UserPromptSubmit", prompt: "run the python script", session_id: "p1", cwd });
+    const d = await panelData(db, "p1", cwd);
+    expect(d.sent.map((s) => s.why).sort()).toEqual(["always-on, at session start", 'your prompt said "python"']);
+    expect(d.branch).toBe("main");
+    expect(whySent("PostToolUseFailure", null, "python")).toBe('a failed command matched "python"');
+  });
+  it("reminds the agent about waiting lessons at most once a day", async () => {
+    const db = await openDb(); const repo = repoIdentity(cwd)!; await ensureRepo(db, repo, cwd);
+    await createLesson(db, { repo_id: repo, text: "Something waiting.", source: "inferred", status: "proposed", by: "learn" });
+    expect(await deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "startup", session_id: "n1", cwd })).toContain("waiting");
+    expect(await deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "startup", session_id: "n2", cwd })).toBeNull();
+  });
+});

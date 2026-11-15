@@ -51,5 +51,9 @@ Status legend: ⬜ todo · 🟦 in progress · ✅ done · ⛔ blocked · ⏭️
 - ✅ Plain lines and questions: each lesson gets a plain-English line for the engineer and 2-3 questions it answers, written in a separate pass during learn (and after an edit in the UI). Search matches questions to questions. Cards say where each item came from
 - ✅ Answer button in the UI: one writer call over the top kept items and recent handoffs, with sources, and "doesn't know" when they don't cover it
 - ⬜ More writer providers: an OpenRouter or other API key, and a local model through Ollama for the plain lines and answers. Kept to one place in `writer.ts`
+- ✅ `muninn setup`: one command from nothing to the review page
+- ✅ Review defaults shared by terminal, UI and panel; `muninn keep` and `reject`; daily limit on the "waiting" note
+- ✅ Claude Code panel mod (`mods/muninn-panel`): sent this session and why, handoff, waiting, this week
+- ⬜ Publish: npm package so `npx muninn setup` works, and the panel as an installable plugin
 - ⬜ Author tests all of the above from real use
 - ⬜ Items 32-37 not covered above

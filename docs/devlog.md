@@ -290,3 +290,16 @@ Entry template:
 - Review spots these lessons (`isPreference`), recommends always-on and global, defaults to always-on on Enter, and asks again if a keyword is chosen. The UI shows the same advice and an "Any repo" checkbox.
 - The report finds sessions where a kept lesson's problem came back but the lesson wasn't sent, in tools where muninn's hook runs. It names the date and the keyword that didn't match, and the UI offers "Make it always-on".
 - On the real database, with the engineer's approval: combined `4d68f6e6` and `d949c23e` into `2c223396`, rewrote it to include "go step by step" and "don't overwhelm with detail", and made it always-on and global. A simulated session start in chargebee-app now receives it.
+
+## 2026-11-15 — First run, review defaults and a Claude Code panel
+
+**Why:** the journey review found the biggest gaps at install and first run (several commands, a long terminal quiz), and that muninn's value was invisible day to day.
+
+**Did:**
+- `muninn setup`: says what muninn reads, sends and changes, then installs the hooks, offers Cursor rules for every repo Cursor was used in, scans every repo, and opens the review page in the background. `muninn ui --detach` reuses a running page.
+- One set of defaults (`defaultRoute`) for the terminal review, the UI and the panel. How-you-work lessons: always-on, any repo. Notes: their keywords. Command fixes: a keyword from the command. Everything else: always-on in its repo. Enter or Keep accepts them. `muninn keep <id>` and `muninn reject <id>` do the same from anywhere.
+- The "lessons waiting" note to the agent goes out at most once a day per repo.
+- Deliveries record the keyword that matched (in `trigger_id`), so muninn can say why it sent something.
+- `muninn panel --session --cwd` gives the panel's data as JSON. The Claude Code mod in `mods/muninn-panel` draws it beside the chat: lessons sent this session and why, with retire; the handoff; the top 3 waiting with Keep and Reject; this week's numbers and muninn's own cost; "Open muninn". It refreshes when a turn ends and every 30 seconds, and puts "muninn: N sent" in the status line.
+
+**Open:** the mod needs `muninn` on the PATH Claude Code starts with. It isn't published yet. For now it loads as a mod in this session, or with `claude --plugin-dir mods/muninn-panel`.
