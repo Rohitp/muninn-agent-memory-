@@ -2,6 +2,16 @@
 
 Draft for discussion, 2026-11-10. Nothing here is built yet unless it says so.
 
+## Positioning (2026-11-15)
+
+**Lead line:** Supercharge Claude Code: it learns your repo, your habits and your fixes, and stops repeating the same mistakes.
+
+- **An add-on, not a new tool.** It makes the agent people already pay for better where they already work.
+- **Claude Code first.** Codex is named once its hooks and writer are checked live. Cursor comes second, since it gets rules files rather than moments.
+- **Promise only what the report can show.** "Stops repeating the same mistakes", not "never". The report is the proof.
+- **Proof for the page:** 2 of the first 4 lessons were news to the author. A real handoff. About $0.003 per handoff. Later, a before-and-after from `muninn report`.
+- **Different from Memryzed and similar tools:** they store a lot and wait for the agent to ask. muninn stores little, delivers it without being asked, and checks it worked.
+
 ## The promise
 
 **You never explain the same thing twice, to any agent.**
