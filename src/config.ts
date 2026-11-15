@@ -20,6 +20,9 @@ export const DEFAULTS = {
   tokensPerDelivery: 300,
   tokensPerSession: 1000,
   hookLimitMs: 500,
+  notesPerRun: 30,
+  handoffDays: 7,
+  handoffsPerRun: 3,
 };
 export type Settings = typeof DEFAULTS;
 export function settings(): Settings {
@@ -31,6 +34,7 @@ export const logRoots = () => {
   return {
     claude: r ? join(r, "claude", "projects") : join(homedir(), ".claude", "projects"),
     codex: r ? join(r, "codex", "sessions") : join(homedir(), ".codex", "sessions"),
+    cursor: r ? join(r, "cursor", "projects") : join(homedir(), ".cursor", "projects"),
   };
 };
 export const isPaused = () => existsSync(join(home(), "paused"));

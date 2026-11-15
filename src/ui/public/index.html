@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>muninn</title>
+<style>
+:root {
+  --bg: #f7f6f3; --panel: #ffffff; --ink: #1d1c1a; --muted: #6b6862; --line: #e4e1da;
+  --accent: #2f5d50; --accent-ink: #ffffff; --warn: #9a5b13; --bad: #9b2c2c; --chip: #efede7;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #161615; --panel: #1f1f1d; --ink: #ecebe7; --muted: #a09d96; --line: #33322f;
+    --accent: #7fb8a6; --accent-ink: #10201b; --warn: #e0a85c; --bad: #e08a8a; --chip: #2a2a27; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); }
+.bar { max-width: 920px; margin: 0 auto; padding: 14px 16px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.brand { font-weight: 650; letter-spacing: .2px; margin-right: auto; }
+select, input, textarea, button { font: inherit; color: inherit; }
+select, input[type=text], input[type=search], textarea { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+textarea { width: 100%; min-height: 70px; resize: vertical; line-height: 1.45; }
+nav { max-width: 920px; margin: 0 auto; padding: 0 16px; display: flex; gap: 4px; overflow-x: auto; }
+nav button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 10px 9px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+nav button[aria-selected=true] { color: var(--ink); border-color: var(--accent); }
+main { max-width: 920px; margin: 0 auto; padding: 18px 16px 60px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+.meta { color: var(--muted); font-size: 13px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.chip { background: var(--chip); border-radius: 999px; padding: 1px 9px; font-size: 12px; }
+.chip.note { background: var(--accent); color: var(--accent-ink); }
+.quotes { margin: 10px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
+.quotes li { padding: 3px 0; border-top: 1px dashed var(--line); overflow-wrap: anywhere; }
+.quotes b { font-weight: 600; color: var(--ink); }
+.similar { margin-top: 10px; padding: 10px 12px; border-left: 3px solid var(--warn); background: var(--chip); border-radius: 6px; font-size: 14px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+.row label { font-size: 13px; color: var(--muted); }
+button.act { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.danger { color: var(--bad); }
+button:disabled { opacity: .5; cursor: default; }
+.kw { flex: 1 1 180px; min-width: 140px; }
+.empty { color: var(--muted); padding: 40px 0; text-align: center; }
+.verdict { margin-top: 6px; }
+.verdict.ok { color: var(--accent); }
+.verdict.warn { color: var(--warn); }
+pre.handoff { white-space: pre-wrap; font: 14px/1.5 var(--mono); margin: 0; overflow-wrap: anywhere; }
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
+.help { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+@media (max-width: 560px) { .row { flex-direction: column; align-items: stretch; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand">muninn</div>
+    <select id="repo" aria-label="Repo"></select>
+  </div>
+  <nav role="tablist">
+    <button role="tab" data-tab="waiting" aria-selected="true">Waiting</button>
+    <button role="tab" data-tab="kept">Kept</button>
+    <button role="tab" data-tab="handoffs">Handoffs</button>
+    <button role="tab" data-tab="report">Did it work</button>
+    <button role="tab" data-tab="search">Search</button>
+  </nav>
+</header>
+<main id="main"></main>
+<div class="toast" id="toast"></div>
+<script>
+const TOKEN = "__TOKEN__";
+const HERE = __REPO__;
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const TOOL = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor" };
+const SIGNAL = { repeat: "you repeated this", correction: "you corrected this", failure_then_fix: "failed, then fixed", mistake_returned: "mistake came back", explained: "you explained this" };
+let repo = HERE || "";
+let tab = "waiting";
+
+async function api(path, body) {
+  const r = await fetch(path, { method: body ? "POST" : "GET", headers: { "x-muninn-token": TOKEN, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || "Request failed");
+  return j;
+}
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2200); }
+const q = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString();
+
+async function loadRepos() {
+  const repos = await api("/api/repos");
+  const sel = $("#repo");
+  sel.innerHTML = '<option value="">All repos</option>' + repos.map((r) => `<option value="${esc(r.id)}">${esc(r.id)} (${r.waiting} waiting, ${r.live} kept)</option>`).join("");
+  if (repo && !repos.some((r) => r.id === repo)) repo = "";
+  sel.value = repo;
+}
+
+function routeOf(l) { return l.always_on ? "always" : l.triggers?.length ? "keyword" : (l.status === "proposed" && l.kind === "note" ? "keyword" : (l.status === "proposed" ? "always" : "none")); }
+function routeControls(l) {
+  const r = routeOf(l);
+  const kws = (l.triggers?.length ? l.triggers : l.suggested || []).join(", ");
+  return `<div class="row">
+    <label>Deliver</label>
+    <select data-f="route">
+      <option value="always" ${r === "always" ? "selected" : ""}>Always-on: every session in this repo</option>
+      <option value="keyword" ${r === "keyword" ? "selected" : ""}>Keyword: when a word shows up</option>
+      <option value="none" ${r === "none" ? "selected" : ""}>Search only</option>
+    </select>
+    <input class="kw" type="text" data-f="keywords" placeholder="keywords, comma-separated" value="${esc(kws)}" ${r === "keyword" ? "" : "hidden"}>
+  </div>`;
+}
+function card(l) {
+  const ev = (l.evidence || []).slice(0, 4).map((e) => `<li><b>${esc(TOOL[e.tool] || e.tool)}</b> · ${esc(String(e.seen_at).slice(0, 10))} · ${esc(e.quote)}</li>`).join("");
+  const sim = l.similar ? `<div class="similar" data-other="${esc(l.similar.id)}">Similar to a ${esc(l.similar.status)} lesson: “${esc(l.similar.text)}” <div class="row"><button class="act" data-a="combine">Combine: keep this, retire that</button></div></div>` : "";
+  const proposed = l.status === "proposed";
+  return `<div class="card" data-id="${esc(l.id)}">
+    <div class="meta">
+      ${l.kind === "note" ? '<span class="chip note">note</span>' : '<span class="chip">rule</span>'}
+      <span>${esc(SIGNAL[l.signal] || l.source)}</span>
+      <span>· ${l.sessions} session(s)</span>
+      ${l.scope === "global" ? '<span class="chip">global</span>' : ""}
+      ${!repo && l.repo_id ? `<span>· ${esc(l.repo_id)}</span>` : ""}
+      <span style="margin-left:auto">${esc(l.id.slice(0, 8))}</span>
+    </div>
+    <textarea data-f="text" aria-label="Lesson text">${esc(l.text)}</textarea>
+    ${ev ? `<ul class="quotes">${ev}</ul>` : ""}
+    ${sim}
+    ${routeControls(l)}
+    <div class="row">
+      ${proposed ? '<button class="act primary" data-a="keep">Keep</button><button class="act" data-a="later">Later</button><button class="act danger" data-a="reject">Reject</button>'
+                 : '<button class="act primary" data-a="save">Save</button><button class="act danger" data-a="retire">Retire</button>'}
+    </div>
+  </div>`;
+}
+
+async function showLessons(status) {
+  const main = $("#main");
+  main.innerHTML = '<p class="help">Loading…</p>';
+  const ls = await api("/api/lessons?" + q({ repo, status }));
+  const help = status === "proposed"
+    ? "Lessons muninn found in your sessions. Nothing reaches an agent until you keep it. Edit the text first if you like."
+    : "Lessons and notes your agents get. Change the text or how it's delivered, or retire it.";
+  main.innerHTML = `<p class="help">${help}</p>` + (ls.length ? ls.map(card).join("") : `<div class="empty">${status === "proposed" ? "Nothing waiting." : "Nothing kept yet."}</div>`);
+}
+
+async function act(el, a) {
+  const c = el.closest(".card"); const id = c.dataset.id;
+  if (a === "later") { c.remove(); return; }
+  const body = { id, action: a, text: $('[data-f=text]', c).value, route: $('[data-f=route]', c).value, keywords: $('[data-f=keywords]', c).value };
+  if (a === "keep" || a === "combine") {
+    if (body.route === "keyword" && !body.keywords.trim()) { toast("Add a keyword, or pick another delivery."); return; }
+  }
+  if (a === "combine") { body.other = c.querySelector(".similar")?.dataset.other; if (!body.other) return; }
+  el.disabled = true;
+  try {
+    await api("/api/decide", body);
+    toast({ keep: "Kept.", reject: "Rejected. muninn won't propose it again.", retire: "Retired.", save: "Saved.", combine: "Combined and kept." }[a]);
+    if (a !== "save") c.remove();
+    loadRepos();
+  } catch (e) { toast(e.message); el.disabled = false; }
+}
+
+async function showHandoffs() {
+  const hs = await api("/api/handoffs?" + q({ repo }));
+  $("#main").innerHTML = '<p class="help">Written when a session ends. The next session on the same branch, in any tool, starts with the newest one.</p>' +
+    (hs.length ? hs.map((h) => `<div class="card"><div class="meta"><span class="chip">${esc(h.branch)}</span><span>${esc(TOOL[h.tool] || h.tool)}</span><span>· ${esc(String(h.created_at).slice(0, 16).replace("T", " "))}</span>${!repo ? `<span>· ${esc(h.repo_id)}</span>` : ""}</div><pre class="handoff">${esc(h.text)}</pre></div>`).join("")
+               : '<div class="empty">No handoffs yet.</div>');
+}
+
+async function showReport() {
+  const r = await api("/api/report?" + q({ repo }));
+  $("#main").innerHTML = `<p class="help">For each kept lesson: how often it was sent, and whether the same moment came back after you kept it. Updated when muninn learn runs (last: ${esc(r.lastLearn ? r.lastLearn.slice(0, 16).replace("T", " ") : "never")}). Handoffs: ${r.handoffs.written} written, ${r.handoffs.delivered} delivered.</p>` +
+    (r.lessons.length ? r.lessons.map((l) => `<div class="card"><div class="meta">${l.kind === "note" ? '<span class="chip note">note</span>' : '<span class="chip">rule</span>'}<span>kept ${esc(l.keptAt.slice(0, 10))}</span><span>· ${esc(l.route)}</span><span>· sent ${l.sent}× in ${l.sentSessions} session(s)</span><span>· seen ${l.before}× before</span></div><div>${esc(l.text)}</div><div class="verdict ${l.after ? "warn" : "ok"}">${esc(l.verdict)}</div></div>`).join("")
+                     : '<div class="empty">No kept lessons yet.</div>');
+}
+
+function showSearch() {
+  $("#main").innerHTML = '<p class="help">Searches kept lessons and notes in every repo, by word and by meaning. Agents can do the same with <code>muninn ask</code>.</p><input type="search" id="ask" placeholder="How do the contract benchmarks run?" style="width:100%"><div id="hits" style="margin-top:14px"></div>';
+  const input = $("#ask"); input.focus();
+  let h; input.addEventListener("input", () => { clearTimeout(h); h = setTimeout(async () => {
+    const v = input.value.trim(); if (!v) { $("#hits").innerHTML = ""; return; }
+    const hits = await api("/api/ask?" + q({ q: v, repo }));
+    $("#hits").innerHTML = hits.length ? hits.map((x) => `<div class="card"><div class="meta">${x.kind === "note" ? '<span class="chip note">note</span>' : '<span class="chip">rule</span>'}<span>${esc(x.where)}</span></div>${esc(x.text)}</div>`).join("") : '<div class="empty">No matches.</div>';
+  }, 250); });
+}
+
+async function render() {
+  document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+  try {
+    if (tab === "waiting") await showLessons("proposed");
+    else if (tab === "kept") await showLessons("live");
+    else if (tab === "handoffs") await showHandoffs();
+    else if (tab === "report") await showReport();
+    else showSearch();
+  } catch (e) { $("#main").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-tab]"); if (t) { tab = t.dataset.tab; render(); return; }
+  const a = e.target.closest("[data-a]"); if (a) act(a, a.dataset.a);
+});
+document.addEventListener("change", (e) => {
+  if (e.target.id === "repo") { repo = e.target.value; render(); }
+  if (e.target.dataset.f === "route") { const kw = $('[data-f=keywords]', e.target.closest(".card")); kw.hidden = e.target.value !== "keyword"; if (!kw.hidden) kw.focus(); }
+});
+loadRepos().then(render);
+</script>
+</body>
+</html>

@@ -5,7 +5,7 @@ import { home, isPaused } from "../config.js";
 import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
 import { keywordsInUse } from "../store/lessons.js";
-import { installed } from "./install.js";
+import { codexPresent, installed } from "./install.js";
 
 export async function status() {
   const db = await openDb();
@@ -19,6 +19,14 @@ export async function status() {
   if (lastLearn && Date.now() - Date.parse(lastLearn) > 21 * 86_400_000) console.log("  That's over 3 weeks ago. Claude Code deletes logs after 30 days by default.");
   const hooks = installed();
   console.log(`Claude Code hooks: ${hooks.length ? hooks.join(", ") : "not installed. Run muninn install"}${isPaused() ? " (paused)" : ""}`);
+  if (codexPresent()) {
+    const ch = installed("codex");
+    console.log(`Codex hooks: ${ch.length ? `${ch.join(", ")}. Codex runs them only after you trust them in /hooks.` : "not installed. Run muninn install"}`);
+    const shape = await meta("codex_tool_response_shape");
+    if (shape) console.log(`Codex command results look like ${shape}. muninn reads failures from an exit code in there.`);
+  }
+  const ho = (await db.execute({ sql: "SELECT count(*) n, max(created_at) last FROM handoffs WHERE repo_id IS ?", args: [repo] })).rows[0];
+  if (ho && Number(ho.n)) console.log(`Handoffs here: ${ho.n}, newest ${String(ho.last).slice(0, 16).replace("T", " ")}. See "muninn handoff".`);
   for (const r of (await db.execute("SELECT tool, max(ts) last, sum(outcome='sent') sent FROM deliveries GROUP BY tool")).rows) console.log(`Last hook run from ${r.tool}: ${r.last}. Lessons sent so far: ${r.sent}`);
   const kw = await keywordsInUse(db, repo);
   if (kw.length) console.log(`Keywords: ${kw.map((k) => `${k.pattern} (${k.lessons})`).join(", ")}`);

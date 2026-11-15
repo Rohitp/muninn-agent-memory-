@@ -5,7 +5,7 @@ import { releaseLock, scanDue, stamp, takeLock } from "../src/commands/auto.js";
 import { install, installLearnHook, installed, removeLearnHook } from "../src/commands/install.js";
 import { tmp, useHome, write } from "./helpers.js";
 
-beforeEach(() => { const h = useHome(); process.env.MUNINN_LOG_ROOT = tmp(); delete process.env.MUNINN_INTERNAL; process.env.MUNINN_CLAUDE_SETTINGS = join(h, "settings.json"); });
+beforeEach(() => { useHome(); process.env.MUNINN_LOG_ROOT = tmp(); delete process.env.MUNINN_INTERNAL; });
 const H = 3_600_000;
 describe("automatic scans", () => {
   it("runs first, waits a day, and also runs after 5 new sessions", () => {
@@ -65,7 +65,13 @@ describe("install", () => {
     const c = JSON.parse(readFileSync(f(), "utf8"));
     expect(installed()).toEqual(["SessionStart", "UserPromptSubmit", "PostToolUseFailure", "SubagentStart", "SessionEnd"]);
     expect(c.hooks.PostToolUseFailure).toEqual([expect.objectContaining({ matcher: "Bash" })]);
+    const codex = JSON.parse(readFileSync(process.env.MUNINN_CODEX_HOOKS!, "utf8"));
+    expect(installed("codex")).toEqual(["SessionStart", "UserPromptSubmit", "PostToolUse", "SubagentStart", "SessionEnd"]);
+    expect(codex.hooks.PostToolUse).toEqual([expect.objectContaining({ matcher: "Bash" })]);
+    expect(codex.hooks.SessionEnd[0].hooks[0]).toMatchObject({ timeout: 3 });
+    expect(codex.hooks.SessionStart[0].hooks[0].command).toContain("hook --client codex");
     removeLearnHook();
     expect(installed()).toEqual([]);
+    expect(installed("codex")).toEqual([]);
   });
 });

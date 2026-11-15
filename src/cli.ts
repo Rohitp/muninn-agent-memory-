@@ -13,11 +13,14 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn show <id>
   muninn edit <id> [--text "..."] [--always-on|--not-always-on] [--trigger word] [--global|--repo-scope]
   muninn retire <id>
-  muninn ask "question"         Search kept lessons in every repo
+  muninn ask "question"         Search kept lessons and notes in every repo
+  muninn handoff [--list]       Where the last session on this branch left off
+  muninn report [--all]         Did kept lessons work: delivered, and seen again since
+  muninn ui                     Open muninn in your browser
   muninn cursor on|off|sync     Write kept lessons as Cursor rules in this repo
   muninn keywords               Keywords in use, and how many lessons each has
   muninn status                 What muninn has learned and sent, and any problems
-  muninn install [--learn]      Add Claude Code hooks (--learn: only automatic scans)
+  muninn install [--learn]      Add Claude Code and Codex hooks (--learn: only automatic scans)
   muninn uninstall              Remove muninn's hooks
   muninn pause | resume         Stop or restart delivery and automatic scans
   muninn export [file]
@@ -66,6 +69,9 @@ async function main() {
     case "uninstall": { (await import("./commands/install.js")).uninstall(); console.log("Removed muninn's hooks. Lessons are kept."); return; }
     case "ask": return (await import("./commands/ask.js")).ask(args);
     case "cursor": return cursorCmd(args[0] ?? "");
+    case "handoff": return (await import("./commands/handoff.js")).handoff(args);
+    case "report": return (await import("./commands/report.js")).report(args);
+    case "ui": return (await import("./ui/server.js")).serve(args);
     case "status": return (await import("./commands/status.js")).status();
     case "keywords": return (await import("./commands/status.js")).keywords();
     case "pause": writeFileSync(join(ensureHome(), "paused"), ""); console.log("Paused."); return;
@@ -82,10 +88,20 @@ async function runHook(client: string) {
   try {
     const input = JSON.parse(readFileSync(0, "utf8") || "{}");
     const event = String(input.hook_event_name ?? "");
-    if (event === "SessionEnd") { (await import("./commands/auto.js")).startAutoScan(); return; }
+    if (event === "SessionEnd") {
+      const auto = await import("./commands/auto.js");
+      if (typeof input.transcript_path === "string") auto.startHandoff(input.transcript_path, client);
+      auto.startAutoScan(); return;
+    }
     if (!existsSync(join(home(), "muninn.db"))) return;
     const [{ openDb }, { deliver, hookOutput }] = await Promise.all([import("./store/db.js"), import("./deliver/hook.js")]);
     const db = await openDb({ migrate: false, lockWaitMs: 100 });
+    // Codex doesn't document the shape of a Bash result. Keep the first one's shape (types only) to check failure detection.
+    if (client === "codex" && event === "PostToolUse") {
+      const r = input.tool_response;
+      const shape = r && typeof r === "object" ? Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v])) : typeof r;
+      await db.execute({ sql: "INSERT OR IGNORE INTO meta (key,value) VALUES ('codex_tool_response_shape',?)", args: [JSON.stringify(shape)] });
+    }
     const text = await deliver(db, client, input);
     if (text) process.stdout.write(hookOutput(event, text));
   } catch (e) { errors(e); }

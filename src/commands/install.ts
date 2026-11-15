@@ -3,53 +3,81 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const settingsFile = () => process.env.MUNINN_CLAUDE_SETTINGS ?? join(homedir(), ".claude", "settings.json");
+export type Client = "claude-code" | "codex";
+const files: Record<Client, () => string> = {
+  "claude-code": () => process.env.MUNINN_CLAUDE_SETTINGS ?? join(homedir(), ".claude", "settings.json"),
+  codex: () => process.env.MUNINN_CODEX_HOOKS ?? join(homedir(), ".codex", "hooks.json"),
+};
+const NAMES: Record<Client, string> = { "claude-code": "Claude Code", codex: "Codex" };
 const cli = () => { const p = join(dirname(fileURLToPath(import.meta.url)), "..", "cli.js"); return existsSync(p) ? realpathSync(p) : p; };
-const hookCommand = () => `"${realpathSync(process.execPath)}" "${cli()}" hook --client claude-code`;
+const hookCommand = (client: Client) => `"${realpathSync(process.execPath)}" "${cli()}" hook --client ${client}`;
 const isOurs = (h: any) => typeof h?.command === "string" && h.command.includes("hook --client") && h.command.includes("cli.js");
-export const DELIVERY_EVENTS: Record<string, string | undefined> = { SessionStart: undefined, UserPromptSubmit: undefined, PostToolUseFailure: "Bash", SubagentStart: undefined };
-export const ALL_EVENTS = [...Object.keys(DELIVERY_EVENTS), "SessionEnd"];
+
+/** Event and matcher per client. Codex has no failure event, so muninn checks each Bash result itself. */
+export const EVENTS: Record<Client, Record<string, string | undefined>> = {
+  "claude-code": { SessionStart: undefined, UserPromptSubmit: undefined, PostToolUseFailure: "Bash", SubagentStart: undefined, SessionEnd: undefined },
+  codex: { SessionStart: undefined, UserPromptSubmit: undefined, PostToolUse: "Bash", SubagentStart: undefined, SessionEnd: undefined },
+};
+export const DELIVERY_EVENTS = Object.fromEntries(Object.entries(EVENTS["claude-code"]).filter(([e]) => e !== "SessionEnd"));
+export const ALL_EVENTS = Object.keys(EVENTS["claude-code"]);
+/** Codex is set up only when it is installed here. */
+export const codexPresent = () => (process.env.MUNINN_CODEX_HOOKS ? true : !process.env.MUNINN_CLAUDE_SETTINGS && existsSync(join(homedir(), ".codex")));
 
 function read(file: string): any {
   if (!existsSync(file)) return {};
   try { return JSON.parse(readFileSync(file, "utf8")); }
   catch { throw new Error(`${file} isn't valid JSON, so muninn left it alone.`); }
 }
-/** Adds muninn's hooks for Claude Code, keeping every other hook. Codex follows once its hook file is checked live. */
-export function install(events = ALL_EVENTS) {
-  const file = settingsFile();
+/** Adds muninn's hooks to one client's hook file, keeping every other hook. */
+export function installFor(client: Client, events = Object.keys(EVENTS[client])): string[] {
+  const file = files[client]();
   const cfg = read(file);
   cfg.hooks ??= {};
   const added: string[] = [];
   for (const ev of events) {
+    if (!(ev in EVENTS[client])) continue;
     const list: any[] = (cfg.hooks[ev] ??= []);
     if (list.some((g) => g.hooks?.some(isOurs))) continue;
-    const matcher = DELIVERY_EVENTS[ev];
-    list.push({ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command: hookCommand(), timeout: 5 }] });
+    const matcher = EVENTS[client][ev];
+    // Codex allows SessionEnd hooks at most 3 seconds.
+    const timeout = ev === "SessionEnd" ? 3 : 5;
+    list.push({ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command: hookCommand(client), timeout }] });
     added.push(ev);
   }
-  if (!added.length) { console.log("muninn's hooks are already installed."); return; }
+  if (!added.length) return [];
   if (existsSync(file)) copyFileSync(file, `${file}.muninn-backup`);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
   console.log(`Added muninn hooks to ${file} for ${added.join(", ")}. The previous file is saved next to it as .muninn-backup.`);
-  if (added.includes("SessionEnd")) console.log('Automatic scans send redacted excerpts to your Claude Code or Codex. Turn them off with "autoLearn": false in muninn\'s config.json.');
-  console.log("Cursor also runs hooks from this file. muninn tries to spot Cursor and send nothing there, but that hasn't been tested.");
+  return added;
+}
+/** Installs for Claude Code, and for Codex when it is present. */
+export function install(events = ALL_EVENTS) {
+  const done = installFor("claude-code", events);
+  const codex = codexPresent() ? installFor("codex", events.map((e) => (e === "PostToolUseFailure" ? "PostToolUse" : e))) : [];
+  if (!done.length && !codex.length) { console.log("muninn's hooks are already installed."); return; }
+  if ([...done, ...codex].includes("SessionEnd")) console.log('When a session ends, muninn writes a short handoff and may scan for lessons. Both send redacted excerpts to your Claude Code or Codex. Turn scans off with "autoLearn": false in muninn\'s config.json.');
+  if (codex.length) console.log('Codex runs a new hook only after you trust it: open Codex, type /hooks, and trust the muninn entries. Until then Codex skips them.');
+  if (done.length) console.log("Cursor also runs hooks from Claude Code's file. muninn spots Cursor and sends nothing there, since Cursor gets lessons through rules files (muninn cursor on).");
 }
 export const installLearnHook = () => install(["SessionEnd"]);
 export function uninstall() {
-  const file = settingsFile();
-  const cfg = read(file);
-  if (!cfg.hooks) return;
-  for (const ev of Object.keys(cfg.hooks)) {
-    const kept = (cfg.hooks[ev] as any[]).map((g) => ({ ...g, hooks: (g.hooks ?? []).filter((h: any) => !isOurs(h)) })).filter((g) => g.hooks.length);
-    if (kept.length) cfg.hooks[ev] = kept; else delete cfg.hooks[ev];
+  for (const client of Object.keys(files) as Client[]) {
+    const file = files[client]();
+    if (!existsSync(file)) continue;
+    const cfg = read(file);
+    if (!cfg.hooks) continue;
+    for (const ev of Object.keys(cfg.hooks)) {
+      const kept = (cfg.hooks[ev] as any[]).map((g) => ({ ...g, hooks: (g.hooks ?? []).filter((h: any) => !isOurs(h)) })).filter((g) => g.hooks.length);
+      if (kept.length) cfg.hooks[ev] = kept; else delete cfg.hooks[ev];
+    }
+    if (!Object.keys(cfg.hooks).length) delete cfg.hooks;
+    writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
   }
-  if (!Object.keys(cfg.hooks).length) delete cfg.hooks;
-  writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
 }
 export const removeLearnHook = uninstall;
-export function installed(): string[] {
-  const cfg = read(settingsFile());
-  return ALL_EVENTS.filter((ev) => (cfg.hooks?.[ev] ?? []).some((g: any) => g.hooks?.some(isOurs)));
+export function installed(client: Client = "claude-code"): string[] {
+  const cfg = read(files[client]());
+  return Object.keys(EVENTS[client]).filter((ev) => (cfg.hooks?.[ev] ?? []).some((g: any) => g.hooks?.some(isOurs)));
 }
+export const clientName = (c: Client) => NAMES[c];

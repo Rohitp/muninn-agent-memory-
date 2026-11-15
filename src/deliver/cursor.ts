@@ -2,6 +2,8 @@ import type { Client } from "@libsql/client";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { settings } from "../config.js";
+import { currentBranch, handoffText, latestHandoff } from "../handoff/handoff.js";
 
 const PREFIX = "muninn";
 const EXCLUDE = ".cursor/rules/muninn*.mdc";
@@ -14,7 +16,7 @@ const yamlText = (s: string) => JSON.stringify(s.replace(/\s+/g, " "));
 export type RuleFile = { name: string; body: string };
 
 /** The rule files for one repo: one always-applied file, and one agent-requested file per keyword. */
-export async function cursorRules(db: Client, repo: string): Promise<RuleFile[]> {
+export async function cursorRules(db: Client, repo: string, root?: string): Promise<RuleFile[]> {
   const scope = "status='live' AND (scope='global' OR repo_id=?)";
   const always = (await db.execute({ sql: `SELECT text FROM lessons WHERE ${scope} AND always_on=1 ORDER BY updated_at`, args: [repo] })).rows.map((r) => String(r.text));
   const files: RuleFile[] = [{
@@ -28,6 +30,9 @@ export async function cursorRules(db: Client, repo: string): Promise<RuleFile[]>
     const desc = `Use when the task involves "${p}". ${texts[0]!.slice(0, 160)}`;
     files.push({ name: `${PREFIX}-${slug(p)}.mdc`, body: `---\ndescription: ${yamlText(desc)}\nalwaysApply: false\n---\n\n# muninn lessons for "${p}"\n\n${HEADER}\n\n${texts.map((t) => `- ${t}`).join("\n")}\n` });
   }
+  const branch = root ? currentBranch(root) : null;
+  const h = branch ? await latestHandoff(db, repo, branch, settings().handoffDays) : null;
+  if (h) files.push({ name: `${PREFIX}-handoff.mdc`, body: `---\ndescription: Where the last session on this branch left off\nalwaysApply: true\n---\n\n${handoffText(h)}\n` });
   return files;
 }
 
@@ -55,7 +60,7 @@ export async function writeCursorRules(db: Client, repo: string): Promise<{ root
   const dir = join(root, ".cursor", "rules");
   mkdirSync(dir, { recursive: true });
   exclude(root);
-  const files = await cursorRules(db, repo);
+  const files = await cursorRules(db, repo, root);
   for (const f of files) writeFileSync(join(dir, f.name), f.body);
   const keep = new Set(files.map((f) => f.name));
   for (const f of readdirSync(dir)) if (f.startsWith(PREFIX) && f.endsWith(".mdc") && !keep.has(f)) rmSync(join(dir, f));

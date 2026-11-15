@@ -231,3 +231,18 @@ Entry template:
 - `foldDuplicates` runs at the start of each learn: a proposed lesson sharing quotes with a live or older proposed one is retired into it (version marked `learn:duplicate`). Live lessons are never touched. Two live lessons sharing quotes are reported for the person to retire one. On a copy of the real database this folded 14 copies.
 - The "Downloading model" bar appeared when loading from disk, because transformers.js reports progress for cached files too. It now shows only when the model is missing.
 - Review prints the similar lesson in full. `list` marks cut text with "…". 61 tests pass.
+
+## 2026-11-15 — Codex hooks, Cursor reader, notes, handoffs, report, UI
+
+**Did:**
+- **Codex delivery.** `muninn install` also writes `~/.codex/hooks.json` when Codex is installed. Codex has no failure event, so `PostToolUse` with matcher `Bash` runs every time and muninn looks for a non-zero exit code in the result. The result's shape isn't documented, so the first one seen is recorded (types only) and shown in `status`. Codex skips new hooks until the user trusts them in `/hooks`. SessionEnd hooks get a 3-second timeout, the Codex maximum.
+- **Cursor reader.** Transcripts at `~/.cursor/projects/<slug>/agent-transcripts/<id>/<id>.jsonl` hold only role and text blocks. Typed text sits in `<user_query>`, with a `<timestamp>` like "Tuesday, Oct 27, 2026, 12:41 PM (UTC)". The repo comes from the slug, rebuilt by checking which folders exist, since folder names contain dashes. All 25 local transcripts mapped to the right repo.
+- **Notes.** A typed message of 300+ characters with 3+ sentences, mostly not questions, is an "explained" moment. The writer turns it into a 2-6 sentence note with keywords, or says no. Every "no" is stored in a new `judged` table so reruns don't ask again. At most 30 new notes per run, newest first.
+- **Handoffs.** The SessionEnd hook starts `muninn handoff --transcript` in the background, which asks the writer for up to 8 labelled lines (Goal, Done, Decided, Next, Open). Learn also writes them for recent sessions that had no hook, which covers Cursor. Delivered at `SessionStart` with source startup or clear when the branch matches, within 7 days, never to the session that wrote it.
+- **Report and UI.** `muninn report` compares evidence before and after a lesson was kept, and says when the tool where it came back wasn't receiving lessons. `muninn ui` serves a page on 127.0.0.1, checks the Host header, and needs a random token on every request.
+
+**Gotcha:**
+- The install tests wrote the real `~/.codex/hooks.json`, because Codex's path wasn't overridden in tests. Removed both files (there was none before), and `useHome()` now points every client's config into the test folder.
+- Cursor puts its own "Briefly inform the user about the task result…" prompt inside `<user_query>` 123 times. It's now on the not-typed list.
+- `git rev-parse --abbrev-ref HEAD` fails before the first commit. `symbolic-ref --short -q HEAD` doesn't.
+- The first real handoff hit the length cap mid-sentence. The prompt now asks for under 900 characters, and long replies are cut at a line break.

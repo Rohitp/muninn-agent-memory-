@@ -5,12 +5,13 @@ import { notTyped, parseLines, textOf, type LogEvent, type Session } from "./typ
 export function readClaude(file: string): Session {
   const events: LogEvent[] = [];
   const pending = new Map<string, string>();
-  let cwd = "", clientVersion = "unknown", unknown = 0;
+  let cwd = "", clientVersion = "unknown", unknown = 0, branch = "";
   for (const o of parseLines(file, (f) => readFileSync(f, "utf8"))) {
     // New record types are normal. A message without the expected shape means the format changed.
     if (typeof o.type !== "string" || ((o.type === "user" || o.type === "assistant") && o.message?.content === undefined)) unknown++;
     if (o.cwd) cwd ||= o.cwd;
     if (o.version) clientVersion = o.version;
+    if (o.gitBranch) branch = o.gitBranch;
     if (o.isSidechain || o.isMeta) continue;
     const c = o.message?.content;
     const ts = o.timestamp ?? "";
@@ -31,5 +32,5 @@ export function readClaude(file: string): Session {
       if (x?.type === "tool_use" && x.name === "Bash") pending.set(x.id, x.input?.command ?? "");
     }
   }
-  return { id: basename(file, ".jsonl"), tool: "claude-code", cwd, clientVersion, events, unknown };
+  return { id: basename(file, ".jsonl"), tool: "claude-code", cwd, clientVersion, events, unknown, branch: branch || undefined, file };
 }

@@ -23,7 +23,7 @@ const HOW = `
     n  Neither: kept and searchable, never sent automatically.
   You can change this later with "muninn edit <id>".`;
 
-async function similar(db: Client, l: Lesson): Promise<{ lesson: Lesson; score: number } | null> {
+export async function similar(db: Client, l: Lesson): Promise<{ lesson: Lesson; score: number } | null> {
   if (!l.repo_id) return null;
   const all = await lessonVectors(db, l.repo_id);
   const me = all.find((x) => x.id === l.id)?.vector;
@@ -45,18 +45,19 @@ async function chooseRoute(db: Client, rl: Interface, l: Lesson, explained: { do
   if (!route.startsWith("k")) { console.log("  Kept. It's searchable, but won't be sent automatically."); return { alwaysOn: false, triggers: [] as string[] }; }
   const used = await keywordsInUse(db, l.repo_id);
   if (used.length) console.log(`  Keywords in use: ${used.map((u) => `${u.pattern} (${u.lessons})`).join(", ")}`);
-  const suggestion = suggestKeyword(l.text);
-  const typed = (await rl.question(`  Keyword${suggestion ? ` [${suggestion}]` : ""}: `)).trim();
-  const keyword = (typed || suggestion).toLowerCase();
-  if (!keyword) return { alwaysOn: false, triggers: [] as string[] };
-  const sharing = await lessonsForKeyword(db, l.repo_id, keyword);
-  const max = settings().maxPerDelivery;
-  if (sharing.length >= max) {
+  const suggestion = (l.suggested_keywords ? (JSON.parse(l.suggested_keywords) as string[]).join(", ") : "") || suggestKeyword(l.text);
+  const typed = (await rl.question(`  Keyword(s), comma-separated${suggestion ? ` [${suggestion}]` : ""}: `)).trim();
+  const keywords = (typed || suggestion).toLowerCase().split(",").map((k) => k.trim()).filter(Boolean);
+  if (!keywords.length) return { alwaysOn: false, triggers: [] as string[] };
+  for (const keyword of keywords) {
+    const sharing = await lessonsForKeyword(db, l.repo_id, keyword);
+    const max = settings().maxPerDelivery;
+    if (sharing.length < max) continue;
     console.log(`  "${keyword}" already has ${sharing.length} lessons, and only ${max} are sent per prompt. Always-on lessons go first, then longer keywords, then newer ones.`);
     console.log(`  These ${sharing.length + 1 - max} would be left out: ${sharing.slice(max - 1).map((x) => `"${x.text.slice(0, 50)}"`).join(", ")}`);
     if (!(await rl.question("  Use it anyway (y/n)? ")).trim().toLowerCase().startsWith("y")) return chooseRoute(db, rl, l, explained);
   }
-  return { alwaysOn: false, triggers: [keyword] };
+  return { alwaysOn: false, triggers: keywords };
 }
 
 export async function review(db: Client, repo: string | null, lessons?: Lesson[]) {
@@ -76,7 +77,7 @@ export async function review(db: Client, repo: string | null, lessons?: Lesson[]
     const l = await getLesson(db, first.id);
     if (!l || l.status !== "proposed") continue;
     const ev = await db.execute({ sql: "SELECT tool,quote FROM evidence WHERE lesson_id=? LIMIT 3", args: [l.id] });
-    console.log(`\n[${i}/${shown.length}] ${l.text}\n  ${l.signal}, ${l.sessions} session(s)`);
+    console.log(`\n[${i}/${shown.length}] ${l.kind === "note" ? "NOTE: " : ""}${l.text}\n  ${l.signal === "explained" ? "you explained this" : l.signal}, ${l.sessions} session(s)`);
     for (const e of ev.rows) console.log(`  ${e.tool}: ${e.quote}`);
     await markShown(db, l.id);
     const sim = await similar(db, l);

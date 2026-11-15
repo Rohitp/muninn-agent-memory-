@@ -5,7 +5,13 @@ import type { Embed } from "../src/embed/model.js";
 import type { Session } from "../src/logs/types.js";
 
 export const tmp = () => mkdtempSync(join(tmpdir(), "muninn-test-"));
-export function useHome() { const h = tmp(); process.env.MUNINN_HOME = h; return h; }
+/** A fresh muninn home, with every client config file pointed inside it so tests never touch real ones. */
+export function useHome() {
+  const h = tmp(); process.env.MUNINN_HOME = h;
+  process.env.MUNINN_CLAUDE_SETTINGS = join(h, "claude-settings.json");
+  process.env.MUNINN_CODEX_HOOKS = join(h, "codex-hooks.json");
+  return h;
+}
 
 /** Bag-of-words vectors: same words give similarity 1. No model needed. */
 export const fakeEmbed: Embed = async (texts) => {

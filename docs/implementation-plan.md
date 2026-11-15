@@ -35,10 +35,18 @@ Status legend: ⬜ todo · 🟦 in progress · ✅ done · ⛔ blocked · ⏭️
 - ✅ Claude Code live checks (`docs/checks/client-live-tests.md`)
 - ✅ Delivery hook: session start, prompt keywords, failed commands, subagents, with limits and a log of every outcome
 - ✅ `muninn install`, `uninstall`, `status`, `keywords`
-- ⬜ Codex: needs a working `codex exec`, then live checks and hooks
+- 🟦 Codex: hooks in `~/.codex/hooks.json` (session start, prompts, failed Bash calls through `PostToolUse`, subagents, session end). Built from the docs and tested offline. Needs a live check: trust in `/hooks`, and the real shape of a Bash result (muninn records it in `status`). The Codex writer still needs a working `codex exec`
 - ⬜ Interactive-session checks: compaction and subagents
 - ✅ Cursor: kept lessons written as `.cursor/rules/muninn*.mdc` per repo with `muninn cursor on`, kept out of git through `.git/info/exclude`, and rewritten when lessons change
 - ⬜ Author judges it from real use
 
+- ✅ Duplicates: moments matched to lessons by their quotes before writing; proposed copies folded into the lesson they repeat (2026-11-15)
+
 ## Step 3 — Stage 2, asking and the UI
-- ⬜ Items 32-37
+- ✅ Cursor reader: `~/.cursor/projects/*/agent-transcripts`, typed text, agent text and timestamps. No command results, so no command signals from Cursor
+- ✅ Notes: long explanations become proposed notes with suggested keywords. The writer's "no" is remembered. At most 30 per run
+- ✅ Handoffs: written when a session ends (Claude Code and Codex hooks) and during learn for recent sessions without one (Cursor). Sent at the next fresh start on the same branch, and written to `.cursor/rules/muninn-handoff.mdc`. `muninn handoff [--list]`
+- ✅ `muninn report`: sent counts, and whether each kept lesson's moment came back after it was kept
+- ✅ `muninn ui`: local page for waiting, kept, handoffs, report and search, on 127.0.0.1 with a per-run token
+- ⬜ Author tests all of the above from real use
+- ⬜ Items 32-37 not covered above

@@ -5,12 +5,12 @@ import { notTyped, parseLines, textOf, type LogEvent, type Session } from "./typ
 export function readCodex(file: string): Session {
   const items: LogEvent[] = [];
   const fallback: LogEvent[] = [];
-  let cwd = "", clientVersion = "unknown", unknown = 0;
+  let cwd = "", clientVersion = "unknown", unknown = 0, branch = "";
   for (const o of parseLines(file, (f) => readFileSync(f, "utf8"))) {
     if (typeof o.type !== "string" || ((o.type === "response_item" || o.type === "event_msg") && typeof o.payload?.type !== "string")) unknown++;
     const p = o.payload ?? {};
     const ts = o.timestamp ?? "";
-    if (o.type === "session_meta") { cwd = p.cwd ?? ""; clientVersion = p.cli_version ?? clientVersion; }
+    if (o.type === "session_meta") { cwd = p.cwd ?? ""; clientVersion = p.cli_version ?? clientVersion; branch = p.git?.branch ?? branch; }
     if (o.type === "response_item" && p.type === "message") {
       const t = textOf(p.content);
       if (p.role === "user" && !notTyped(t)) fallback.push({ k: "typed", text: t, ts });
@@ -28,5 +28,5 @@ export function readCodex(file: string): Session {
     }
   }
   const hasTyped = items.some((e) => e.k === "typed");
-  return { id: basename(file, ".jsonl"), tool: "codex", cwd, clientVersion, events: hasTyped ? items : [...fallback, ...items], unknown };
+  return { id: basename(file, ".jsonl"), tool: "codex", cwd, clientVersion, events: hasTyped ? items : [...fallback, ...items], unknown, branch: branch || undefined, file };
 }

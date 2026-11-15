@@ -2,7 +2,7 @@ import { redact } from "../privacy/redact.js";
 import { cosine, type Embed } from "../embed/model.js";
 import type { Session } from "../logs/types.js";
 
-export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned";
+export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned" | "explained";
 export type Moment = {
   signal: Signal; text: string; quotes: { tool: string; session: string; ts: string; quote: string }[];
   sessions: number; days: number; wordings: number; tools: string[]; last: string; vector?: Float32Array;
@@ -88,8 +88,27 @@ export async function findMoments(sessions: Session[], embed: Embed, opts: { cut
     m.context = c.items.at(-1)?.before ? redact(c.items.at(-1)!.before!) : undefined;
     if (m.sessions >= 2) moments.push(m);
   }
-  moments.push(...commandMoments(sessions));
+  moments.push(...commandMoments(sessions), ...explainedMoments(sessions));
   return moments;
+}
+
+/** A long message where the engineer explained something. Said once, so no repeat signal sees it. The writer decides if it holds lasting knowledge. */
+export function isExplanation(text: string): boolean {
+  const t = text.replace(/```[\s\S]*?```/g, " ").trim();
+  if (t.length < 300 || text.length > 6000) return false;
+  const parts = [...seg.segment(t)].map((x) => x.segment.trim()).filter((x) => x.split(/\s+/).length >= 4);
+  if (parts.length < 3) return false;
+  const questions = parts.filter((p) => p.endsWith("?")).length;
+  return questions / parts.length < 0.5;
+}
+function explainedMoments(sessions: Session[]): Moment[] {
+  const out: Moment[] = [];
+  for (const s of sessions) for (const e of s.events) {
+    if (e.k !== "typed" || !isExplanation(e.text)) continue;
+    const text = redact(e.text).slice(0, 3000);
+    out.push({ signal: "explained", text, quotes: [{ tool: s.tool, session: s.id, ts: e.ts, quote: text.slice(0, 240) }], sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: e.ts });
+  }
+  return out;
 }
 
 function commandMoments(sessions: Session[]): Moment[] {

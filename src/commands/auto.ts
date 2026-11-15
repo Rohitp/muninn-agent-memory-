@@ -9,7 +9,7 @@ const lockFile = () => join(ensureHome(), "auto.lock");
 
 export function countLogs(): number {
   const r = logRoots();
-  return globSync("*/*.jsonl", { cwd: r.claude }).length + globSync("**/rollout-*.jsonl", { cwd: r.codex }).length;
+  return globSync("*/*.jsonl", { cwd: r.claude }).length + globSync("**/rollout-*.jsonl", { cwd: r.codex }).length + globSync("*/agent-transcripts/**/*.jsonl", { cwd: r.cursor }).length;
 }
 /** Whether a scan is due: at most once a day, or after enough new sessions. */
 export function scanDue(now = Date.now()): boolean {
@@ -33,5 +33,13 @@ export function startAutoScan() {
   if (!scanDue()) return;
   const cli = join(dirname(fileURLToPath(import.meta.url)), "..", "cli.js");
   const child = spawn(process.execPath, [cli, "learn", "--auto", "--all-repos"], { detached: true, stdio: "ignore", env: { ...process.env, MUNINN_INTERNAL: "" } });
+  child.unref();
+}
+
+/** Called from the SessionEnd hook: writes a handoff for that session in a separate process. */
+export function startHandoff(transcript: string, client: string) {
+  if (isPaused() || process.env.MUNINN_INTERNAL) return;
+  const cli = join(dirname(fileURLToPath(import.meta.url)), "..", "cli.js");
+  const child = spawn(process.execPath, [cli, "handoff", "--transcript", transcript, "--client", client], { detached: true, stdio: "ignore", env: { ...process.env, MUNINN_INTERNAL: "" } });
   child.unref();
 }
