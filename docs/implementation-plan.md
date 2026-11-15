@@ -56,6 +56,8 @@ Status legend: ⬜ todo · 🟦 in progress · ✅ done · ⛔ blocked · ⏭️
 - ✅ Claude Code panel mod (`mods/muninn-panel`): sent this session and why, handoff, waiting, this week
 - ✅ Design language chosen and applied: the console, with restraint (`docs/design-language.md`); the dial, feedback, freshness
 - ⬜ Use helped / wrong feedback to tune delivery (thresholds, relevance scoring in place of literal keywords)
+- ⬜ Setting: which Claude account muninn uses for its own AI calls (e.g. `claude-work` via `CLAUDE_CONFIG_DIR`). Today it's the terminal `claude` (personal), which also summarises sessions from the desktop app (signed into work). Author: fine for now, add as a setting later
+- ⬜ Support more than one Claude config folder (`~/.claude-work`): read its logs and install its hooks. Only needed if the author uses `claude-work` again; the desktop app already shares `~/.claude`
 - ⬜ Publish: npm package so `npx muninn setup` works, and the panel as an installable plugin
 - ⬜ Author tests all of the above from real use
 - ⬜ Items 32-37 not covered above

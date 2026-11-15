@@ -357,3 +357,5 @@ Entry template:
 - The page shows "muninn checked your sessions 2 hours ago, and checks again on its own after you work. Check now". Check now starts a background scan (`learn --auto --all-repos --force`), the line turns into "Checking your sessions…", and the page refreshes and says how many new suggestions it found. A scan that started on its own is followed the same way. The empty state is a "Find lessons in my sessions" button.
 - `/api/scan` reports whether a scan is running (its lock) and when the last finished.
 - The hook now upgrades the database if needed (a no-op when current), so an update can't silently stop delivery.
+
+**Accounts (checked 2026-11-15):** the desktop app's Claude Code sessions (signed into the work account) write to `~/.claude/projects` and run `~/.claude/settings.json` hooks, same as the terminal (personal account). All 45 desktop sessions are learned from, and the hook ran in the 15 since it was installed. Desktop chats outside the Code tab live on the server and can't be read. muninn's own AI calls use the terminal `claude` (personal); a setting to choose the account is on the plan.
