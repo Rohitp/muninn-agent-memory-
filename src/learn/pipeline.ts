@@ -1,24 +1,37 @@
 import type { Client } from "@libsql/client";
 import { cosine, type Embed } from "../embed/model.js";
 import type { Session } from "../logs/types.js";
-import { addEvidence, createLesson, lessonVectors, touchSeen } from "../store/lessons.js";
+import { addEvidence, createLesson, evidenceIndex, lessonVectors, ownerOf, touchSeen } from "../store/lessons.js";
 import { findMoments, type Moment, type Signal } from "./signals.js";
 import type { Writer } from "./writer.js";
 
 const NEG = /\b(not|never|don'?t|no|avoid|stop|cannot|won'?t|shouldn'?t|without)\b/i;
-export type LearnResult = { moments: Record<string, number>; written: number; discarded: number; newLessons: number; addedEvidence: number; dropped: number; skippedNoWriter: number };
+export type LearnResult = { moments: Record<string, number>; written: number; discarded: number; newLessons: number; addedEvidence: number; dropped: number; skippedNoWriter: number; known: number };
 
 const norm = (s: string) => s.toLowerCase().replace(/\W+/g, " ").trim();
 
 /** Finds moments in a repo's sessions and stores new candidates as proposed. Nothing goes live here. */
 export async function learnRepo(db: Client, repo: string, sessions: Session[], deps: { embed: Embed; writer: Writer | null; cutoff: number; minSessions: number }): Promise<LearnResult> {
-  const moments = await findMoments(sessions, deps.embed, { cutoff: deps.cutoff, minSessions: deps.minSessions });
-  const res: LearnResult = { moments: {}, written: 0, discarded: 0, newLessons: 0, addedEvidence: 0, dropped: 0, skippedNoWriter: 0 };
-  for (const m of moments) res.moments[m.signal] = (res.moments[m.signal] ?? 0) + 1;
+  const found = await findMoments(sessions, deps.embed, { cutoff: deps.cutoff, minSessions: deps.minSessions });
+  const res: LearnResult = { moments: {}, written: 0, discarded: 0, newLessons: 0, addedEvidence: 0, dropped: 0, skippedNoWriter: 0, known: 0 };
+  for (const m of found) res.moments[m.signal] = (res.moments[m.signal] ?? 0) + 1;
+
+  // A moment built from quotes a lesson already holds is that lesson again, however the writer would word it.
+  // Add the new evidence there and skip writing. Quotes behind a rejected or retired lesson stay dropped.
+  const idx = await evidenceIndex(db, repo);
+  const moments: Moment[] = [];
+  for (const m of found) {
+    const owner = ownerOf(idx, m.quotes);
+    if (!owner) { moments.push(m); continue; }
+    res.known++;
+    if (owner.status === "live" || owner.status === "proposed") { await addEvidence(db, owner.id, m.quotes); await touchSeen(db, owner.id, m.sessions, m.last); }
+    else res.dropped++;
+  }
 
   // Repeats keep the engineer's words without a writer. The other signals need one.
   let texts: { text: string; scope: string }[] | (null | { text: string; scope: string })[];
-  if (deps.writer) {
+  if (!moments.length) texts = [];
+  else if (deps.writer) {
     texts = await deps.writer.write(moments);
     res.written = texts.filter(Boolean).length;
     res.discarded = texts.filter((t) => !t).length;

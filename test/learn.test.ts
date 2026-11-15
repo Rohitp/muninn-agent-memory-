@@ -5,7 +5,7 @@ import { buildPrompt, parseReply, type Writer } from "../src/learn/writer.js";
 import type { LogEvent, Session } from "../src/logs/types.js";
 import { OWN_RUN_MARK } from "../src/logs/types.js";
 import { openDb } from "../src/store/db.js";
-import { decide, ensureRepo, listLessons } from "../src/store/lessons.js";
+import { addEvidence, createLesson, decide, ensureRepo, foldDuplicates, getLesson, listLessons } from "../src/store/lessons.js";
 import { day, fakeEmbed, session, useHome } from "./helpers.js";
 
 const find = (s: Session[]) => findMoments(s, fakeEmbed, { cutoff: 0.85, minSessions: 3 });
@@ -88,7 +88,7 @@ describe("learnRepo", () => {
     const db = await setup(); const s = three("use the staging server");
     await learnRepo(db, "r", s, deps());
     const r = await learnRepo(db, "r", s, deps());
-    expect(r).toMatchObject({ newLessons: 0, addedEvidence: 1 });
+    expect(r).toMatchObject({ newLessons: 0, known: 1 });
     expect(await listLessons(db, { repo: "r" })).toHaveLength(1);
     expect((await db.execute("SELECT count(*) c FROM evidence")).rows[0]!.c).toBe(1);
   });
@@ -113,6 +113,30 @@ describe("learnRepo", () => {
     const r = await learnRepo(db, "r", [...three("use the staging server"), ...three("make the banner bigger")], deps(writer));
     expect(r).toMatchObject({ written: 1, discarded: 1, newLessons: 1 });
     expect((await listLessons(db, { repo: "r" }))[0]).toMatchObject({ source: "inferred", status: "proposed" });
+  });
+  it("does not write a new lesson when the writer rewords known quotes", async () => {
+    const db = await setup(); const s = three("use the staging server");
+    let n = 0; const calls: number[] = [];
+    const writer: Writer = { name: "fake", write: async (m) => { calls.push(m.length); return m.map(() => ({ text: `Wording number ${++n} about something`, scope: "repo" as const })); } };
+    await learnRepo(db, "r", s, deps(writer));
+    const r = await learnRepo(db, "r", s, deps(writer));
+    expect(r).toMatchObject({ newLessons: 0, known: 1 });
+    expect(calls).toEqual([1]);
+    expect(await listLessons(db, { repo: "r" })).toHaveLength(1);
+  });
+  it("folds proposed copies into the live lesson with the same quotes", async () => {
+    const db = await setup(); const s = three("use the staging server");
+    await learnRepo(db, "r", s, deps());
+    const [first] = await listLessons(db, { repo: "r" });
+    await decide(db, first!.id, { status: "live" });
+    const copy = await createLesson(db, { repo_id: "r", text: "Another wording", source: "inferred", status: "proposed", by: "learn" });
+    const q = (await db.execute({ sql: "SELECT tool,session,seen_at ts,quote FROM evidence WHERE lesson_id=?", args: [first!.id] })).rows as any[];
+    await addEvidence(db, copy, q.map((x) => ({ tool: x.tool, session: x.session, ts: x.ts, quote: x.quote })));
+    const unrelated = await createLesson(db, { repo_id: "r", text: "Unrelated", source: "inferred", status: "proposed", by: "learn" });
+    expect(await foldDuplicates(db, "r")).toBe(1);
+    expect((await getLesson(db, copy))!.status).toBe("retired");
+    expect((await getLesson(db, first!.id))!.status).toBe("live");
+    expect((await getLesson(db, unrelated))!.status).toBe("proposed");
   });
   it("without a writer, keeps repeats and reports the rest as skipped", async () => {
     const db = await setup();

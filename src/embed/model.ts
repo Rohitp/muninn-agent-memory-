@@ -30,7 +30,9 @@ function progressBar() {
 export async function loadEmbedder(): Promise<Embed> {
   const { pipeline, env } = await import("@huggingface/transformers");
   env.cacheDir = dir();
-  const model: any = await pipeline("feature-extraction", MODEL, { dtype: "q8", progress_callback: progressBar() });
+  // Loading from disk reports progress too, so show the bar only for a real download.
+  const fresh = !modelCached();
+  const model: any = await pipeline("feature-extraction", MODEL, { dtype: "q8", ...(fresh ? { progress_callback: progressBar() } : {}) });
   const cache = new Map<string, Float32Array>();
   return async (texts) => {
     for (const t of new Set(texts)) {

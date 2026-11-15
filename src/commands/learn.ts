@@ -6,7 +6,7 @@ import { pickWriter } from "../learn/writer.js";
 import { scanLogs } from "../logs/discover.js";
 import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
-import { ensureRepo } from "../store/lessons.js";
+import { ensureRepo, foldDuplicates, overlappingLive } from "../store/lessons.js";
 import { review } from "./review.js";
 
 export async function learn(opts: { allRepos?: boolean; auto?: boolean }) {
@@ -42,8 +42,14 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean }) {
     const sessions = scan.byRepo.get(repo)!;
     await ensureRepo(db, repo, sessions[0]!.cwd);
     if (sessions.length < cfg.minSessions && !opts.auto) console.log(`${repo}: only ${sessions.length} session(s), which may be too few to find repeats.`);
+    const folded = await foldDuplicates(db, repo);
     const r = await learnRepo(db, repo, sessions, { embed, writer, cutoff: cfg.similarityCutoff, minSessions: cfg.minSessions });
-    if (!opts.auto) console.log(`${repo}: ${JSON.stringify(r.moments)} moments, ${r.newLessons} new lesson(s), ${r.discarded} discarded as noise, ${r.addedEvidence} added evidence.`);
+    if (!opts.auto) {
+      const total = Object.values(r.moments).reduce((a, b) => a + b, 0);
+      console.log(`${repo}: ${total} moments. ${r.known} already known (evidence added), ${r.newLessons} new lesson(s), ${r.discarded} discarded as noise.`);
+      if (folded) console.log(`  Folded ${folded} duplicate proposed lesson(s) into the lesson they repeat.`);
+      for (const [a, b] of await overlappingLive(db, repo)) console.log(`  Live lessons ${a.slice(0, 8)} and ${b.slice(0, 8)} come from the same quotes. Retire one with "muninn retire <id>".`);
+    }
     for (const s of sessions) if (s.unknown) { await db.execute({ sql: "INSERT OR REPLACE INTO scan_counts (repo_id,tool,client_version,scanned_at,unknown_records) VALUES (?,?,?,?,?)", args: [repo, s.tool, s.clientVersion, new Date().toISOString(), s.unknown] }); }
   }
   await db.execute({ sql: "INSERT OR REPLACE INTO meta (key,value) VALUES ('last_learn',?)", args: [new Date().toISOString()] });

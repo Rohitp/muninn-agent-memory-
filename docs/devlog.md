@@ -221,3 +221,13 @@ Entry template:
 **Gotcha:**
 - Cursor user rules live only in its settings screen, not as files, so global lessons are copied into each enabled repo's file.
 
+
+## 2026-11-15 — Same lesson written again on every run
+
+**Found (second real run):** `muninn learn` re-read all sessions, found the same moments, and the writer worded them differently each time. Two rewordings of one idea scored about 0.8, under the 0.85 cutoff, so each run added a copy. cb-ai-agents had 1 live and 10 proposed "explain simply" lessons, all built from the same Codex quotes.
+
+**Did:**
+- A moment is now matched to existing lessons by its evidence (session plus quote) before the writer runs. If a live or proposed lesson already holds any of its quotes, the evidence is added there and nothing is written. Quotes behind a rejected or retired lesson stay dropped. This also saves writer calls.
+- `foldDuplicates` runs at the start of each learn: a proposed lesson sharing quotes with a live or older proposed one is retired into it (version marked `learn:duplicate`). Live lessons are never touched. Two live lessons sharing quotes are reported for the person to retire one. On a copy of the real database this folded 14 copies.
+- The "Downloading model" bar appeared when loading from disk, because transformers.js reports progress for cached files too. It now shows only when the model is missing.
+- Review prints the similar lesson in full. `list` marks cut text with "…". 61 tests pass.

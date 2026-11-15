@@ -40,7 +40,7 @@ export async function list(args: string[]) {
   const { f } = flags(args);
   const db = await openDb();
   const repo = f.all ? null : repoIdentity(process.cwd());
-  for (const l of await listLessons(db, { repo, ...(typeof f.status === "string" ? { status: f.status } : {}) })) console.log(`${l.id.slice(0, 8)}  ${l.status.padEnd(8)} ${String(l.signal ?? l.source).padEnd(17)} ${l.text.slice(0, 100)}`);
+  for (const l of await listLessons(db, { repo, ...(typeof f.status === "string" ? { status: f.status } : {}) })) console.log(`${l.id.slice(0, 8)}  ${l.status.padEnd(8)} ${String(l.signal ?? l.source).padEnd(17)} ${l.text.length > 100 ? l.text.slice(0, 99) + "…" : l.text}`);
 }
 export async function show(args: string[]) {
   const { db, l } = await need(args[0]);

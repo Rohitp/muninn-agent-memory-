@@ -80,7 +80,7 @@ export async function review(db: Client, repo: string | null, lessons?: Lesson[]
     for (const e of ev.rows) console.log(`  ${e.tool}: ${e.quote}`);
     await markShown(db, l.id);
     const sim = await similar(db, l);
-    if (sim) console.log(`  Similar to a ${sim.lesson.status} lesson: "${sim.lesson.text.slice(0, 140)}"`);
+    if (sim) console.log(`  Similar to a ${sim.lesson.status} lesson (${sim.lesson.id.slice(0, 8)}):\n    "${sim.lesson.text}"`);
     const a = (await rl.question(`  (k)eep, (e)dit, ${sim ? "(c)ombine, " : ""}(r)eject, (l)ater? `)).trim().toLowerCase();
     if (a.startsWith("r")) { await decide(db, l.id, { status: "rejected" }); continue; }
     let text: string | undefined;

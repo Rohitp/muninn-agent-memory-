@@ -77,6 +77,55 @@ export async function lessonsForKeyword(db: Client, repo: string | null, pattern
   const r = await db.execute({ sql: `SELECT ${COLS.split(",").map((c) => "l." + c).join(",")} FROM lessons l JOIN triggers t ON t.lesson_id=l.id WHERE l.status='live' AND lower(t.pattern)=lower(?) AND (l.scope='global' OR l.repo_id IS ? OR l.repo_id=?) ORDER BY l.always_on DESC, length(t.pattern) DESC, l.updated_at DESC`, args: [pattern, repo, repo] });
   return r.rows as unknown as Lesson[];
 }
+const quoteKey = (session: string, quote: string) => `${session}\u0000${quote}`;
+export type EvidenceOwner = { id: string; status: string; created_at: string };
+/** For each (session, quote) of evidence in a repo, the lessons it already backs. */
+export async function evidenceIndex(db: Client, repo: string): Promise<Map<string, EvidenceOwner[]>> {
+  const r = await db.execute({ sql: "SELECT e.session, e.quote, l.id, l.status, l.created_at FROM evidence e JOIN lessons l ON l.id=e.lesson_id WHERE l.repo_id=?", args: [repo] });
+  const idx = new Map<string, EvidenceOwner[]>();
+  for (const x of r.rows) {
+    const k = quoteKey(String(x.session), String(x.quote));
+    const list = idx.get(k) ?? []; list.push({ id: String(x.id), status: String(x.status), created_at: String(x.created_at) }); idx.set(k, list);
+  }
+  return idx;
+}
+const rank = (o: EvidenceOwner) => (o.status === "live" ? 0 : o.status === "proposed" ? 1 : 2);
+/** The lesson that already owns any of these quotes: live first, then the oldest proposed, then rejected or retired. */
+export function ownerOf(idx: Map<string, EvidenceOwner[]>, quotes: { session: string; quote: string }[], skip?: string): EvidenceOwner | null {
+  let best: EvidenceOwner | null = null;
+  for (const q of quotes) for (const o of idx.get(quoteKey(q.session, q.quote)) ?? []) {
+    if (o.id === skip) continue;
+    if (!best || rank(o) < rank(best) || (rank(o) === rank(best) && o.created_at < best.created_at)) best = o;
+  }
+  return best;
+}
+/**
+ * Proposed lessons built from the same quotes as a live or older proposed lesson are the same lesson
+ * written twice. Moves their evidence to that lesson and retires them. Never touches live lessons.
+ */
+export async function foldDuplicates(db: Client, repo: string): Promise<number> {
+  const idx = await evidenceIndex(db, repo);
+  const proposed = (await db.execute({ sql: "SELECT id, created_at FROM lessons WHERE repo_id=? AND status='proposed' ORDER BY created_at DESC", args: [repo] })).rows;
+  let folded = 0;
+  for (const p of proposed) {
+    const id = String(p.id);
+    const quotes = (await db.execute({ sql: "SELECT session, quote FROM evidence WHERE lesson_id=?", args: [id] })).rows.map((x) => ({ session: String(x.session), quote: String(x.quote) }));
+    const owner = ownerOf(idx, quotes, id);
+    if (!owner || owner.status === "rejected" || owner.status === "retired") continue;
+    if (owner.status === "proposed" && owner.created_at >= String(p.created_at)) continue;
+    await db.execute({ sql: "INSERT OR IGNORE INTO evidence (lesson_id,tool,session,seen_at,quote) SELECT ?,tool,session,seen_at,quote FROM evidence WHERE lesson_id=?", args: [owner.id, id] });
+    await db.execute({ sql: "UPDATE lessons SET status='retired', updated_at=? WHERE id=?", args: [now(), id] });
+    await version(db, id, "learn:duplicate");
+    for (const list of idx.values()) for (const o of list) if (o.id === id) o.status = "retired";
+    folded++;
+  }
+  return folded;
+}
+/** Live lessons in a repo that share evidence with another live lesson. Only a person can merge these. */
+export async function overlappingLive(db: Client, repo: string): Promise<[string, string][]> {
+  const r = await db.execute({ sql: "SELECT DISTINCT a.lesson_id x, b.lesson_id y FROM evidence a JOIN evidence b ON a.session=b.session AND a.quote=b.quote AND a.lesson_id<b.lesson_id JOIN lessons la ON la.id=a.lesson_id JOIN lessons lb ON lb.id=b.lesson_id WHERE la.repo_id=? AND lb.repo_id=? AND la.status='live' AND lb.status='live'", args: [repo, repo] });
+  return r.rows.map((x) => [String(x.x), String(x.y)]);
+}
 /** Combines two lessons a person chose to combine: the other is retired, and its evidence moves over. */
 export async function combine(db: Client, keepId: string, otherId: string, text?: string) {
   await db.execute({ sql: "INSERT OR IGNORE INTO evidence (lesson_id,tool,session,seen_at,quote) SELECT ?,tool,session,seen_at,quote FROM evidence WHERE lesson_id=?", args: [keepId, otherId] });
