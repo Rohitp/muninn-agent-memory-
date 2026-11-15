@@ -6,6 +6,7 @@ import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
 import { decide, getLesson } from "../store/lessons.js";
 import { shortRepo } from "./ask.js";
+export { shortRepo };
 import { defaultRoute } from "./review.js";
 
 export type PanelData = {
@@ -58,8 +59,39 @@ export async function panelData(db: Client, session: string | null, cwd: string)
 export async function panel(args: string[]) {
   const at = (f: string) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] ?? null : null; };
   const db = await openDb();
-  const data = await panelData(db, at("--session"), at("--cwd") ?? process.cwd());
-  console.log(JSON.stringify(data));
+  const session = at("--session"); const cwd = at("--cwd") ?? process.cwd();
+  const data = await panelData(db, session, cwd);
+  const { homeData } = await import("./home.js");
+  // The panel's newer fields (dial, receipt, came back, what agents carry) come from the same source as the web Home.
+  console.log(JSON.stringify({ ...data, ...(await homeData(db, data.repo, session)), branch: data.branch, handoff: data.handoff }));
+}
+
+/** `muninn dial` shows how much muninn speaks unprompted in this repo; `muninn dial quiet|start|anytime` sets it. */
+export async function dial(args: string[]) {
+  const { getDial, setDial, DIALS } = await import("../store/dial.js");
+  const db = await openDb();
+  const repo = repoIdentity(process.cwd());
+  const words = { quiet: "never speaks unprompted. Agents can still run muninn ask.", start: "speaks only when a session starts: always-on lessons and the handoff.", anytime: "also speaks mid-task, when a keyword or a failed command matches." };
+  const want = args[0];
+  if (want) {
+    if (!DIALS.includes(want as never)) { console.error(`Usage: muninn dial ${DIALS.join("|")}`); process.exitCode = 1; return; }
+    await setDial(db, repo, want as never);
+  }
+  const d = await getDial(db, repo);
+  console.log(`${shortRepo(repo)}: ${d}. muninn ${words[d]}`);
+}
+
+/** Records "helped" or "wrong" for something muninn told an agent. */
+export async function feedback(args: string[]) {
+  const { recordFeedback } = await import("../store/dial.js");
+  const [id, verdict] = args;
+  if (!id || (verdict !== "helped" && verdict !== "wrong")) { console.error("Usage: muninn feedback <lesson-id> helped|wrong [--session id]"); process.exitCode = 1; return; }
+  const db = await openDb();
+  const l = await getLesson(db, id);
+  if (!l) { console.error("No lesson with that id."); process.exitCode = 1; return; }
+  const i = args.indexOf("--session");
+  await recordFeedback(db, { lessonId: l.id, verdict, session: i >= 0 ? args[i + 1] ?? null : null });
+  console.log(verdict === "helped" ? "Noted: it helped." : `Noted: wrong here. Retire it with "muninn retire ${l.id.slice(0, 8)}" if it's wrong everywhere.`);
 }
 
 /** One-click keep from the panel: muninn's defaults for delivery and scope. */

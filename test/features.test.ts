@@ -299,3 +299,50 @@ describe("panel and defaults", () => {
     expect(await deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "startup", session_id: "n2", cwd })).toBeNull();
   });
 });
+
+describe("the dial, feedback and home", () => {
+  let cwd = "";
+  beforeEach(() => { useHome(); cwd = join(tmp(), "repo"); mkdirSync(cwd); execFileSync("git", ["init", "-q", "-b", "main", cwd]); });
+  const setup = async () => {
+    const db = await openDb(); const repo = repoIdentity(cwd)!; await ensureRepo(db, repo, cwd);
+    const a = await createLesson(db, { repo_id: repo, text: "Quote === in zsh.", source: "manual", status: "live", by: "person" });
+    await decide(db, a, { alwaysOn: true });
+    const b = await createLesson(db, { repo_id: repo, text: "Use poetry run python.", source: "manual", status: "live", by: "person" });
+    await decide(db, b, { triggers: ["python"] });
+    return { db, repo, a, b };
+  };
+  const start = (db: any, s: string) => deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "startup", session_id: s, cwd });
+  const prompt = (db: any, s: string) => deliver(db, "claude-code", { hook_event_name: "UserPromptSubmit", prompt: "run python", session_id: s, cwd });
+  it("quiet holds everything back, start speaks only at session start, anytime does both", async () => {
+    const { setDial } = await import("../src/store/dial.js");
+    const { db, repo } = await setup();
+    await setDial(db, repo, "quiet");
+    expect(await start(db, "q1")).toBeNull();
+    await setDial(db, repo, "start");
+    expect(await start(db, "s1")).toContain("Quote ===");
+    expect(await prompt(db, "s1")).toBeNull();
+    await setDial(db, repo, "anytime");
+    expect(await prompt(db, "a1")).toContain("poetry");
+    await expect(setDial(db, repo, "loud" as never)).rejects.toThrow(/quiet, start, anytime/);
+  });
+  it("records helped and wrong", async () => {
+    const { recordFeedback } = await import("../src/store/dial.js");
+    const { db, a } = await setup();
+    await recordFeedback(db, { lessonId: a, verdict: "helped", session: "x" });
+    await recordFeedback(db, { lessonId: a, verdict: "wrong" });
+    expect((await db.execute("SELECT verdict FROM feedback ORDER BY ts")).rows.map((r) => r.verdict)).toEqual(["helped", "wrong"]);
+  });
+  it("home shows the receipt with reasons, and what agents carry as lit, armed or fading", async () => {
+    const { homeData, label } = await import("../src/commands/home.js");
+    const { db, repo, a } = await setup();
+    await start(db, "h1"); await prompt(db, "h1");
+    const h = await homeData(db, repo);
+    expect(h.receipt.map((r) => r.why).sort()).toEqual(["always-on, at session start", 'your prompt said "python"']);
+    expect(h.carry.find((c) => c.id === a)).toMatchObject({ state: "lit", route: "every session" });
+    expect(h.carry.find((c) => c.id !== a)).toMatchObject({ state: "armed", route: 'when "python" comes up' });
+    await db.execute({ sql: "UPDATE deliveries SET ts='2000-01-01T00:00:00Z' WHERE lesson_id=?", args: [a] });
+    await db.execute({ sql: "UPDATE lessons SET reviewed_at='2000-01-01T00:00:00Z', created_at='2000-01-01T00:00:00Z' WHERE id=?", args: [a] });
+    expect((await homeData(db, repo)).carry.find((c) => c.id === a)!.state).toBe("fading");
+    expect(label("First sentence here. Second one.")).toBe("First sentence here");
+  });
+});

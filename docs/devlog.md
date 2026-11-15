@@ -303,3 +303,14 @@ Entry template:
 - `muninn panel --session --cwd` gives the panel's data as JSON. The Claude Code mod in `mods/muninn-panel` draws it beside the chat: lessons sent this session and why, with retire; the handoff; the top 3 waiting with Keep and Reject; this week's numbers and muninn's own cost; "Open muninn". It refreshes when a turn ends and every 30 seconds, and puts "muninn: N sent" in the status line.
 
 **Open:** the mod needs `muninn` on the PATH Claude Code starts with. It isn't published yet. For now it loads as a mod in this session, or with `claude --plugin-dir mods/muninn-panel`.
+
+## 2026-11-15 — Design language: the console, with restraint
+
+**Why:** the first UI mockups looked like default Claude Code. After five rounds on a Design canvas (default; "quiet familiar"; a skeuomorphic notebook, rejected as hard to read; a restrained console) the author chose the console. Grounded in Bruce Liu's *Beyond Taking Turns in Human-AI Interaction* (UCLA, 2026): proactive tools need visible reasons, adjustable proactivity and calm screens. Written up in `docs/design-language.md`.
+
+**Did:**
+- The dial is real: `dial:<repo>` in `meta`, `muninn dial quiet|start|anytime`. Quiet holds every delivery back; "start" allows only session-start and subagent deliveries; "anytime" is the old behaviour. Named "at start" rather than the mockup's "suggest", which would have promised an approval step that doesn't exist.
+- "helped" and "wrong here" are stored in a new `feedback` table (`muninn feedback <id> helped|wrong`).
+- `homeData` gives the web Home and the panel one source: counters, the receipt (deliveries with reasons, one line per lesson), the top waiting lesson, came back, and what agents carry with lit, armed or fading (14 days without being told).
+- The web UI is rebuilt in the console style: Home, Review one at a time with K/L/R, Memory, Ask. It no longer loads web fonts, so the page makes no requests off the machine.
+- The Claude Code panel is rebuilt to match: dashed receipt box, dial words, dots, feedback buttons.

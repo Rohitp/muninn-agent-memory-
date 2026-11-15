@@ -54,6 +54,8 @@ Status legend: ⬜ todo · 🟦 in progress · ✅ done · ⛔ blocked · ⏭️
 - ✅ `muninn setup`: one command from nothing to the review page
 - ✅ Review defaults shared by terminal, UI and panel; `muninn keep` and `reject`; daily limit on the "waiting" note
 - ✅ Claude Code panel mod (`mods/muninn-panel`): sent this session and why, handoff, waiting, this week
+- ✅ Design language chosen and applied: the console, with restraint (`docs/design-language.md`); the dial, feedback, freshness
+- ⬜ Use helped / wrong feedback to tune delivery (thresholds, relevance scoring in place of literal keywords)
 - ⬜ Publish: npm package so `npx muninn setup` works, and the panel as an installable plugin
 - ⬜ Author tests all of the above from real use
 - ⬜ Items 32-37 not covered above

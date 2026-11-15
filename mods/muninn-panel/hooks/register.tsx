@@ -3,10 +3,15 @@ import type { Register } from 'claude-code'
 
 import type { PanelData, PanelView } from '../types'
 
+// The console, with restraint (docs/design-language.md): the receipt, the dial, the dots. Blue is muninn, orange is "came back".
 const PANE = 'muninn'
-const TOOL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', cursor: 'Cursor' }
+const EYE = '#6E7DFF'
+const EYE_TEXT = '#A9B1FF'
+const SIGNAL = '#FF7A3D'
+const MUTED = '#8E919C'
+const DIALS = [['quiet', 'quiet'], ['start', 'at start'], ['anytime', 'anytime']] as const
 // Change the tag when PanelView's fields change, so a value stored by an older version is dropped.
-const view = atom({ plugin: 'muninn-panel', key: 'view' } as const, { data: null, error: null, showHandoff: false } as PanelView, { shape: 'view-1' })
+const view = atom({ plugin: 'muninn-panel', key: 'view' } as const, { data: null, error: null, marked: [] } as PanelView, { shape: 'view-2' })
 
 /** Runs the muninn CLI. It must be on the PATH Claude Code was started with. */
 async function muninn($: any, args: string[]): Promise<{ ok: boolean; out: string }> {
@@ -28,15 +33,18 @@ async function refresh($: any) {
   let data: PanelData
   try { data = JSON.parse(r.out) } catch { await update($, view, v => ({ ...v, error: 'muninn returned something unexpected.' })); return }
   await update($, view, v => ({ ...v, data, error: null }))
-  $.ui.status(data.sent.length ? `muninn: ${data.sent.length} sent` : undefined)
+  $.ui.status(data.receipt.length ? `muninn · ${data.receipt.length} told` : undefined)
 }
 
-/** Runs an action, says what happened, and redraws. */
-async function act($: any, args: string[], done: string) {
+/** Runs an action, says what happened in one line, and redraws. */
+async function act($: any, args: string[], done?: string) {
   const r = await muninn($, args)
-  $.ui.toast(r.ok ? (args[0] === 'ui' ? done : r.out.split('\n')[0] || done) : `muninn: ${r.out.split('\n')[0]}`)
+  $.ui.toast(r.ok ? (done ?? r.out.split('\n')[0] ?? 'Done.') : `muninn: ${r.out.split('\n')[0]}`)
   await refresh($)
 }
+
+const time = (iso: string) => { const d = new Date(iso); return isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
+const pad3 = (n: number) => String(n).padStart(3, '0')
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -61,74 +69,91 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
-    const { data, error, showHandoff } = await read($, view)
+    const { data, error, marked } = await read($, view)
     if (error) {
       return (
         <Box flexDirection="column" gap={1}>
-          <Text color="warning">{error}</Text>
+          <Text color={SIGNAL}>{error}</Text>
           <Text dimColor>Run "muninn status" in a terminal to check it.</Text>
-          <Button key="retry" onPress={() => refresh($)}>Try again</Button>
+          <Button key="retry" onPress={() => refresh($)}>try again</Button>
         </Box>
       )
     }
     if (!data) return <Text dimColor>Loading…</Text>
-    const w = data.week
+    const session = await $.session.id()
+    const mark = (id: string) => update($, view, v => ({ ...v, marked: [...v.marked, id].slice(-50) }))
+    const top = data.waiting.top[0]
     return (
       <Box flexDirection="column" gap={1}>
-        <Text dimColor wrap="truncate-end">{data.repoShort}{data.branch ? ` · ${data.branch}` : ''}</Text>
+        <Box flexDirection="row" justifyContent="space-between">
+          <Text><Text color={EYE}>{data.receipt.length ? '●' : '○'}</Text> <Text bold>muninn</Text> <Text color={MUTED}>{data.repoShort}</Text></Text>
+          <Box flexDirection="row" gap={1}>
+            {DIALS.map(([value, word]) => (
+              <Button key={`dial-${value}`} plain dimColor={data.dial !== value} onPress={() => act($, ['dial', value])}>{data.dial === value ? `[${word}]` : word}</Button>
+            ))}
+          </Box>
+        </Box>
 
-        <Box flexDirection="column">
-          <Text bold>Sent this session</Text>
-          {data.sent.length === 0 && <Text dimColor>Nothing yet. Lessons arrive at session start, or when a keyword or a failed command matches.</Text>}
-          {data.sent.map(s => (
-            <Box key={s.id} flexDirection="column" marginTop={1}>
-              <Text wrap="wrap">{s.plain ?? s.text}</Text>
-              <Box flexDirection="row" gap={1}>
-                <Text dimColor>why: {s.why}</Text>
-                <Button key={`retire-${s.id}`} plain dimColor onPress={() => act($, ['retire', s.id], 'Retired.')}>retire</Button>
+        <Box flexDirection="column" borderStyle="dashed" borderColor={MUTED} paddingX={1}>
+          <Box justifyContent="center"><Text color={MUTED}>TOLD THIS SESSION</Text></Box>
+          {data.receipt.length === 0 && (
+            <Text color={MUTED}>{data.dial === 'quiet' ? 'The dial is at quiet: muninn says nothing unless asked.' : 'Nothing yet. muninn speaks at the start, and when a word or a failed command matches.'}</Text>
+          )}
+          {data.receipt.map(x => (
+            <Box key={`${x.kind}-${x.id}`} flexDirection="column" marginTop={1}>
+              <Box flexDirection="row" justifyContent="space-between">
+                <Text bold>{time(x.at)}</Text>
+                <Text color={MUTED}>{x.kind === 'handoff' ? 'handoff' : x.why.startsWith('always-on') ? 'start' : x.why.includes('failed') ? 'failed cmd' : 'your prompt'}</Text>
               </Box>
+              <Text wrap="wrap">{x.text}</Text>
+              <Text color={EYE_TEXT} wrap="wrap">↳ because {x.why.replace(/^always-on, /, '').replace(/^at session start$/, 'a session started')}</Text>
+              {x.kind === 'lesson' && (marked.includes(x.id)
+                ? <Text color={MUTED}>noted</Text>
+                : (
+                  <Box flexDirection="row" gap={2}>
+                    <Button key={`helped-${x.id}`} plain onPress={async () => { await mark(x.id); await act($, ['feedback', x.id, 'helped', '--session', session], 'Noted: it helped.') }}>[ helped ]</Button>
+                    <Button key={`wrong-${x.id}`} plain dimColor onPress={async () => { await mark(x.id); await act($, ['feedback', x.id, 'wrong', '--session', session]) }}>[ wrong here ]</Button>
+                  </Box>
+                ))}
             </Box>
           ))}
         </Box>
 
-        {data.handoff && (
+        {top && (
           <Box flexDirection="column">
-            <Box flexDirection="row" gap={1}>
-              <Text bold>Handoff</Text>
-              <Text dimColor>{data.handoff.delivered ? 'given to this session' : 'for this branch'} · {TOOL[data.handoff.tool] ?? data.handoff.tool}, {data.handoff.age}</Text>
+            <Text color={MUTED}>WAITING FOR YOUR WORD · {data.waiting.count}</Text>
+            <Text wrap="wrap">{top.plain ?? top.text}</Text>
+            <Text color={MUTED} wrap="wrap">→ {top.route}</Text>
+            <Box flexDirection="row" gap={2}>
+              <Button key={`keep-${top.id}`} plain hotkey="1" onPress={() => act($, ['keep', top.id], 'Remembered.')}>remember</Button>
+              <Button key={`reject-${top.id}`} plain hotkey="2" onPress={() => act($, ['reject', top.id], 'Let go.')}>let go</Button>
+              <Button key="open-review" plain dimColor hotkey="3" onPress={() => act($, ['ui', '--detach'], 'Opened muninn in your browser.')}>review all</Button>
             </Box>
-            <Text wrap="wrap">{showHandoff ? data.handoff.text : data.handoff.text.split('\n').slice(0, 2).join('\n')}</Text>
-            <Button key="handoff-toggle" plain dimColor onPress={() => update($, view, v => ({ ...v, showHandoff: !v.showHandoff }))}>{showHandoff ? 'less' : 'more'}</Button>
           </Box>
         )}
 
-        {data.waiting.count > 0 && (
+        {data.cameBack.map(c => (
+          <Box key={`back-${c.id}`} flexDirection="column">
+            <Text color={SIGNAL} wrap="wrap">● came back: {c.text}</Text>
+            <Text color={MUTED} wrap="wrap">  {c.verdict}</Text>
+            {c.fix === 'always-on' && <Button key={`fix-${c.id}`} plain onPress={() => act($, ['edit', c.id, '--always-on'], 'Told every session now.')}>  [ tell it every session ]</Button>}
+          </Box>
+        ))}
+
+        {data.carry.length > 0 && (
           <Box flexDirection="column">
-            <Text bold>Waiting for you ({data.waiting.count})</Text>
-            {data.waiting.top.map(l => (
-              <Box key={l.id} flexDirection="column" marginTop={1}>
-                <Text wrap="wrap">{l.kind === 'note' ? 'note: ' : ''}{l.text}</Text>
-                <Box flexDirection="row" gap={1}>
-                  <Button key={`keep-${l.id}`} variant="primary" onPress={() => act($, ['keep', l.id], 'Kept.')}>Keep</Button>
-                  <Button key={`reject-${l.id}`} onPress={() => act($, ['reject', l.id], 'Rejected.')}>Reject</Button>
-                  <Text dimColor>{l.route}</Text>
-                </Box>
-              </Box>
+            <Text color={MUTED}>AGENTS CARRY</Text>
+            {data.carry.slice(0, 8).map(c => (
+              <Text key={`carry-${c.id}`} wrap="truncate-end" dimColor={c.state === 'fading'}>
+                <Text color={c.state === 'fading' ? MUTED : EYE}>{c.state === 'lit' ? '●' : c.state === 'armed' ? '○' : '·'}</Text> {c.label}{c.state === 'armed' ? <Text color={MUTED}> {c.route.replace(/^when /, '').replace(/ comes up$/, '')}</Text> : c.state === 'fading' ? <Text color={MUTED}>  fading</Text> : ''}
+              </Text>
             ))}
           </Box>
         )}
 
-        <Box flexDirection="column">
-          <Text bold>This week</Text>
-          <Text dimColor wrap="wrap">
-            {w.sent} lesson(s) sent in {w.sessions} session(s) · {w.kept} kept · {w.cameBack} came back after keeping
-            {w.muninnCalls ? ` · muninn's own AI: ${w.muninnCalls} call(s)${w.muninnCostUsd != null ? `, $${w.muninnCostUsd.toFixed(2)}` : ''}` : ''}
-          </Text>
-        </Box>
-
-        <Box flexDirection="row" gap={1}>
-          <Button key="open-ui" onPress={() => act($, ['ui', '--detach'], 'Opened muninn in your browser.')}>Open muninn</Button>
-          <Button key="refresh" plain dimColor onPress={() => refresh($)}>refresh</Button>
+        <Box flexDirection="row" justifyContent="space-between">
+          <Text color={MUTED}>{pad3(data.stats.told)} told · {pad3(data.stats.cameBack)} came back{data.stats.costUsd != null ? ` · $${data.stats.costUsd.toFixed(3)}` : ''}</Text>
+          <Button key="open-ui" plain onPress={() => act($, ['ui', '--detach'], 'Opened muninn in your browser.')}>open ↗</Button>
         </Box>
       </Box>
     )

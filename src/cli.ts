@@ -18,6 +18,7 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn setup                  Set everything up and take a first look (start here)
   muninn report [--all]         Did kept lessons work: delivered, and seen again since
   muninn keep <id> | reject <id>  Keep a waiting lesson with muninn's suggested delivery, or reject it
+  muninn dial [quiet|start|anytime]  How much muninn speaks unprompted in this repo
   muninn ui                     Open muninn in your browser
   muninn cursor on|off|sync     Write kept lessons as Cursor rules in this repo
   muninn keywords               Keywords in use, and how many lessons each has
@@ -77,6 +78,8 @@ async function main() {
     case "panel": return (await import("./commands/panel.js")).panel(args);
     case "keep": return (await import("./commands/panel.js")).keepWithDefaults(args);
     case "reject": return (await import("./commands/panel.js")).reject(args);
+    case "dial": return (await import("./commands/panel.js")).dial(args);
+    case "feedback": return (await import("./commands/panel.js")).feedback(args);
     case "ui": {
       if (!args.includes("--detach")) return (await import("./ui/server.js")).serve(args);
       console.log(await (await import("./ui/detach.js")).uiDetached({ open: !args.includes("--no-open") }));

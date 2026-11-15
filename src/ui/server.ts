@@ -4,6 +4,8 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { askData, originOf, shortRepo } from "../commands/ask.js";
 import { answerData } from "../commands/answer.js";
+import { homeData } from "../commands/home.js";
+import { getDial, recordFeedback, setDial } from "../store/dial.js";
 import { loadEmbedder, modelCached, type Embed } from "../embed/model.js";
 import { fillExplanations } from "../learn/explain.js";
 import { pickRunner, saveUsage } from "../learn/writer.js";
@@ -73,6 +75,13 @@ const routes: Record<string, Handler> = {
     return lessonDetail(db, id);
   },
   "GET /api/report": async (db, q) => reportData(db, q.get("repo") || null),
+  "GET /api/home": async (db, q) => homeData(db, q.get("repo") || null),
+  "POST /api/dial": async (db, _q, b) => { await setDial(db, b.repo || null, b.dial); return { dial: await getDial(db, b.repo || null) }; },
+  "POST /api/feedback": async (db, _q, b) => {
+    if (b.verdict !== "helped" && b.verdict !== "wrong") throw new Error("Feedback is helped or wrong.");
+    await recordFeedback(db, { lessonId: b.kind === "handoff" ? null : String(b.id), handoffId: b.kind === "handoff" ? String(b.id) : null, session: b.session ?? null, verdict: b.verdict });
+    return { ok: true };
+  },
   "GET /api/handoffs": async (db, q) => {
     const repo = q.get("repo");
     return (await db.execute({ sql: `SELECT id,repo_id,branch,tool,created_at,text FROM handoffs ${repo ? "WHERE repo_id=?" : ""} ORDER BY created_at DESC LIMIT 30`, args: repo ? [repo] : [] })).rows;

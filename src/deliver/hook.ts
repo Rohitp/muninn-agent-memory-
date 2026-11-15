@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { isPaused, settings } from "../config.js";
 import { repoIdentity } from "../repo/identity.js";
 import { currentBranch, handoffText, latestHandoff } from "../handoff/handoff.js";
+import { getDial } from "../store/dial.js";
 
 export type HookInput = { hook_event_name?: string; session_id?: string; cwd?: string; source?: string; prompt?: string; tool_input?: { command?: string }; tool_response?: unknown; error?: string; transcript_path?: string | null; [k: string]: unknown };
 type Row = { id: string; text: string; always_on: number; updated_at: string; pattern: string | null };
@@ -42,7 +43,11 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   if (fromCursor(input)) { await log("unsupported_client"); return null; }
   if (isPaused()) { await log("paused"); return null; }
   const repo = input.cwd ? repoIdentity(input.cwd) : null;
-  const scope = "l.status='live' AND (l.scope='global' OR l.repo_id IS ? OR l.repo_id=?)";
+  // The dial: quiet holds everything back; "start" speaks only when a session starts, never mid-task.
+  const dial = await getDial(db, repo);
+  const midTask = event === "UserPromptSubmit" || event.startsWith("PostToolUse");
+  if (dial === "quiet" || (dial === "start" && midTask)) { await log("paused"); return null; }
+  const scope ="l.status='live' AND (l.scope='global' OR l.repo_id IS ? OR l.repo_id=?)";
   let rows: Row[] = [];
   if (event === "SessionStart" || event === "SubagentStart") {
     rows = (await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,NULL pattern FROM lessons l WHERE ${scope} AND l.always_on=1`, args: [repo, repo] })).rows as unknown as Row[];
