@@ -83,6 +83,11 @@ const routes: Record<string, Handler> = {
         alwaysOn: route === "always",
         triggers: route === "keyword" ? keywords : [],
       });
+      // "Applies to" another repo: the lesson was learned in one repo but is about another, so move it there.
+      if (typeof b.repo === "string" && b.repo && !b.global) {
+        await db.execute({ sql: "INSERT OR IGNORE INTO repos (id,paths) VALUES (?,'[]')", args: [b.repo] });
+        await db.execute({ sql: "UPDATE lessons SET repo_id=? WHERE id=?", args: [b.repo, id] });
+      }
     } else if (b.action === "combine") {
       await combine(db, id, String(b.other ?? ""), typeof b.text === "string" && b.text.trim() ? b.text.trim() : undefined);
       await decide(db, id, { status: "live", alwaysOn: b.route === "always", triggers: b.route === "keyword" ? String(b.keywords ?? "").toLowerCase().split(",").map((k: string) => k.trim()).filter(Boolean) : [] });

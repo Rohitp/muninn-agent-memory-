@@ -225,7 +225,11 @@ function lessonRow(l) {
       <label for="t-${esc(l.id)}">What agents are told</label>
       <textarea id="t-${esc(l.id)}" rows="3" data-f="text">${esc(l.text)}</textarea>
       ${whenChoices(route, l.triggers.join(", "))}
-      <label class="check" style="font-weight:400"><input type="checkbox" data-f="global" ${l.scope === "global" ? "checked" : ""}> In all repos</label>
+      <label for="r-${esc(l.id)}">Applies to</label>
+      <select id="r-${esc(l.id)}" data-f="applies" style="height:38px;border:1px solid var(--line-strong);border-radius:10px;background:var(--group);padding:0 10px;font-size:14px">
+        <option value="*" ${l.scope === "global" ? "selected" : ""}>All repos</option>
+        ${[...new Set([l.repo_id, ...data.repos.map((r) => r.id)].filter(Boolean))].map((r) => `<option value="${esc(r)}" ${l.scope !== "global" && r === l.repo_id ? "selected" : ""}>${esc(short(r))}${r === l.repo_id ? " (where it was learned)" : ""}</option>`).join("")}
+      </select>
       <div class="btns"><button class="btn primary" data-save="${esc(l.id)}">Save</button><button class="btn" data-open="${esc(l.id)}">Cancel</button><button class="btn textbtn" data-remove="${esc(l.id)}">Remove lesson</button></div>
     </div>` : ""}
   </li>`;
@@ -342,7 +346,8 @@ document.addEventListener("click", async (e) => {
       const box = li.querySelector(".detail"); const route = box.querySelector("[data-route][aria-checked=true]").dataset.route; const kws = box.querySelector("[data-f=kw]").value;
       if (route === "keyword" && !kws.trim()) { toast("Add a word, or pick another option."); return; }
       el.disabled = true;
-      await api("/api/decide", { id: el.dataset.save, action: "save", text: box.querySelector("[data-f=text]").value, route, keywords: kws, global: box.querySelector("[data-f=global]").checked });
+      const applies = box.querySelector("[data-f=applies]").value;
+      await api("/api/decide", { id: el.dataset.save, action: "save", text: box.querySelector("[data-f=text]").value, route, keywords: kws, global: applies === "*", ...(applies !== "*" ? { repo: applies } : {}) });
       open = null; toast("Saved. Agents get the new version from their next session."); await refresh(); return;
     }
     if (el.dataset.remove) {

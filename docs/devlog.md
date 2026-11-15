@@ -401,3 +401,9 @@ Entry template:
 - Real run on a copy: an 11.5 MB session became 7 pieces, giving 6 open items, 12 decisions and 24 done items for $0.024 (the end-only handoff had given 5 open and 3 decisions).
 
 **To do on each machine:** `muninn install` adds the two hooks (Codex asks to trust them in /hooks). `muninn status` names them while they're missing.
+
+## 2026-11-15 — Lessons about another project
+
+**Found (author):** the panel in the muninn repo listed "an access token expires every 8 hours" and the em-dash search lesson, which aren't about muninn. On 3 Nov, in the muninn folder, the author had described mistakes from other work as examples while designing muninn. The writer turned those explanations into notes and filed them under the repo the conversation happened in.
+
+**Did:** the lesson editor has an "Applies to" picker (all repos, this repo, or any other repo), which moves a lesson to the repo it's really about. The writer's rule for explanations now returns nothing when the engineer is describing a different project or system as an example or story.
