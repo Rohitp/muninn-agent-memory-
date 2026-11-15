@@ -71,6 +71,9 @@ const routes: Record<string, Handler> = {
     } else if (b.action === "combine") {
       await combine(db, id, String(b.other ?? ""), typeof b.text === "string" && b.text.trim() ? b.text.trim() : undefined);
       await decide(db, id, { status: "live", alwaysOn: b.route === "always", triggers: b.route === "keyword" ? String(b.keywords ?? "").toLowerCase().split(",").map((k: string) => k.trim()).filter(Boolean) : [] });
+    } else if (b.action === "on" || b.action === "off") {
+      // The switch: off keeps the lesson but stops agents being told it.
+      await decide(db, id, { off: b.action === "off" });
     } else throw new Error("Unknown action.");
     await syncCursor(db);
     // New text needs a new plain line and questions. Written in the background, so the page doesn't wait.

@@ -337,3 +337,12 @@ Entry template:
 - Home is now the repo name, one sentence, **one next-step card**, the last three things told to agents (with reasons), and one sentence about the week. The receipt, what agents know and the counters moved off Home: the full log is a new **Activity** tab, and what agents know is **Memory**.
 - No physical touches: the knob became a header dropdown ("Speaks up: …"), the paper receipt became a plain list, buttons are flat (one solid primary, the rest outlined), no glows or display counters. Review shows "Lesson 3 of 18" and plain option buttons. The panel's dashed box is gone.
 - `docs/design-language.md` rewritten as "calm and plain", keeping the behaviour (reasons, the setting, fading, literal words) and dropping the materials.
+
+## 2026-11-15 — Design C: one screen of switches
+
+**Author:** "ask Claude Design and design an intuitive simple UI. I hate this." Three concepts went on a new canvas page: A inbox, B guided questions, C switches like phone settings. The author picked C.
+
+**Did:**
+- The web UI is now one screen, "What your agents know": suggestions with Add or × (tap to edit first), your lessons with on/off switches (tap to edit or remove), and two repo settings as switches that map onto the dial (start on, mid-task on = anytime; start only = start; both off = quiet).
+- A real off state: a new `off` column (migration 007). Off lessons stay in your list but are skipped by the delivery hook, Cursor rules, `muninn ask` and the panel's list. Removing is separate and asks first.
+- Tabs, Home, Activity and Ask are gone from the web page. Activity and feedback stay in the panel.

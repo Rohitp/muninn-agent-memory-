@@ -48,5 +48,5 @@ Type: IBM Plex Sans if installed, else the system font. Monospace only for lesso
 
 ## Surfaces
 
-- **Web (`muninn ui`):** Home (next step, recently told, this week), Review (one lesson at a time, K/R/L), Memory (what agents know, grouped by when they're told), Activity (everything told, with helped / wrong here), Ask (answer, then sources). The repo and the speaks-up setting are dropdowns in the header.
+- **Web (`muninn ui`):** design C, "Switches", chosen by the author from three simple concepts (inbox, guided, switches) on the canvas's first page. One screen like phone settings, titled "What your agents know": **Suggested from your sessions** (Add, or × to dismiss; tap to change wording or when it's told first), **Your lessons** (an on/off switch each; off keeps the lesson but agents aren't told it; tap to edit or remove), and **Settings** for the repo as two switches: "Tell agents when a session starts" and "Tell agents mid-task too" (both off = only when asked). No tabs, no dashboard. The activity log and helped / wrong here live in the Claude Code panel; `muninn ask` stays in the terminal.
 - **Claude Code panel (`mods/muninn-panel`):** plain terminal text in the same order and words: what it told your agent this session and why, the speaks-up setting, one lesson to review, what agents know, and a one-line week.

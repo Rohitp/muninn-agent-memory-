@@ -65,7 +65,7 @@ export async function homeData(db: Client, repo: string | null, session?: string
     top.push({ id: String(r.id), text: String(r.text), plain: r.plain ? String(r.plain) : null, origin: await originOf(db, { id: String(r.id), source: String(r.source), signal: r.signal ? String(r.signal) : null }), route: d.route === "always" ? `every session${d.global ? ", every repo" : ", this repo"}` : d.route === "keyword" ? `when "${d.keywords.join('", "')}" comes up` : "only when searched" });
   }
 
-  const carryRows = (await db.execute({ sql: `SELECT l.id, l.text, l.plain, l.always_on, l.scope, coalesce(l.reviewed_at,l.created_at) kept, (SELECT group_concat(pattern, '", "') FROM triggers t WHERE t.lesson_id=l.id) kw, (SELECT max(ts) FROM deliveries d WHERE d.lesson_id=l.id AND d.outcome='sent') last FROM lessons l WHERE l.status='live' AND ${inRepo} ORDER BY l.always_on DESC, last DESC`, args: rargs })).rows;
+  const carryRows = (await db.execute({ sql: `SELECT l.id, l.text, l.plain, l.always_on, l.scope, coalesce(l.reviewed_at,l.created_at) kept, (SELECT group_concat(pattern, '", "') FROM triggers t WHERE t.lesson_id=l.id) kw, (SELECT max(ts) FROM deliveries d WHERE d.lesson_id=l.id AND d.outcome='sent') last FROM lessons l WHERE l.status='live' AND l.off=0 AND ${inRepo} ORDER BY l.always_on DESC, last DESC`, args: rargs })).rows;
   const fadeBefore = new Date(Date.now() - FADE_DAYS * 86_400_000).toISOString();
   const carry: Carried[] = carryRows.map((r) => {
     const last = r.last ? String(r.last) : null;

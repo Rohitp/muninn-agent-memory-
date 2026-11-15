@@ -47,7 +47,8 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   const dial = await getDial(db, repo);
   const midTask = event === "UserPromptSubmit" || event.startsWith("PostToolUse");
   if (dial === "quiet" || (dial === "start" && midTask)) { await log("paused"); return null; }
-  const scope ="l.status='live' AND (l.scope='global' OR l.repo_id IS ? OR l.repo_id=?)";
+  // Switched-off lessons stay kept but are never told.
+  const scope = "l.status='live' AND l.off=0 AND (l.scope='global' OR l.repo_id IS ? OR l.repo_id=?)";
   let rows: Row[] = [];
   if (event === "SessionStart" || event === "SubagentStart") {
     rows = (await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,NULL pattern FROM lessons l WHERE ${scope} AND l.always_on=1`, args: [repo, repo] })).rows as unknown as Row[];

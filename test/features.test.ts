@@ -368,3 +368,22 @@ describe("this week, in plain terms", () => {
     expect(w).toMatchObject({ sessions: 2, mostTold: { label: "Quote === in zsh", sessions: 2 }, problems: { kept: 1, cameBack: 0 } });
   });
 });
+
+describe("the on/off switch", () => {
+  beforeEach(useHome);
+  it("keeps a lesson but stops agents being told it, until it's back on", async () => {
+    const cwd = join(tmp(), "repo"); mkdirSync(cwd); execFileSync("git", ["init", "-q", cwd]);
+    const db = await openDb(); const repo = repoIdentity(cwd)!; await ensureRepo(db, repo, cwd);
+    const id = await createLesson(db, { repo_id: repo, text: "Quote === in zsh.", source: "manual", status: "live", by: "person" });
+    await decide(db, id, { alwaysOn: true });
+    const start = (s: string) => deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "startup", session_id: s, cwd });
+    expect(await start("a")).toContain("Quote ===");
+    await decide(db, id, { off: true });
+    expect(await start("b")).toBeNull();
+    expect((await listLessons(db, { repo, status: "live" }))[0]).toMatchObject({ off: 1 });
+    const { askData } = await import("../src/commands/ask.js");
+    expect(await askData(db, "quote zsh", repo, { embed: fakeEmbed })).toEqual([]);
+    await decide(db, id, { off: false });
+    expect(await start("c")).toContain("Quote ===");
+  });
+});

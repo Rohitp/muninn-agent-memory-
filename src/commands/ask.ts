@@ -61,7 +61,7 @@ export async function askData(db: Client, q: string, here: string | null, opts: 
   }
   if (!ranks.size) return [];
   const ids = [...ranks.keys()];
-  const rows = (await db.execute({ sql: `SELECT id,repo_id,scope,kind,status,source,signal,text,plain,updated_at FROM lessons WHERE id IN (${ids.map(() => "?").join(",")})`, args: ids })).rows;
+  const rows = (await db.execute({ sql: `SELECT id,repo_id,scope,kind,status,source,signal,text,plain,updated_at FROM lessons WHERE off=0 AND id IN (${ids.map(() => "?").join(",")})`, args: ids })).rows;
   const sorted = rows.sort((a, b) => (Number(b.status === "live") - Number(a.status === "live")) || (Number(b.repo_id === here) - Number(a.repo_id === here)) || ranks.get(String(b.id))! - ranks.get(String(a.id))!).slice(0, opts.includeWaiting ? 8 : 5);
   for (const r of sorted.filter((r) => r.repo_id && r.repo_id !== here && r.status === "live")) await db.execute({ sql: "INSERT INTO search_log (id,ts,from_repo,result_repo,query_kind) VALUES (lower(hex(randomblob(16))),?,?,?,'ask')", args: [new Date().toISOString(), here, String(r.repo_id)] });
   const out: AskHit[] = [];

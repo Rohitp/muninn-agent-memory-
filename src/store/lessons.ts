@@ -1,8 +1,8 @@
 import type { Client } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 
-export type Lesson = { plain: string | null; kind: string; suggested_keywords: string | null; suggested_scope: string | null; updated_at: string; id: string; repo_id: string | null; scope: string; text: string; source: string; signal: string | null; status: string; sessions: number; last_seen: string | null; reviewed_at: string | null; first_shown_at: string | null; news_to_engineer: number | null; edited_by_person: number; always_on: number };
-const COLS = "plain,kind,suggested_keywords,suggested_scope,updated_at,id,repo_id,scope,text,source,signal,status,sessions,last_seen,reviewed_at,first_shown_at,news_to_engineer,edited_by_person,always_on";
+export type Lesson = { off: number; plain: string | null; kind: string; suggested_keywords: string | null; suggested_scope: string | null; updated_at: string; id: string; repo_id: string | null; scope: string; text: string; source: string; signal: string | null; status: string; sessions: number; last_seen: string | null; reviewed_at: string | null; first_shown_at: string | null; news_to_engineer: number | null; edited_by_person: number; always_on: number };
+const COLS = "off,plain,kind,suggested_keywords,suggested_scope,updated_at,id,repo_id,scope,text,source,signal,status,sessions,last_seen,reviewed_at,first_shown_at,news_to_engineer,edited_by_person,always_on";
 const now = () => new Date().toISOString();
 
 export async function ensureRepo(db: Client, id: string, path: string) {
@@ -49,7 +49,7 @@ export async function markShown(db: Client, id: string) {
   await db.execute({ sql: "UPDATE lessons SET first_shown_at=coalesce(first_shown_at,?) WHERE id=?", args: [now(), id] });
 }
 /** A person's decision. Agents and scans never call this. */
-export async function decide(db: Client, id: string, d: { status?: "live" | "rejected" | "retired"; text?: string; news?: boolean; alwaysOn?: boolean; global?: boolean; triggers?: string[] }) {
+export async function decide(db: Client, id: string, d: { status?: "live" | "rejected" | "retired"; text?: string; news?: boolean; alwaysOn?: boolean; global?: boolean; triggers?: string[]; off?: boolean }) {
   const sets = ["updated_at=?", "reviewed_at=?"]; const t = now(); const args: (string | number)[] = [t, t];
   if (d.status) { sets.push("status=?"); args.push(d.status); }
   // New text makes the plain line and questions stale. The next learn, or the UI, writes them again.
@@ -57,6 +57,7 @@ export async function decide(db: Client, id: string, d: { status?: "live" | "rej
   if (d.news !== undefined) { sets.push("news_to_engineer=?"); args.push(d.news ? 1 : 0); }
   if (d.alwaysOn !== undefined) { sets.push("always_on=?"); args.push(d.alwaysOn ? 1 : 0); }
   if (d.global !== undefined) { sets.push("scope=?"); args.push(d.global ? "global" : "repo"); }
+  if (d.off !== undefined) { sets.push("off=?"); args.push(d.off ? 1 : 0); }
   await db.execute({ sql: `UPDATE lessons SET ${sets.join(",")} WHERE id=?`, args: [...args, id] });
   if (d.text !== undefined) {
     await db.execute({ sql: "DELETE FROM lessons_fts WHERE lesson_id=?", args: [id] });
