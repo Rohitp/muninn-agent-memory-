@@ -46,7 +46,11 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   if (isPaused()) { await log("paused"); return null; }
   const repo = input.cwd ? repoIdentity(input.cwd) : null;
   // A repo that just got a remote changes identity; carry its lessons over before looking them up.
-  if (event === "SessionStart" && input.cwd) await adoptRepo(db, repo, input.cwd);
+  if (event === "SessionStart" && input.cwd) {
+    await adoptRepo(db, repo, input.cwd);
+    // Register the repo on its first session, so the page lists it before any scan has run.
+    if (repo) await db.execute({ sql: "INSERT OR IGNORE INTO repos (id,paths) VALUES (?,?)", args: [repo, JSON.stringify([input.cwd])] });
+  }
   // The dial: quiet holds everything back; "start" speaks only when a session starts, never mid-task.
   const dial = await getDial(db, repo);
   const midTask = event === "UserPromptSubmit" || event.startsWith("PostToolUse");

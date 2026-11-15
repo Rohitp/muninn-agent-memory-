@@ -382,3 +382,9 @@ Entry template:
 **Author:** "a project plan is not per repo, it's per build", then chose one plan per branch.
 
 **Did:** plan items carry their branch (migration 009, existing items take the branch of the handoff they came from, else main). A handoff updates its own branch's plan. Agents get the plan of the branch they're on at session start, and Cursor's rules file has the branch checked out. The page shows "Plan for this branch" with a picker of branches that have plans, marking the checked-out one and any merged into the main branch. PLAN.md holds the checked-out branch's plan, so each branch carries its own in git.
+
+## 2026-11-15 — New repos show up from their first session
+
+**Author:** "there's a new repo I'm working on and it didn't pick it up." On this Mac every recent session was in a known repo, so it was the other machine. Repos were only registered by a scan, and scans run at most daily or after 5 new sessions, so a new repo could wait a day to appear.
+
+**Did:** the SessionStart hook registers the repo (one insert), so the page lists it immediately and its handoffs and plan work from the first session. When a session ends in a repo no scan has seen (no `scanned:<repo>` mark and no lessons), the SessionEnd hook starts a scan straight away instead of waiting. Learn marks each repo it scans.

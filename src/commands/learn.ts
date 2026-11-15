@@ -45,6 +45,8 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
     const sessions = scan.byRepo.get(repo)!;
     await adoptRepo(db, repo, sessions[0]!.cwd);
     await ensureRepo(db, repo, sessions[0]!.cwd);
+    // Marks the repo as scanned, so a session ending in a brand-new repo can trigger its first scan straight away.
+    await db.execute({ sql: "INSERT OR REPLACE INTO meta (key,value) VALUES (?,?)", args: [`scanned:${repo}`, new Date().toISOString()] });
     if (sessions.length < cfg.minSessions && !opts.auto) console.log(`${repo}: only ${sessions.length} session(s), which may be too few to find repeats.`);
     const folded = await foldDuplicates(db, repo);
     const r = await learnRepo(db, repo, sessions, { embed, writer, cutoff: cfg.similarityCutoff, minSessions: cfg.minSessions, notesPerRun: cfg.notesPerRun });

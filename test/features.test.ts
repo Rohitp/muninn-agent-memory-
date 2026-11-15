@@ -501,3 +501,14 @@ describe("a repo that gets a remote", () => {
     expect(await adoptRepo(db, remoteId, cwd)).toBe(false);
   });
 });
+
+describe("a brand-new repo", () => {
+  beforeEach(useHome);
+  it("is registered on its first session, so the page lists it before any scan", async () => {
+    const cwd = join(tmp(), "fresh"); mkdirSync(cwd); execFileSync("git", ["init", "-q", cwd]);
+    const db = await openDb(); const repo = repoIdentity(cwd)!;
+    expect((await db.execute({ sql: "SELECT 1 FROM repos WHERE id=?", args: [repo] })).rows.length).toBe(0);
+    await deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "startup", session_id: "n1", cwd });
+    expect((await db.execute({ sql: "SELECT 1 FROM repos WHERE id=?", args: [repo] })).rows.length).toBe(1);
+  });
+});

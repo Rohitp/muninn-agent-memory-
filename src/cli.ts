@@ -107,6 +107,17 @@ async function main() {
     default: console.log(USAGE); if (cmd && cmd !== "help" && cmd !== "--help") process.exitCode = 1;
   }
 }
+/** True when the session's folder is a git repo that no scan has looked at yet. */
+async function neverScanned(cwd: unknown): Promise<boolean> {
+  if (typeof cwd !== "string" || !existsSync(join(home(), "muninn.db"))) return false;
+  const [{ repoIdentity }, { openDb }] = await Promise.all([import("./repo/identity.js"), import("./store/db.js")]);
+  const repo = repoIdentity(cwd);
+  if (!repo) return false;
+  const db = await openDb({ lockWaitMs: 100 });
+  // A repo with lessons was scanned before this mark existed.
+  return !(await db.execute({ sql: "SELECT 1 FROM meta WHERE key=? UNION ALL SELECT 1 FROM lessons WHERE repo_id=? LIMIT 1", args: [`scanned:${repo}`, repo] })).rows.length;
+}
+
 /** Hook failures must never interrupt the agent, so every path exits 0, and the client's own timeout is the hard stop. */
 async function runHook(client: string) {
   const errors = (e: unknown) => { try { appendFileSync(join(ensureHome(), "hook-errors.log"), `${new Date().toISOString()} ${client} ${e instanceof Error ? e.message : String(e)}\n`); } catch { /* nothing else to do */ } };
@@ -118,7 +129,8 @@ async function runHook(client: string) {
     if (event === "SessionEnd") {
       const auto = await import("./commands/auto.js");
       if (typeof input.transcript_path === "string") auto.startHandoff(input.transcript_path, client);
-      auto.startAutoScan(); return;
+      // A repo muninn has never scanned is scanned now, rather than waiting for the daily scan.
+      auto.startAutoScan({ force: await neverScanned(input.cwd) }); return;
     }
     if (!existsSync(join(home(), "muninn.db"))) return;
     const [{ openDb }, { deliver, hookOutput }] = await Promise.all([import("./store/db.js"), import("./deliver/hook.js")]);
