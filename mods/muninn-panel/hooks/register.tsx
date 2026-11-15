@@ -110,8 +110,8 @@ export const register: Register = on => {
           <Text color={MUTED} wrap="wrap">{DIAL_WORDS[data.dial]}</Text>
         </Box>
 
-        <Box flexDirection="column" borderStyle="dashed" borderColor={MUTED} paddingX={1}>
-          <Box justifyContent="center"><Text color={MUTED}>TOLD THIS SESSION</Text></Box>
+        <Box flexDirection="column">
+          <Text color={MUTED}>TOLD YOUR AGENT THIS SESSION</Text>
           {data.receipt.length === 0 && (
             <Text color={MUTED}>{data.dial === 'quiet' ? 'The dial is at quiet: muninn says nothing unless asked.' : 'Nothing yet. muninn speaks at the start, and when a word or a failed command matches.'}</Text>
           )}

@@ -5,193 +5,128 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>muninn</title>
 <style>
-/* The console, with restraint: flat and legible, with four physical things: the dial, the light, the receipt, the keys. See docs/design-language.md. */
+/* Calm and plain (docs/design-language.md): flat surfaces, clear type, one obvious action per screen.
+   Every unprompted act says why. No web fonts, so the page makes no requests off this machine. */
 :root {
-  --bg: #ECEDEA; --surface: #F7F7F5; --card: #FFFFFF; --line: #DADBD6; --line-strong: #C9CAC4;
+  --bg: #F6F6F4; --card: #FFFFFF; --line: #E2E2DE; --line-strong: #CFCFCA;
   --ink: #1C1D21; --muted: #5E616B; --faint: #8A8D96;
-  --eye: #4C5BFF; --eye-text: #2F3DBF; --signal: #E8550F; --signal-text: #B23E06; --alert-bg: #FFF4EC; --alert-line: #F2C7A9;
-  --key-dark-1: #383A44; --key-dark-2: #1C1D21; --key-dark-edge: #0C0D10;
-  --key-1: #FFFFFF; --key-2: #ECEDE9; --key-edge: #D2D3CE;
-  --paper: #FFFFFF; --paper-ink: #1C1D21; --paper-muted: #5E616B; --paper-rule: #C9CAC4;
-  /* No web fonts: the page makes no requests off this machine. IBM Plex if installed, else the system's. */
+  --accent: #3546D8; --accent-text: #2B3AB8; --signal: #B23E06; --signal-bg: #FDF1EA; --signal-line: #F0CDB8; --good: #1F7A45;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #141519; --surface: #1B1D22; --card: #1F2127; --line: #2C2E36; --line-strong: #3A3D48;
-    --ink: #E8E9ED; --muted: #A2A5B0; --faint: #7D808B;
-    --eye: #6E7DFF; --eye-text: #A9B1FF; --signal: #FF7A3D; --signal-text: #FF9C6E; --alert-bg: #2A1E17; --alert-line: #5A3A27;
-    --key-dark-1: #E8E9ED; --key-dark-2: #C9CBD3; --key-dark-edge: #8E919C;
-    --key-1: #2A2C33; --key-2: #22242A; --key-edge: #111216;
-    --paper: #F3F2EE; --paper-ink: #1C1D21; --paper-muted: #55585F; --paper-rule: #BDBEB8;
-  }
+  :root { --bg: #151619; --card: #1D1F24; --line: #2D2F37; --line-strong: #3B3E49; --ink: #E8E9ED; --muted: #A2A5B0; --faint: #7D808B;
+    --accent: #8C98FF; --accent-text: #A9B1FF; --signal: #FF9C6E; --signal-bg: #2A1E17; --signal-line: #5A3A27; --good: #5BC98A; }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); }
-a { color: var(--eye-text); }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); }
+a { color: var(--accent-text); }
 button, input, textarea, select { font: inherit; color: inherit; }
-.wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
-.mono { font-family: var(--mono); }
-.label { font-family: var(--mono); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; font-weight: 500; }
-.muted { color: var(--muted); }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); }
 
-/* Header: the device strip */
-header { padding: 16px 0 0; }
-.strip { background: linear-gradient(180deg, var(--card), var(--surface)); border: 1px solid var(--line); border-radius: 18px; box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 1px 2px rgba(0,0,0,.05), 0 10px 24px rgba(20,22,30,.06); padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 18px; letter-spacing: -.2px; }
+header { background: var(--card); border-bottom: 1px solid var(--line); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 0; }
+.brand { font-weight: 600; font-size: 17px; display: flex; align-items: center; gap: 8px; }
 .brand svg path { fill: var(--ink); }
-nav { display: flex; gap: 2px; margin-right: auto; flex-wrap: wrap; }
-nav button { border: 0; background: none; min-height: 40px; padding: 0 12px; border-radius: 10px; cursor: pointer; color: var(--muted); }
-nav button[aria-selected="true"] { background: var(--bg); color: var(--ink); font-weight: 600; box-shadow: inset 0 1px 2px rgba(0,0,0,.08); }
-.count { font-family: var(--mono); font-size: 12px; background: var(--ink); color: var(--bg); border-radius: 999px; padding: 0 7px; margin-left: 4px; }
-select.repo { min-height: 40px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 0 8px; }
-.light { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 13px; color: var(--muted); }
-.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; display: inline-block; }
-.dot.on { background: var(--eye); box-shadow: 0 0 0 3px color-mix(in srgb, var(--eye) 18%, transparent), 0 0 10px var(--eye); }
-.dot.off { background: var(--line-strong); }
-.dot.ring { border: 1.5px solid var(--eye); }
-.dot.alert { background: var(--signal); box-shadow: 0 0 8px var(--signal); }
-.dial { display: flex; align-items: center; gap: 10px; }
-.dial-labels { display: flex; flex-direction: column; align-items: flex-end; font-family: var(--mono); font-size: 11px; line-height: 1.45; }
-.dial-labels button { border: 0; background: none; padding: 0; cursor: pointer; color: var(--faint); font: inherit; }
-.dial-labels button[aria-checked="true"] { color: var(--ink); font-weight: 600; }
-.dial-labels button[aria-checked="true"]::after { content: " ●"; color: var(--signal); }
-.dial-q { font-family: var(--sans); font-size: 11px; color: var(--muted); }
-.dial-now { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-top: 12px; font-size: 14px; }
-.dial-now b { font-weight: 600; }
-.intro { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
-.next { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 22px 24px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 10px 26px rgba(20,22,30,.06); margin-bottom: 14px; }
-.next.alert { background: var(--alert-bg); border-color: var(--alert-line); display: block; }
-.next-kicker { font: 500 12px var(--mono); letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
-.next h1 { margin: 4px 0 6px; font-size: 26px; line-height: 1.25; letter-spacing: -.3px; font-weight: 600; }
-.next p { margin: 0; max-width: 70ch; color: var(--muted); }
-.next.ok h1::before { content: "● "; color: var(--eye); }
-.sec { margin: 0; font-size: 17px; font-weight: 600; }
-.sec-sub { margin: 2px 0 12px; font-size: 14px; color: var(--muted); }
-.week { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
-.week li { padding: 12px 16px 12px 36px; border-top: 1px solid var(--line); position: relative; }
-.week li:first-child { border-top: 0; }
-.week li::before { content: ""; position: absolute; left: 16px; top: 20px; width: 8px; height: 8px; border-radius: 50%; background: var(--eye); }
-.week li.good::before { background: #1F8A4C; }
-.week li.bad::before { background: var(--signal); }
-.knob { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--line-strong); padding: 0; cursor: pointer; position: relative; background: radial-gradient(circle at 38% 30%, var(--key-1) 0%, var(--key-2) 50%, var(--line-strong) 100%); box-shadow: inset 0 1px 1px rgba(255,255,255,.7), inset 0 -2px 4px rgba(0,0,0,.12), 0 3px 6px rgba(20,22,30,.18); }
-.knob i { position: absolute; left: 50%; top: 5px; width: 3px; height: 12px; margin-left: -1.5px; border-radius: 2px; background: var(--signal); transform-origin: 50% 19px; transition: transform .25s cubic-bezier(.3,1.5,.6,1); }
+nav { display: flex; gap: 2px; flex-wrap: wrap; margin-right: auto; }
+nav button { border: 0; background: none; min-height: 40px; padding: 0 12px; border-radius: 8px; cursor: pointer; color: var(--muted); }
+nav button:hover { color: var(--ink); }
+nav button[aria-selected="true"] { color: var(--ink); font-weight: 600; background: var(--bg); }
+.badge { font-size: 12px; background: var(--accent); color: #fff; border-radius: 999px; padding: 0 7px; margin-left: 5px; }
+.selects { display: flex; gap: 8px; flex-wrap: wrap; }
+select { min-height: 38px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--card); padding: 0 8px; font-size: 14px; }
 
-main { padding: 22px 0 64px; }
-.help { color: var(--muted); font-size: 14px; margin: 0 0 18px; max-width: 70ch; }
+main { padding: 32px 0 72px; }
+h1 { margin: 0; font-size: 26px; line-height: 1.25; font-weight: 600; letter-spacing: -.2px; }
+h2 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
+.sub { margin: 2px 0 16px; color: var(--muted); font-size: 14px; }
+section + section { margin-top: 36px; }
 
-/* Counters */
-.counters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 26px; }
-.counter { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
-.counter b { display: block; font: 500 28px/1.2 var(--mono); letter-spacing: 1px; font-variant-numeric: tabular-nums; }
-.counter span { font-size: 13px; color: var(--muted); }
-.counter.alert b { color: var(--signal-text); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+.next { padding: 24px; }
+.next.alert { background: var(--signal-bg); border-color: var(--signal-line); }
+.next h2 { font-size: 21px; margin-bottom: 6px; }
+.next p { margin: 0; color: var(--muted); max-width: 64ch; }
 
-.cols { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
-.col-receipt { flex: 1 1 360px; min-width: 0; }
-.col-main { flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 26px; }
+.btn { min-height: 42px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--card); cursor: pointer; }
+.btn:hover { border-color: var(--faint); }
+.btn.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); font-weight: 600; }
+.btn.warn { background: var(--signal); border-color: var(--signal); color: #fff; font-weight: 600; }
+.btn.small { min-height: 34px; padding: 0 12px; font-size: 14px; }
+.btn.link { border: 0; background: none; padding: 0; min-height: 0; color: var(--muted); text-decoration: underline; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: default; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
 
-/* The receipt */
-.receipt { background: var(--paper); color: var(--paper-ink); box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 18px rgba(20,22,30,.08); padding: 22px 20px 24px; font: 13px/1.6 var(--mono); clip-path: polygon(0 6px,3% 0,6% 6px,9% 0,12% 6px,15% 0,18% 6px,21% 0,24% 6px,27% 0,30% 6px,33% 0,36% 6px,39% 0,42% 6px,45% 0,48% 6px,51% 0,54% 6px,57% 0,60% 6px,63% 0,66% 6px,69% 0,72% 6px,75% 0,78% 6px,81% 0,84% 6px,87% 0,90% 6px,93% 0,96% 6px,100% 0,100% 100%,0 100%); }
-.receipt .head, .receipt .foot { text-align: center; color: var(--paper-muted); letter-spacing: 2px; font-size: 11px; }
-.receipt hr { border: 0; border-top: 1px dashed var(--paper-rule); margin: 10px 0; }
-.receipt .row1 { display: flex; justify-content: space-between; gap: 10px; font-weight: 600; }
-.receipt .row1 span:last-child { font-weight: 400; color: var(--paper-muted); }
-.receipt .why { color: var(--paper-muted); }
-.receipt .acts { display: flex; gap: 14px; margin-top: 2px; }
-.receipt .acts button { border: 0; background: none; padding: 0; font: inherit; text-decoration: underline; cursor: pointer; color: var(--paper-muted); }
-.receipt .acts button:first-child { color: #2F3DBF; }
-.receipt .empty { color: var(--paper-muted); text-align: center; padding: 8px 0; }
+/* A told item: what muninn said, and why. Used on Home and Activity. */
+.told { list-style: none; margin: 0; padding: 0; }
+.told li { padding: 12px 0; border-top: 1px solid var(--line); }
+.told li:first-child { border-top: 0; padding-top: 0; }
+.told .when { font-size: 13px; color: var(--muted); }
+.told .why { font-size: 14px; color: var(--muted); }
+.told .why::before { content: "↳ because "; }
+.told .acts { display: flex; gap: 14px; margin-top: 4px; }
 
-/* Cards and keys */
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
-.lesson-big { margin: 0; font-size: 19px; line-height: 1.45; font-weight: 500; }
-.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
-.key { min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line-strong); background: linear-gradient(var(--key-1), var(--key-2)); box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 2px 0 var(--key-edge); cursor: pointer; transition: transform .06s, box-shadow .06s; }
-.key:active { transform: translateY(2px); box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 0 0 var(--key-edge); }
-.key.dark { border-color: var(--key-dark-edge); background: linear-gradient(var(--key-dark-1), var(--key-dark-2)); color: var(--bg); font-weight: 600; box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 2px 0 var(--key-dark-edge); }
-.key.warn { border-color: #8F3205; background: linear-gradient(#D2591A, #B23E06); color: #FFFFFF; font-weight: 600; box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 2px 0 #7A2A04; }
-.key.small { min-height: 36px; padding: 0 12px; font-size: 14px; }
-.key:disabled { opacity: .5; cursor: default; transform: none; }
-.route-note { font: 12px var(--mono); color: var(--muted); margin-left: auto; }
-.alert { background: var(--alert-bg); border: 1px solid var(--alert-line); border-radius: 14px; padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.alert h3 { margin: 0; font-size: 15px; }
-.alert p { margin: 0; font-size: 14px; color: var(--muted); }
-
-/* What agents carry */
-.carry { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
-.chip { background: linear-gradient(var(--key-1), var(--key-2)); border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 2px 0 var(--key-edge); padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start; }
-.chip .dot { margin-top: 7px; }
-.chip.fading { background: var(--surface); border-style: dashed; box-shadow: none; color: var(--faint); }
-.chip small { display: block; color: var(--muted); font-size: 12px; }
-.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 8px; align-items: center; }
-.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.week { margin: 0; color: var(--muted); }
+.week b { color: var(--ink); font-weight: 600; }
 
 /* Review */
-.review { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
-.display { font: 500 20px var(--mono); letter-spacing: 2px; background: #1C1D21; color: #E9ECFF; padding: 4px 12px; border-radius: 8px; box-shadow: inset 0 2px 4px rgba(0,0,0,.5); font-variant-numeric: tabular-nums; }
-.display span { color: #6A6F8C; }
-.review h1 { margin: 0; font-size: 25px; line-height: 1.3; font-weight: 600; letter-spacing: -.3px; }
-textarea { width: 100%; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); box-shadow: inset 0 1px 2px rgba(0,0,0,.06); font: 14px/1.6 var(--mono); resize: vertical; }
-.evidence { font: 13px/1.6 var(--mono); color: var(--muted); }
-.switch { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--bg); border-radius: 12px; padding: 4px; box-shadow: inset 0 1px 3px rgba(0,0,0,.12); }
-.switch button { min-height: 44px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; padding: 0 6px; }
-.switch button[aria-checked="true"] { border-color: var(--line-strong); background: linear-gradient(var(--key-1), var(--key-2)); box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 2px 4px rgba(0,0,0,.12); color: var(--ink); font-weight: 600; }
-.bigkeys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.bigkeys .key { min-height: 62px; font-size: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 4px 0 var(--key-edge), 0 10px 18px rgba(0,0,0,.06); }
-.bigkeys .key.dark { box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 4px 0 var(--key-dark-edge), 0 10px 18px rgba(0,0,0,.18); }
-.bigkeys kbd { font: 11px var(--mono); opacity: .7; }
-.similar { border: 1px solid var(--alert-line); background: var(--alert-bg); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
-input[type=text], input[type=search] { min-height: 44px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--card); padding: 0 12px; }
+.review { max-width: 720px; margin: 0 auto; }
+.progress { font-size: 14px; color: var(--muted); }
+textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--card); font: 14px/1.6 var(--mono); resize: vertical; }
+input[type=text], input[type=search] { min-height: 42px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--card); padding: 0 12px; }
+.field-label { display: block; font-size: 13px; font-weight: 600; margin: 18px 0 6px; }
+.choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.choices button { min-height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--card); cursor: pointer; }
+.choices button[aria-checked="true"] { border-color: var(--ink); background: var(--ink); color: var(--bg); font-weight: 600; }
+.evidence { font-size: 13px; color: var(--muted); margin-top: 14px; }
+.evidence div::before { content: "↳ "; }
+.similar { margin-top: 16px; border: 1px solid var(--signal-line); background: var(--signal-bg); border-radius: 8px; padding: 12px 14px; font-size: 14px; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
+kbd { font: 12px var(--mono); opacity: .65; margin-left: 6px; }
 
 /* Memory */
-.mem-group { margin-bottom: 30px; }
-.mem-row { border-top: 1px solid var(--line); padding: 14px 0; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; }
-.mem-row:last-child { border-bottom: 1px solid var(--line); }
-.mem-row .dot { margin-top: 7px; }
-.mem-row .meta { font: 12px/1.6 var(--mono); color: var(--muted); }
-.mem-row.fading .text { color: var(--faint); font-style: italic; }
-.mem-edit { grid-column: 2 / 4; display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.item { padding: 14px 18px; border-top: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; }
+.item:first-child { border-top: 0; }
+.item .meta { font-size: 13px; color: var(--muted); }
+.item.fading .text { color: var(--faint); }
+.item .warnline { font-size: 13px; color: var(--signal); }
+.edit { grid-column: 1 / -1; margin-top: 8px; }
 
-/* Ask */
-.answer { border-left: 3px solid var(--eye); }
-.answer p { margin: 0 0 8px; white-space: pre-wrap; font-size: 17px; }
+.answer { border-left: 3px solid var(--accent); }
+.answer p { margin: 0 0 8px; white-space: pre-wrap; font-size: 16px; }
 .sources { margin: 6px 0 0; padding-left: 20px; font-size: 13px; color: var(--muted); }
-
-.empty-state { color: var(--muted); text-align: center; padding: 40px 0; }
-.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
+.empty { color: var(--muted); padding: 24px 0; }
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
 .toast.show { opacity: 1; }
-@media (max-width: 620px) { .bigkeys { grid-template-columns: 1fr; } .switch { grid-template-columns: 1fr; } .route-note { margin-left: 0; } }
-@media (prefers-reduced-motion: reduce) { .knob i, .key { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
 </style>
 </head>
 <body>
 <header>
-  <div class="wrap">
-    <div class="strip">
-      <div class="brand">
-        <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true"><path d="M5 20 L13 9 L21 7 L27 10 L22 12 L24 17 L17 25 L9 24 Z"/><circle cx="22" cy="10" r="1.4" style="fill: var(--eye)"/></svg>
-        muninn
-      </div>
+  <div class="wrap bar">
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><path d="M5 20 L13 9 L21 7 L27 10 L22 12 L24 17 L17 25 L9 24 Z"/></svg>
+      muninn
+    </div>
+    <nav role="tablist" aria-label="Sections">
+      <button role="tab" data-tab="home" aria-selected="true">Home</button>
+      <button role="tab" data-tab="review">Review<span class="badge" id="waitCount" hidden></span></button>
+      <button role="tab" data-tab="memory">Memory</button>
+      <button role="tab" data-tab="activity">Activity</button>
+      <button role="tab" data-tab="ask">Ask</button>
+    </nav>
+    <div class="selects">
       <label class="vh" for="repo">Repo</label>
-      <select id="repo" class="repo"></select>
-      <nav role="tablist" aria-label="Sections">
-        <button role="tab" data-tab="home" aria-selected="true">Home</button>
-        <button role="tab" data-tab="review">Review<span class="count" id="waitCount" hidden></span></button>
-        <button role="tab" data-tab="memory">Memory</button>
-        <button role="tab" data-tab="ask">Ask</button>
-      </nav>
-      <div class="light" id="light"><span class="dot off"></span><span>quiet so far</span></div>
-      <div class="dial">
-        <div class="dial-labels" role="radiogroup" aria-label="When should muninn speak up to your agents?">
-          <span class="dial-q">muninn speaks up</span>
-          <button role="radio" data-dial="quiet" aria-checked="false" title="Never on its own. Agents can still run muninn ask.">only when asked</button>
-          <button role="radio" data-dial="start" aria-checked="false" title="Your every-session lessons and where you left off, then silence.">at session start</button>
-          <button role="radio" data-dial="anytime" aria-checked="true" title="Also mid-task, when a word you chose comes up or a command fails the way it has before.">whenever relevant</button>
-        </div>
-        <button class="knob" id="knob" type="button" aria-label="Turn the dial"><i></i></button>
-      </div>
+      <select id="repo"></select>
+      <label class="vh" for="dial">When muninn speaks up to your agents</label>
+      <select id="dial" title="When should muninn speak up to your agents?">
+        <option value="quiet">Speaks up: only when asked</option>
+        <option value="start">Speaks up: at session start</option>
+        <option value="anytime">Speaks up: whenever relevant</option>
+      </select>
     </div>
   </div>
 </header>
@@ -204,14 +139,14 @@ const HERE = __REPO__;
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const TOOL = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor" };
-const DIALS = ["quiet", "start", "anytime"];
-// The dial answers one question: when should muninn speak up to your agents?
 const DIAL_LABEL = { quiet: "only when asked", start: "at session start", anytime: "whenever relevant" };
 const DIAL_WORDS = { quiet: "It never speaks up on its own. Agents can still look things up with muninn ask.", start: "It tells agents your every-session lessons and where you left off when a session starts, then stays silent.", anytime: "It speaks up at the start of a session, and mid-task when a word you chose comes up or a command fails the way it has before." };
-const short = (r) => (r ? String(r).split("/").filter(Boolean).pop() : "every repo");
+const ROUTE = { always: "Every session", keyword: "When a word comes up", none: "Only when searched" };
+const short = (r) => (r ? String(r).split("/").filter(Boolean).pop() : "all repos");
 const q = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString();
 const time = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
-const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
+const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} hours ago` : `${Math.round(m / 1440)} days ago`; };
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 let repo = HERE || "";
 let tab = "home";
 let reviewQueue = [], reviewIndex = 0;
@@ -222,157 +157,114 @@ async function api(path, body) {
   if (!r.ok) throw new Error(j.error || "Request failed");
   return j;
 }
-function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2600); }
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2800); }
+function setWaiting(n) { const b = $("#waitCount"); b.hidden = !n; b.textContent = n; }
 
 async function loadRepos() {
   const repos = await api("/api/repos");
-  $("#repo").innerHTML = '<option value="">All repos</option>' + repos.map((r) => `<option value="${esc(r.id)}" title="${esc(r.id)}">${esc(short(r.id))}${r.waiting ? ` · ${r.waiting} to review` : ""}</option>`).join("");
+  $("#repo").innerHTML = '<option value="">All repos</option>' + repos.map((r) => `<option value="${esc(r.id)}" title="${esc(r.id)}">${esc(short(r.id))}</option>`).join("");
   if (repo && !repos.some((r) => r.id === repo)) repo = "";
   $("#repo").value = repo;
-}
-function setDialUI(d) {
-  document.querySelectorAll("[data-dial]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.dial === d)));
-  $("#knob i").style.transform = `rotate(${({ quiet: -50, start: 0, anytime: 50 })[d]}deg)`;
-  $("#knob").setAttribute("aria-label", `muninn speaks up ${DIAL_LABEL[d]}. ${DIAL_WORDS[d]} Press to turn.`);
-  const now = $("#dialNow"); if (now) now.innerHTML = dialNowHTML(d);
-}
-async function setDial(d) {
-  if (!repo) { toast("Pick a repo to set its dial."); return; }
-  try { const r = await api("/api/dial", { repo, dial: d }); setDialUI(r.dial); toast(`muninn now speaks up ${DIAL_LABEL[r.dial]} in ${short(repo)}.`); } catch (e) { toast(e.message); }
+  $("#dial").disabled = !repo;
 }
 
-/* ---------- Home ---------- */
-function dialNowHTML(d) {
-  return `<span class="dot ${d === "quiet" ? "off" : "on"}" aria-hidden="true"></span><span>${repo ? `In ${esc(short(repo))}, muninn` : "muninn"} speaks up <b>${DIAL_LABEL[d]}</b>. ${DIAL_WORDS[d]}</span>${repo ? "" : `<span class="muted">Pick a repo to change it.</span>`}`;
-}
-function receiptHTML(h) {
-  if (!h.receipt.length) return `<div class="receipt"><div class="head">MUNINN</div><hr><div class="empty">Nothing told in the last day${repo ? " here" : ""}.</div><hr><div class="foot">${h.dial === "quiet" ? "THE DIAL IS AT QUIET" : "LISTENING"}</div></div>`;
-  const lines = h.receipt.map((x) => `
-    <div class="row1"><span>${esc(time(x.at))} · ${esc(TOOL[x.tool] || x.tool)}</span><span>${x.kind === "handoff" ? "handoff" : esc(x.why.startsWith("always-on") ? "start" : x.why.includes("failed") ? "failed cmd" : "your prompt")}</span></div>
+/* A list of things muninn told agents, each with its reason. */
+function toldList(items, withFeedback) {
+  return `<ul class="told">${items.map((x) => `<li>
+    <div class="when">${esc(time(x.at))} · ${esc(TOOL[x.tool] || x.tool)}${x.kind === "handoff" ? " · where you left off" : ""}</div>
     <div>${esc(x.text)}</div>
-    <div class="why">↳ because ${esc(x.why.replace(/^always-on, /, "").replace(/^at session start$/, "a session started"))}</div>
-    <div class="acts"><button data-fb="helped" data-kind="${x.kind}" data-id="${esc(x.id)}" data-session="${esc(x.session || "")}">helped</button><button data-fb="wrong" data-kind="${x.kind}" data-id="${esc(x.id)}" data-session="${esc(x.session || "")}">wrong here</button></div>`).join("<hr>");
-  const d = new Date();
-  return `<div class="receipt" aria-label="What muninn told your agents"><div class="head">MUNINN · ${esc(d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }).toUpperCase())}</div><hr>${lines}<hr><div class="foot">${h.receipt.length} TOLD</div></div>`;
+    <div class="why">${esc(x.why.replace(/^always-on, /, "").replace(/^at session start$/, "a session started"))}</div>
+    ${withFeedback && x.kind === "lesson" ? `<div class="acts"><button class="btn link" data-fb="helped" data-id="${esc(x.id)}" data-session="${esc(x.session || "")}">helped</button><button class="btn link" data-fb="wrong" data-id="${esc(x.id)}" data-session="${esc(x.session || "")}">wrong here</button></div>` : ""}
+  </li>`).join("")}</ul>`;
 }
-/**
- * The one thing to do next, in priority order: fix a lesson that didn't reach an agent, review new lessons,
- * learn for the first time, or nothing (all set). Home leads with it, so the page always has one obvious action.
- */
+
+/* ---------- Home: what should I do now? ---------- */
 function nextStep(h) {
   const where = repo ? ` in ${esc(short(repo))}` : "";
   const c = h.cameBack.find((x) => x.fix);
-  if (c) return { tone: "alert", title: `A lesson you kept didn't reach your agent`, body: `"${esc(c.text)}". ${esc(c.verdict)}`, action: `<button class="key warn" data-fix="${esc(c.id)}">Tell agents every session</button>` };
+  if (c) return { cls: "alert", title: "A lesson you kept didn't reach your agent", body: `"${esc(c.text)}". ${esc(c.verdict)}`, action: `<button class="btn warn" data-fix="${esc(c.id)}">Tell agents every session</button>` };
   if (h.waiting.count) {
     const mins = Math.max(1, Math.round(h.waiting.count * 8 / 60));
-    return { tone: "main", title: `Review ${h.waiting.count} new lesson${h.waiting.count === 1 ? "" : "s"}${where}`, body: `muninn found these in your coding sessions: things you repeated, corrected or explained. Your agents aren't told any of them until you keep it. About ${mins} minute${mins === 1 ? "" : "s"} with the keyboard.`, action: `<button class="key dark" data-goto="review">Start review</button>` };
+    return { cls: "", title: `Review ${plural(h.waiting.count, "new lesson", "new lessons")}`, body: `muninn found these in your coding sessions${where}: things you repeated, corrected or explained. Your agents aren't told any of them until you keep it. About ${plural(mins, "minute", "minutes")}.`, action: `<button class="btn primary" data-goto="review">Start review</button>` };
   }
-  if (!h.carry.length) return { tone: "main", title: `Nothing learned yet${where}`, body: `muninn learns from your past Claude Code, Codex and Cursor sessions. Run <code class="mono">muninn learn</code> in a terminal, in this repo's folder. It takes a few minutes.`, action: "" };
-  return { tone: "ok", title: "You're all set", body: `Work as usual. muninn tells your agents what they need${where}, and this page shows what it told them and why.`, action: "" };
+  if (!h.carry.length) return { cls: "", title: "Nothing learned yet", body: `muninn learns from your past Claude Code, Codex and Cursor sessions. In a terminal, in this repo's folder, run <span class="mono">muninn learn</span>. It takes a few minutes.`, action: "" };
+  return { cls: "", title: "Nothing to do", body: `Work as usual. muninn tells your agents what you've taught them${where}.`, action: "" };
 }
-/** The week as plain sentences answering "is muninn helping?". Raw counters (34 deliveries, 13 sessions) said nothing on their own. */
-function weekLines(w) {
-  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  const lines = [];
-  if (w.sessions) lines.push({ tone: "", html: `Your agents were told what you've taught them in <b>${plural(w.sessions, "session", "sessions")}</b>.${w.mostTold && w.mostTold.sessions > 1 ? ` The one told most: "${esc(w.mostTold.label)}" (${w.mostTold.sessions} sessions).` : ""}` });
-  else lines.push({ tone: "", html: "Your agents weren't told anything yet. Lessons you keep are told from the next session." });
-  if (w.problems.kept) lines.push(w.problems.cameBack
-    ? { tone: "bad", html: `<b>${w.problems.cameBack} of ${plural(w.problems.kept, "problem", "problems")}</b> you kept a lesson for came back. See the alert above.` }
-    : { tone: "good", html: `<b>None</b> of the ${plural(w.problems.kept, "problem", "problems")} you kept a lesson for came back.` });
-  if (w.handoffs) lines.push({ tone: "", html: `Picked up where you left off <b>${plural(w.handoffs, "time", "times")}</b>, so a new session didn't start from scratch.` });
-  lines.push({ tone: "", html: w.costUsd == null ? "muninn hasn't used any AI of its own this week." : `muninn's own AI use cost <b>$${w.costUsd.toFixed(3)}</b>.` });
-  return lines;
+function weekSentence(w) {
+  const parts = [];
+  parts.push(w.sessions ? `Your agents were told what you've taught them in <b>${plural(w.sessions, "session", "sessions")}</b>.` : "Your agents weren't told anything yet.");
+  if (w.problems.kept) parts.push(w.problems.cameBack ? `<b>${w.problems.cameBack} of ${w.problems.kept}</b> problems you kept a lesson for came back.` : `<b>None</b> of the ${plural(w.problems.kept, "problem", "problems")} you kept a lesson for came back.`);
+  if (w.handoffs) parts.push(`A new session picked up where you left off <b>${plural(w.handoffs, "time", "times")}</b>.`);
+  return parts.join(" ");
 }
 async function showHome(silent) {
   const h = await api("/api/home?" + q({ repo }));
-  const snapshot = JSON.stringify(h);
-  // A background refresh redraws only when something changed and nothing is being typed.
-  if (silent && (snapshot === window._homeSnap || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || ""))) return;
-  window._homeSnap = snapshot;
-  setDialUI(h.dial);
-  const light = $("#light");
-  light.innerHTML = h.lastToldAt && Date.now() - Date.parse(h.lastToldAt) < 3600e3 ? `<span class="dot on"></span><span>told an agent ${esc(ago(h.lastToldAt))}</span>` : `<span class="dot off"></span><span>${h.lastToldAt ? `last told an agent ${esc(ago(h.lastToldAt))}` : "hasn't told an agent anything yet"}</span>`;
-  const wc = $("#waitCount"); wc.hidden = !h.waiting.count; wc.textContent = h.waiting.count;
-  const fmt3 = (n) => String(n).padStart(3, "0");
+  const snap = JSON.stringify(h);
+  if (silent && (snap === window._homeSnap || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || ""))) return;
+  window._homeSnap = snap;
+  $("#dial").value = h.dial; setWaiting(h.waiting.count);
   const n = nextStep(h);
-  const otherAlerts = h.cameBack.filter((c) => !(n.tone === "alert" && n.action.includes(c.id)));
+  const recent = h.receipt.slice(0, 3);
   $("#main").innerHTML = `
-    <p class="intro">muninn learns from your coding sessions and tells your agents what you've taught them, at the right moment.</p>
+    <h1>${repo ? esc(short(repo)) : "All repos"}</h1>
+    <p class="sub">muninn learns from your coding sessions and tells your agents what you've taught them. It speaks up <b>${DIAL_LABEL[h.dial]}</b> here.</p>
 
-    <section class="next ${n.tone}" aria-labelledby="nx">
-      <div class="next-kicker">${n.tone === "ok" ? "Status" : "Your next step"}</div>
-      <h1 id="nx">${n.title}</h1>
+    <div class="card next ${n.cls}">
+      <h2>${n.title}</h2>
       <p>${n.body}</p>
-      ${n.action ? `<div class="row" style="margin-top:14px">${n.action}</div>` : ""}
-    </section>
-
-    ${otherAlerts.map((c) => `<section class="alert" style="margin-bottom:14px">
-      <span class="dot alert" aria-hidden="true"></span>
-      <div style="flex:1 1 300px;min-width:0"><h3>The problem came back: "${esc(c.text)}"</h3><p>${esc(c.verdict)}</p></div>
-      ${c.fix === "always-on" ? `<button class="key warn small" data-fix="${esc(c.id)}">Tell agents every session</button>` : ""}
-    </section>`).join("")}
-
-    <div class="cols" style="margin-top:28px">
-      <section class="col-receipt" aria-labelledby="rc">
-        <h2 class="sec" id="rc">What muninn told your agents today</h2>
-        <p class="sec-sub">Each line is something it told an agent, and why. Press <b>helped</b> or <b>wrong here</b> so it learns what works.</p>
-        ${receiptHTML(h)}
-      </section>
-      <section class="col-main" aria-labelledby="cr" style="gap:0">
-        <h2 class="sec" id="cr">What your agents know${repo ? ` in ${esc(short(repo))}` : ""}</h2>
-        <p class="sec-sub">Lessons you kept. Change any of them in <a href="#" data-goto="memory">Memory</a>.</p>
-        ${h.carry.length ? `<div class="carry">${h.carry.map((c) => `<div class="chip ${c.state === "fading" ? "fading" : ""}">
-          <span class="dot ${c.state === "lit" ? "on" : c.state === "armed" ? "ring" : "off"}" aria-hidden="true"></span>
-          <div><div style="font-weight:500">${esc(c.label)}</div><small>${esc(c.state === "fading" ? `not needed ${c.lastTold ? "since " + ago(c.lastTold) : "yet"}, fading` : "told " + c.route + (c.global ? ", in every repo" : ""))}</small></div>
-        </div>`).join("")}</div>
-        <div class="legend"><span><i class="dot on"></i>told every session</span><span><i class="dot ring"></i>told when its word comes up</span><span><i class="dot off"></i>not needed lately</span></div>` : `<div class="card muted">Nothing kept yet. Keep a lesson in Review and it shows here.</div>`}
-      </section>
+      ${n.action ? `<div class="row">${n.action}</div>` : ""}
     </div>
 
-    <section aria-labelledby="wk" style="margin-top:34px">
-      <h2 class="sec" id="wk">This week</h2>
-      <p class="sec-sub">Is muninn helping? The last 7 days${repo ? ` in ${esc(short(repo))}` : ""}.</p>
-      <ul class="week">${weekLines(h.week).map((l) => `<li class="${l.tone}">${l.html}</li>`).join("")}</ul>
-      <div class="dial-now" id="dialNow">${dialNowHTML(h.dial)}</div>
+    <section>
+      <h2>Recently told your agents</h2>
+      <p class="sub">${recent.length ? "What muninn said, and why." : "Nothing in the last day."}</p>
+      ${recent.length ? `<div class="card">${toldList(recent, false)}</div>${h.receipt.length > 3 ? `<p style="margin:10px 0 0"><a href="#" data-goto="activity">See all ${h.receipt.length}</a></p>` : ""}` : ""}
+    </section>
+
+    <section>
+      <h2>This week</h2>
+      <p class="week">${weekSentence(h.week)}</p>
     </section>`;
 }
 
-/* ---------- Review: one at a time ---------- */
-const routeName = { always: "every session", keyword: "when a word comes up", none: "only when searched" };
+/* ---------- Activity: everything muninn told agents ---------- */
+async function showActivity() {
+  const h = await api("/api/home?" + q({ repo }));
+  $("#main").innerHTML = `<h1>Activity</h1>
+    <p class="sub">Everything muninn told your agents in the last day${repo ? ` in ${esc(short(repo))}` : ""}, and why. Press <b>helped</b> or <b>wrong here</b> so it learns what works.</p>
+    ${h.receipt.length ? `<div class="card">${toldList(h.receipt, true)}</div>` : `<p class="empty">Nothing in the last day. muninn speaks up ${DIAL_LABEL[h.dial]} here.</p>`}`;
+}
+
+/* ---------- Review: one lesson at a time ---------- */
 async function showReview() {
   reviewQueue = await api("/api/lessons?" + q({ repo, status: "proposed" }));
-  reviewIndex = 0;
-  drawReview();
+  reviewIndex = 0; drawReview();
 }
 function drawReview() {
   const l = reviewQueue[reviewIndex];
-  const wc = $("#waitCount"); wc.hidden = !reviewQueue.length; wc.textContent = reviewQueue.length;
-  if (!l) { $("#main").innerHTML = `<div class="review"><div class="empty-state">All reviewed. muninn looks for new lessons on its own as you work.</div></div>`; return; }
+  setWaiting(reviewQueue.length);
+  if (!l) { $("#main").innerHTML = `<div class="review"><h1>All reviewed</h1><p class="sub">muninn looks for new lessons on its own as you work.</p></div>`; return; }
   const d = l.defaults; const kws = (d.keywords.length ? d.keywords : l.suggested || []).join(", ");
-  const ev = (l.evidence || []).slice(0, 3).map((e) => `↳ ${esc(String(e.seen_at).slice(0, 10))} · ${esc(TOOL[e.tool] || e.tool)} · "${esc(e.quote)}"`).join("<br>");
-  const more = (l.evidence || []).length > 3 ? `  + ${l.evidence.length - 3} more` : "";
-  $("#main").innerHTML = `<div class="review" data-id="${esc(l.id)}">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-      <span><b>New lesson from your sessions.</b> <span class="muted">Keep it and your agents are told it. ${esc(l.origin)}${l.sessions > 1 ? ` · ${l.sessions} sessions` : ""}.</span></span>
-      <span class="display" aria-label="${reviewIndex + 1} of ${reviewQueue.length}">${String(reviewIndex + 1).padStart(2, "0")}<span>/${String(reviewQueue.length).padStart(2, "0")}</span></span>
+  const ev = (l.evidence || []).slice(0, 3).map((e) => `<div>${esc(String(e.seen_at).slice(0, 10))} · ${esc(TOOL[e.tool] || e.tool)} · "${esc(e.quote)}"</div>`).join("");
+  $("#main").innerHTML = `<div class="review">
+    <div class="progress">Lesson ${reviewIndex + 1} of ${reviewQueue.length}</div>
+    <h1 style="margin-top:6px">${esc(l.plain || l.text)}</h1>
+    <p class="sub">${esc(l.origin)}${l.sessions > 1 ? `, in ${l.sessions} sessions` : ""}. Keep it and your agents are told it.</p>
+    <div class="card">
+      <label class="field-label" for="told" style="margin-top:0">What agents are told</label>
+      <textarea id="told" rows="3">${esc(l.text)}</textarea>
+      <span class="field-label">When to tell them</span>
+      <div class="choices" role="radiogroup" aria-label="When to tell agents">${["always", "keyword", "none"].map((r) => `<button role="radio" data-route="${r}" aria-checked="${r === d.route}">${ROUTE[r]}</button>`).join("")}</div>
+      <div id="kwRow" style="margin-top:10px" ${d.route === "keyword" ? "" : "hidden"}><label class="vh" for="kw">Words</label><input id="kw" type="text" style="width:100%" placeholder="words that should bring it up, comma-separated" value="${esc(kws)}"></div>
+      ${l.preference ? `<p class="muted" style="font-size:13px;margin:8px 0 0">This is about how you work, so every session fits best. A word often misses it.</p>` : ""}
+      ${l.scope !== "global" ? `<label style="display:flex;gap:8px;align-items:center;margin-top:14px;font-size:14px"><input id="global" type="checkbox" ${d.global ? "checked" : ""}> In every repo, not just ${esc(l.repo_short)}</label>` : ""}
+      ${ev ? `<div class="evidence">${ev}</div>` : ""}
+      ${l.similar ? `<div class="similar">Says nearly the same as a ${l.similar.status === "live" ? "kept" : "waiting"} lesson: "${esc(l.similar.plain || l.similar.text)}" <div class="row" style="margin-top:8px"><button class="btn small" data-combine="${esc(l.similar.id)}">Combine: keep this one, retire the other</button></div></div>` : ""}
     </div>
-    <article class="card" style="padding:26px;display:flex;flex-direction:column;gap:16px">
-      <h1>${esc(l.plain || l.text)}</h1>
-      <div><label class="label" for="told" style="display:block">What agents are told</label><textarea id="told" rows="3">${esc(l.text)}</textarea></div>
-      ${ev ? `<div class="evidence">${ev}${more}</div>` : ""}
-      ${l.similar ? `<div class="similar">Says nearly the same as a ${l.similar.status === "live" ? "kept" : "waiting"} lesson: “${esc(l.similar.plain || l.similar.text)}” <div class="row" style="margin-top:8px"><button class="key small" data-combine="${esc(l.similar.id)}">Combine: keep this one, retire the other</button></div></div>` : ""}
-      <div>
-        <span class="label" style="display:block">Tell agents</span>
-        <div class="switch" role="radiogroup" aria-label="Tell agents">${["always", "keyword", "none"].map((r) => `<button role="radio" data-route="${r}" aria-checked="${r === d.route}">${routeName[r]}</button>`).join("")}</div>
-        <div id="kwRow" style="margin-top:10px" ${d.route === "keyword" ? "" : "hidden"}><label class="vh" for="kw">Words</label><input id="kw" type="text" style="width:100%" placeholder="words, comma-separated" value="${esc(kws)}"></div>
-        ${l.scope !== "global" ? `<label style="display:flex;gap:10px;align-items:center;margin-top:10px;font-size:14px"><input id="global" type="checkbox" ${d.global ? "checked" : ""} style="width:18px;height:18px;accent-color:var(--ink)"> In every repo, not just ${esc(l.repo_short)}</label>` : ""}
-        ${l.preference ? `<p class="muted" style="font-size:13px;margin:8px 0 0">This is about how you work, so every session fits best. A word often misses it.</p>` : ""}
-      </div>
-    </article>
-    <div class="bigkeys">
-      <button class="key dark" data-act="keep">Keep<kbd>K</kbd></button>
-      <button class="key" data-act="later">Later<kbd>L</kbd></button>
-      <button class="key" data-act="reject" style="color:var(--signal-text)">Don't keep<kbd>R</kbd></button>
+    <div class="actions">
+      <button class="btn primary" data-act="keep">Keep<kbd>K</kbd></button>
+      <button class="btn" data-act="reject">Don't keep<kbd>R</kbd></button>
+      <button class="btn" data-act="later">Later<kbd>L</kbd></button>
     </div>
   </div>`;
 }
@@ -381,64 +273,62 @@ async function reviewAct(a) {
   if (a === "later") { reviewIndex++; drawReview(); return; }
   const route = document.querySelector("[data-route][aria-checked=true]")?.dataset.route || "always";
   const keywords = $("#kw")?.value || "";
-  if ((a === "keep" || a === "combine") && route === "keyword" && !keywords.trim()) { toast("Add a word, or pick another way to tell agents."); return; }
+  if ((a === "keep" || a === "combine") && route === "keyword" && !keywords.trim()) { toast("Add a word, or pick another option."); return; }
   const g = $("#global");
   const body = { id: l.id, action: a, text: $("#told").value, route, keywords, ...(g ? { global: g.checked } : {}) };
   if (a === "combine") body.other = l.similar?.id;
   try {
     await api("/api/decide", body);
     toast({ keep: "Kept. Your agents are told from their next session.", reject: "Not kept. muninn won't suggest it again.", combine: "Combined and kept." }[a]);
-    reviewQueue.splice(reviewIndex, 1); drawReview(); loadRepos();
+    reviewQueue.splice(reviewIndex, 1); drawReview();
   } catch (e) { toast(e.message); }
 }
 
-/* ---------- Memory ---------- */
+/* ---------- Memory: what agents know ---------- */
 async function showMemory() {
-  const [live, home, report, handoffs] = await Promise.all([api("/api/lessons?" + q({ repo, status: "live" })), api("/api/home?" + q({ repo })), api("/api/report?" + q({ repo })), api("/api/handoffs?" + q({ repo }))]);
+  const [live, home, report] = await Promise.all([api("/api/lessons?" + q({ repo, status: "live" })), api("/api/home?" + q({ repo })), api("/api/report?" + q({ repo }))]);
   const state = Object.fromEntries(home.carry.map((c) => [c.id, c]));
   const verdict = Object.fromEntries(report.lessons.map((l) => [l.id, l]));
   const group = (l) => (state[l.id]?.state === "fading" ? "fading" : l.always_on ? "always" : l.triggers.length ? "keyword" : "none");
-  const titles = { always: "Told every session", keyword: "Told when its word comes up", none: "Only when searched", fading: "Fading" };
-  const row = (l) => {
-    const s = state[l.id] || {}; const v = verdict[l.id] || {};
-    const dot = s.state === "fading" ? "off" : l.always_on ? "on" : l.triggers.length ? "ring" : "off";
-    return `<div class="mem-row ${s.state === "fading" ? "fading" : ""}" data-id="${esc(l.id)}">
-      <span class="dot ${dot}" aria-hidden="true"></span>
-      <div><div class="text">${esc(l.plain || l.text)}</div>
-        <div class="meta">${esc(l.origin)}${l.triggers.length ? ` · words: ${esc(l.triggers.join(", "))}` : ""}${l.scope === "global" ? " · every repo" : !repo ? ` · ${esc(l.repo_short)}` : ""}${v.sent != null ? ` · told ${v.sent}×` : ""}${s.lastTold ? ` · last ${esc(ago(s.lastTold))}` : ""}</div>
-        ${v.after ? `<div class="meta" style="color:var(--signal-text)">${esc(v.verdict)}</div>` : ""}</div>
-      <button class="key small" data-edit="${esc(l.id)}">Edit</button>
-    </div>`;
-  };
-  const groups = ["always", "keyword", "none", "fading"].map((g) => ({ g, items: live.filter((l) => group(l) === g) })).filter((x) => x.items.length);
+  const titles = { always: "Told every session", keyword: "Told when a word comes up", none: "Only when searched", fading: "Not needed lately" };
   window._live = live;
-  $("#main").innerHTML = `<p class="help">What your agents know${repo ? ` in ${esc(short(repo))}` : ""}. Lessons stay lit while agents use them and fade when they don't. Faded ones are offered back, never deleted on their own.</p>
-    ${groups.length ? groups.map(({ g, items }) => `<section class="mem-group"><h2 class="label">${titles[g]} · ${items.length}</h2>${items.map(row).join("")}</section>`).join("") : `<div class="empty-state">Nothing kept yet.</div>`}
-    ${handoffs.length ? `<section class="mem-group"><h2 class="label">Handoffs</h2>${handoffs.slice(0, 6).map((h) => `<div class="card" style="margin-bottom:10px"><div class="meta mono muted" style="font-size:12px;margin-bottom:6px">${esc(h.branch)} · ${esc(TOOL[h.tool] || h.tool)} · ${esc(ago(h.created_at))}${!repo ? ` · ${esc(short(h.repo_id))}` : ""}</div><div class="mono" style="font-size:13px;white-space:pre-wrap">${esc(h.text)}</div></div>`).join("")}</section>` : ""}`;
+  const item = (l) => { const s = state[l.id] || {}; const v = verdict[l.id] || {};
+    return `<div class="item ${s.state === "fading" ? "fading" : ""}" data-id="${esc(l.id)}">
+      <div><div class="text">${esc(l.plain || l.text)}</div>
+        <div class="meta">${esc(l.origin)}${l.triggers.length ? ` · words: ${esc(l.triggers.join(", "))}` : ""}${l.scope === "global" ? " · every repo" : !repo ? ` · ${esc(l.repo_short)}` : ""}${s.lastTold ? ` · last told ${esc(ago(s.lastTold))}` : ""}</div>
+        ${v.after ? `<div class="warnline">${esc(v.verdict)}</div>` : ""}</div>
+      <div><button class="btn small" data-edit="${esc(l.id)}">Edit</button></div>
+    </div>`; };
+  const groups = ["always", "keyword", "none", "fading"].map((g) => ({ g, items: live.filter((l) => group(l) === g) })).filter((x) => x.items.length);
+  $("#main").innerHTML = `<h1>Memory</h1>
+    <p class="sub">What your agents know${repo ? ` in ${esc(short(repo))}` : ""}. Lessons not told for two weeks move to "Not needed lately". Nothing is deleted on its own.</p>
+    ${groups.length ? groups.map(({ g, items }) => `<section style="margin-top:24px"><h2>${titles[g]} <span class="muted" style="font-weight:400">${items.length}</span></h2><div class="list" style="margin-top:8px">${items.map(item).join("")}</div></section>`).join("") : `<p class="empty">Nothing kept yet. Keep lessons in Review and they show here.</p>`}`;
 }
 function openEdit(id) {
-  const l = (window._live || []).find((x) => x.id === id); const rowEl = document.querySelector(`.mem-row[data-id="${CSS.escape(id)}"]`);
-  if (!l || !rowEl || rowEl.querySelector(".mem-edit")) return;
+  const l = (window._live || []).find((x) => x.id === id); const el = document.querySelector(`.item[data-id="${CSS.escape(id)}"]`);
+  if (!l || !el || el.querySelector(".edit")) return;
   const r = l.always_on ? "always" : l.triggers.length ? "keyword" : "none";
-  const ed = document.createElement("div"); ed.className = "mem-edit";
-  ed.innerHTML = `<label class="vh" for="e-${esc(id)}">What agents are told</label><textarea id="e-${esc(id)}" rows="3" data-f="text">${esc(l.text)}</textarea>
-    <div class="switch" role="radiogroup" aria-label="Tell agents">${["always", "keyword", "none"].map((x) => `<button role="radio" data-route="${x}" aria-checked="${x === r}">${routeName[x]}</button>`).join("")}</div>
-    <input type="text" data-f="keywords" placeholder="words, comma-separated" value="${esc(l.triggers.join(", "))}" ${r === "keyword" ? "" : "hidden"}>
-    <div class="row" style="margin-top:0"><button class="key dark small" data-save="${esc(id)}">Save changes</button><button class="key small" data-retire="${esc(id)}" style="color:var(--signal-text)">Retire</button><button class="key small" data-cancel>Cancel</button></div>`;
-  rowEl.appendChild(ed);
+  const ed = document.createElement("div"); ed.className = "edit";
+  ed.innerHTML = `<label class="field-label" for="e-${esc(id)}" style="margin-top:4px">What agents are told</label><textarea id="e-${esc(id)}" rows="3" data-f="text">${esc(l.text)}</textarea>
+    <span class="field-label">When to tell them</span>
+    <div class="choices" role="radiogroup" aria-label="When to tell agents">${["always", "keyword", "none"].map((x) => `<button role="radio" data-route="${x}" aria-checked="${x === r}">${ROUTE[x]}</button>`).join("")}</div>
+    <input type="text" data-f="keywords" style="width:100%;margin-top:10px" placeholder="words that should bring it up, comma-separated" value="${esc(l.triggers.join(", "))}" ${r === "keyword" ? "" : "hidden"}>
+    <div class="row"><button class="btn primary small" data-save="${esc(id)}">Save changes</button><button class="btn small" data-cancel>Cancel</button><button class="btn link" data-retire="${esc(id)}" style="margin-left:auto">Retire this lesson</button></div>`;
+  el.appendChild(ed);
 }
 
 /* ---------- Ask ---------- */
 function showAsk() {
-  $("#main").innerHTML = `<div style="max-width:800px;margin:0 auto">
-    <p class="help">Ask in your own words. muninn looks through what you've kept${repo ? ` (${esc(short(repo))} first)` : ""}, plus items waiting for review. <b>Answer</b> writes a short reply from them with your Claude.</p>
-    <form id="askForm" style="display:flex;gap:8px"><label class="vh" for="askQ">Question</label><input id="askQ" type="search" style="flex:1;min-width:0;min-height:52px;font-size:17px" placeholder="How do the contract benchmarks run?"><button class="key dark" id="answerBtn" type="submit" style="min-height:52px">Answer</button></form>
+  $("#main").innerHTML = `<div style="max-width:760px">
+    <h1>Ask</h1>
+    <p class="sub">Ask in your own words. muninn looks through what you've kept${repo ? ` (${esc(short(repo))} first)` : ""}. <b>Answer</b> writes a short reply from it with your Claude.</p>
+    <form id="askForm" style="display:flex;gap:8px"><label class="vh" for="askQ">Question</label><input id="askQ" type="search" style="flex:1;min-width:0" placeholder="How do the contract benchmarks run?"><button class="btn primary" id="answerBtn" type="submit">Answer</button></form>
     <div id="answer" style="margin-top:16px"></div><div id="hits" style="margin-top:16px;display:flex;flex-direction:column;gap:10px"></div></div>`;
   const input = $("#askQ"); input.focus();
-  let h; input.addEventListener("input", () => { clearTimeout(h); $("#answer").innerHTML = ""; h = setTimeout(async () => {
+  let t; input.addEventListener("input", () => { clearTimeout(t); $("#answer").innerHTML = ""; t = setTimeout(async () => {
     const v = input.value.trim(); if (!v) { $("#hits").innerHTML = ""; return; }
     const hits = await api("/api/ask?" + q({ q: v, repo }));
-    $("#hits").innerHTML = hits.length ? hits.map((x) => `<div class="card"><div class="mono muted" style="font-size:12px;margin-bottom:4px">${x.status === "proposed" ? '<span style="color:var(--signal-text)">not kept yet</span> · ' : ""}${esc(x.where)} · ${esc(x.origin)}</div><div style="font-size:16px">${esc(x.plain || x.text)}</div>${x.plain ? `<div class="mono muted" style="font-size:12px;margin-top:4px">agents are told: ${esc(x.text)}</div>` : ""}${x.status === "proposed" ? `<div class="row"><button class="key small" data-goto="review">Review it</button></div>` : ""}</div>`).join("") : `<div class="empty-state">Nothing you've kept matches. If you've explained this to an agent, run muninn learn and it may come up as a note.</div>`;
+    $("#hits").innerHTML = hits.length ? hits.map((x) => `<div class="card"><div class="muted" style="font-size:13px;margin-bottom:4px">${x.status === "proposed" ? '<span style="color:var(--signal)">not kept yet</span> · ' : ""}${esc(x.where)} · ${esc(x.origin)}</div><div>${esc(x.plain || x.text)}</div>${x.status === "proposed" ? `<div class="row" style="margin-top:10px"><button class="btn small" data-goto="review">Review it</button></div>` : ""}</div>`).join("") : `<p class="empty">Nothing you've kept matches. If you've explained this to an agent, run muninn learn and it may come up as a note.</p>`;
   }, 250); });
   $("#askForm").addEventListener("submit", async (e) => {
     e.preventDefault(); const v = input.value.trim(); if (!v) return;
@@ -456,39 +346,33 @@ async function render() {
     if (tab === "home") await showHome();
     else if (tab === "review") await showReview();
     else if (tab === "memory") await showMemory();
+    else if (tab === "activity") await showActivity();
     else showAsk();
-  } catch (e) { $("#main").innerHTML = `<div class="empty-state">${esc(e.message)}</div>`; }
+  } catch (e) { $("#main").innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
 }
 
 document.addEventListener("click", async (e) => {
   const t = e.target.closest("[data-tab], [data-goto]");
   if (t) { e.preventDefault(); tab = t.dataset.tab || t.dataset.goto; render(); return; }
-  const dl = e.target.closest("[data-dial]"); if (dl) { setDial(dl.dataset.dial); return; }
-  if (e.target.closest("#knob")) { const cur = document.querySelector("[data-dial][aria-checked=true]")?.dataset.dial || "anytime"; setDial(DIALS[(DIALS.indexOf(cur) + 1) % 3]); return; }
   const fb = e.target.closest("[data-fb]");
-  if (fb) { try { await api("/api/feedback", { id: fb.dataset.id, kind: fb.dataset.kind, session: fb.dataset.session || null, verdict: fb.dataset.fb }); toast(fb.dataset.fb === "helped" ? "Noted: it helped." : "Noted: wrong here. Retire it in Memory if it's wrong everywhere."); fb.parentElement.innerHTML = `<span>${fb.dataset.fb === "helped" ? "✓ helped" : "✗ wrong here"}</span>`; } catch (err) { toast(err.message); } return; }
-  const quick = e.target.closest("[data-quick]");
-  if (quick) {
-    const card = quick.closest("[data-id]"); quick.disabled = true;
-    try {
-      if (quick.dataset.quick === "keep") { const ls = await api("/api/lessons?" + q({ repo, status: "proposed" })); const l = ls.find((x) => x.id === quick.dataset.id); await api("/api/decide", { id: quick.dataset.id, action: "keep", route: l.defaults.route, keywords: l.defaults.keywords.join(", "), global: l.defaults.global }); toast("Kept. Your agents are told from their next session."); }
-      else { await api("/api/decide", { id: quick.dataset.id, action: "reject" }); toast("Not kept. muninn won't suggest it again."); }
-      loadRepos(); render();
-    } catch (err) { toast(err.message); quick.disabled = false; }
-    return;
-  }
-  const fix = e.target.closest("[data-fix]"); if (fix) { fix.disabled = true; try { await api("/api/decide", { id: fix.dataset.fix, action: "save", route: "always" }); toast("It's told every session now."); render(); } catch (err) { toast(err.message); fix.disabled = false; } return; }
+  if (fb) { try { await api("/api/feedback", { id: fb.dataset.id, kind: "lesson", session: fb.dataset.session || null, verdict: fb.dataset.fb }); fb.parentElement.innerHTML = `<span class="muted" style="font-size:13px">${fb.dataset.fb === "helped" ? "Noted: it helped." : "Noted: wrong here. Retire it in Memory if it's wrong everywhere."}</span>`; } catch (err) { toast(err.message); } return; }
+  const fix = e.target.closest("[data-fix]"); if (fix) { fix.disabled = true; try { await api("/api/decide", { id: fix.dataset.fix, action: "save", route: "always" }); toast("Agents are told it every session now."); render(); } catch (err) { toast(err.message); fix.disabled = false; } return; }
   const route = e.target.closest("[data-route]");
-  if (route) { const grp = route.parentElement; grp.querySelectorAll("[data-route]").forEach((b) => b.setAttribute("aria-checked", String(b === route))); const scope = grp.parentElement; const kw = scope.querySelector("#kwRow") || scope.querySelector("[data-f=keywords]"); if (kw) { kw.hidden = route.dataset.route !== "keyword"; if (!kw.hidden) (kw.querySelector?.("input") || kw).focus(); } if (route.dataset.route === "keyword" && document.querySelector(".review") && reviewQueue[reviewIndex]?.preference) toast("A word often misses this one. Every session is safer."); return; }
+  if (route) { const grp = route.parentElement; grp.querySelectorAll("[data-route]").forEach((b) => b.setAttribute("aria-checked", String(b === route))); const scope = grp.parentElement; const kw = scope.querySelector("#kwRow") || scope.querySelector("[data-f=keywords]"); if (kw) { kw.hidden = route.dataset.route !== "keyword"; if (!kw.hidden) (kw.querySelector?.("input") || kw).focus(); } return; }
   const act = e.target.closest("[data-act]"); if (act) { reviewAct(act.dataset.act); return; }
-  const comb = e.target.closest("[data-combine]"); if (comb) { reviewAct("combine"); return; }
+  if (e.target.closest("[data-combine]")) { reviewAct("combine"); return; }
   const ed = e.target.closest("[data-edit]"); if (ed) { openEdit(ed.dataset.edit); return; }
-  const cancel = e.target.closest("[data-cancel]"); if (cancel) { cancel.closest(".mem-edit").remove(); return; }
+  const cancel = e.target.closest("[data-cancel]"); if (cancel) { cancel.closest(".edit").remove(); return; }
   const save = e.target.closest("[data-save]");
-  if (save) { const ed2 = save.closest(".mem-edit"); const r = ed2.querySelector("[data-route][aria-checked=true]").dataset.route; const kws = ed2.querySelector("[data-f=keywords]").value; if (r === "keyword" && !kws.trim()) { toast("Add a word, or pick another way to tell agents."); return; } save.disabled = true; try { await api("/api/decide", { id: save.dataset.save, action: "save", text: ed2.querySelector("[data-f=text]").value, route: r, keywords: kws }); toast("Saved. Agents get the new wording from their next session."); render(); } catch (err) { toast(err.message); save.disabled = false; } return; }
+  if (save) { const box = save.closest(".edit"); const r = box.querySelector("[data-route][aria-checked=true]").dataset.route; const kws = box.querySelector("[data-f=keywords]").value; if (r === "keyword" && !kws.trim()) { toast("Add a word, or pick another option."); return; } save.disabled = true; try { await api("/api/decide", { id: save.dataset.save, action: "save", text: box.querySelector("[data-f=text]").value, route: r, keywords: kws }); toast("Saved. Agents get the new version from their next session."); render(); } catch (err) { toast(err.message); save.disabled = false; } return; }
   const ret = e.target.closest("[data-retire]"); if (ret) { ret.disabled = true; try { await api("/api/decide", { id: ret.dataset.retire, action: "retire" }); toast("Retired. Agents won't be told it again."); render(); } catch (err) { toast(err.message); ret.disabled = false; } }
 });
-document.addEventListener("change", (e) => { if (e.target.id === "repo") { repo = e.target.value; render(); } });
+document.addEventListener("change", async (e) => {
+  if (e.target.id === "repo") { repo = e.target.value; $("#dial").disabled = !repo; render(); }
+  if (e.target.id === "dial") {
+    try { const r = await api("/api/dial", { repo, dial: e.target.value }); toast(`muninn now speaks up ${DIAL_LABEL[r.dial]} in ${short(repo)}. ${DIAL_WORDS[r.dial]}`); if (tab === "home") showHome(); } catch (err) { toast(err.message); }
+  }
+});
 document.addEventListener("keydown", (e) => {
   if (tab !== "review" || e.metaKey || e.ctrlKey || e.altKey || /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement?.tagName || "")) return;
   const k = e.key.toLowerCase();
@@ -496,16 +380,10 @@ document.addEventListener("keydown", (e) => {
 });
 loadRepos().then(render);
 
-// Stay current without a manual reload: reload the page when muninn's code or this page changes
-// (the server restarts itself on a rebuild), and refresh Home's data in the background.
+// Stay current without a manual reload: reload when muninn's code or this page changes, and refresh Home in the background.
 let version = null;
 setInterval(async () => {
-  try {
-    const v = await api("/api/version");
-    const key = `${v.boot}:${v.page}`;
-    if (version && key !== version) location.reload();
-    version = key;
-  } catch { /* restarting: try again shortly */ }
+  try { const v = await api("/api/version"); const key = `${v.boot}:${v.page}`; if (version && key !== version) location.reload(); version = key; } catch { /* restarting */ }
 }, 2000);
 const refreshHome = () => { if (tab === "home" && document.visibilityState === "visible") showHome(true).catch(() => {}); };
 setInterval(refreshHome, 20000);

@@ -328,3 +328,12 @@ Entry template:
 - Home now opens with a one-line description of muninn, then **one next step**, in priority order: a kept lesson that didn't reach an agent (with its fix), reviewing new lessons (with a time estimate), running the first learn, or "You're all set". Below: "What muninn told your agents today" and "What your agents know", each with a one-line explanation, then "This week" with plain labels and the dial sentence last.
 
 **Follow-up (author):** "This week" showed 034 / 013 / 000 counters that answered nothing: deliveries, sessions with a delivery, and kept lessons whose problem came back. It now answers "is muninn helping?" in sentences: how many sessions agents were told what you taught them, and the lesson told most; how many of the problems you kept a lesson for came back ("None of the 3…"); how often a session picked up where the last left off; and muninn's own AI cost. No zero-padding. The panel footer says the same in one line. Labels are cut at a word, never mid-word.
+
+## 2026-11-15 — Calmer Home, skeuomorphism walked back
+
+**Author:** "the dashboard is too much. It's unclear what I need to do when I get there. The information can be relevant, but it's presented in a busy way. Also let's walk back the skeuomorphism."
+
+**Did:**
+- Home is now the repo name, one sentence, **one next-step card**, the last three things told to agents (with reasons), and one sentence about the week. The receipt, what agents know and the counters moved off Home: the full log is a new **Activity** tab, and what agents know is **Memory**.
+- No physical touches: the knob became a header dropdown ("Speaks up: …"), the paper receipt became a plain list, buttons are flat (one solid primary, the rest outlined), no glows or display counters. Review shows "Lesson 3 of 18" and plain option buttons. The panel's dashed box is gone.
+- `docs/design-language.md` rewritten as "calm and plain", keeping the behaviour (reasons, the setting, fading, literal words) and dropping the materials.
