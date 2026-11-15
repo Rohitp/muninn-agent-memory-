@@ -22,9 +22,9 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
   const count = repos.reduce((n, r) => n + scan.byRepo.get(r)!.length, 0);
   if (!opts.auto) {
     console.log(`Found ${scan.files.claude} Claude Code, ${scan.files.codex} Codex and ${scan.files.cursor} Cursor log files.`);
-    console.log(`Reading ${count} session(s) in ${repos.length} repo(s). ${scan.missingFolder} session(s) skipped: their folder is gone or not in a repo.`);
+    console.log(`Reading ${count} session(s) in ${repos.length} repo(s).${scan.missingFolder ? ` ${scan.missingFolder} skipped because they didn't run inside a git repo (or the folder is gone). muninn learns per repo, so run your agents inside a project that's a git repo.` : ""}`);
   }
-  if (!count) { if (!opts.auto) console.log(opts.allRepos ? "No sessions found yet. Work with Claude Code, Codex or Cursor for a while, then run muninn learn." : "No sessions found for this repo. Try --all-repos."); return 0; }
+  if (!count) { if (!opts.auto) console.log(opts.allRepos ? "Nothing to learn from yet. Work with Claude Code, Codex or Cursor as usual; muninn checks your sessions on its own and suggestions appear in muninn ui." : "No sessions found for this repo yet. muninn checks on its own as you work."); return 0; }
 
   const writer = pickWriter();
   if (!opts.auto) console.log(writer ? `Redacted excerpts will go to your ${writer.name} client to write lessons.` : "No Claude Code or Codex client found, so only repeated instructions can become lessons.");
