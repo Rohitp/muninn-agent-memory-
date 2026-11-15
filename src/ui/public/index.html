@@ -181,7 +181,13 @@ async function showHandoffs() {
 
 async function showReport() {
   const r = await api("/api/report?" + q({ repo }));
-  $("#main").innerHTML = `<p class="help">For each kept lesson: how often it was sent, and whether the same moment came back after you kept it. Updated when muninn learn runs (last: ${esc(r.lastLearn ? r.lastLearn.slice(0, 16).replace("T", " ") : "never")}). Handoffs: ${r.handoffs.written} written, ${r.handoffs.delivered} delivered.</p>` +
+  const spend = r.spend.length ? r.spend.map((x) => `<li>${esc(x.what)}: ${x.calls} call(s), ${x.tokens.toLocaleString()} tokens${x.costUsd != null ? `, about $${x.costUsd.toFixed(2)}` : ""}</li>`).join("") : "<li>No AI calls recorded yet.</li>";
+  const back = r.lessons.filter((l) => l.after > 0).length;
+  $("#main").innerHTML = `<div class="card"><div class="label">Last ${r.days} days, all repos</div>
+      <p style="margin:4px 0">Added to agents' context: about ${r.delivered.tokens.toLocaleString()} tokens across ${r.delivered.sessions} session(s).</p>
+      <p style="margin:4px 0">Kept lessons whose problem came back: ${back} of ${r.lessons.length}.</p>
+      <div class="label" style="margin-top:10px">muninn's own AI calls</div><ul class="quotes">${spend}</ul></div>
+    <p class="help">For each kept lesson: how often it was sent, and whether the same moment came back after you kept it. Updated when muninn learn runs (last: ${esc(r.lastLearn ? r.lastLearn.slice(0, 16).replace("T", " ") : "never")}). Handoffs: ${r.handoffs.written} written, ${r.handoffs.delivered} delivered.</p>` +
     (r.lessons.length ? r.lessons.map((l) => `<div class="card"><div class="meta">${l.kind === "note" ? '<span class="chip note">note</span>' : '<span class="chip">rule</span>'}<span>kept ${esc(l.keptAt.slice(0, 10))}</span><span>· ${esc(l.route)}</span><span>· sent ${l.sent}× in ${l.sentSessions} session(s)</span><span>· seen ${l.before}× before</span></div><div>${esc(l.text)}</div><div class="verdict ${l.after ? "warn" : "ok"}">${esc(l.verdict)}</div></div>`).join("")
                      : '<div class="empty">No kept lessons yet.</div>');
 }

@@ -259,3 +259,23 @@ Entry template:
 **Decided:**
 - Plain lines are computed when lessons are written, because the question isn't known then but the lesson is. Answers that combine several items still need a call at search time, so that's a button, not automatic.
 - Claude only for now. Other providers go in `writer.ts` later.
+
+## 2026-11-15 — muninn's own AI cost, cut and counted
+
+**Found:** every `claude -p` call carried about 62,000 tokens before muninn's prompt, mostly MCP server instructions and Claude Code's system prompt, even with `--tools ""`. A one-word test reply cost $0.012 on Haiku.
+
+**Measured (one-word reply, Haiku):**
+
+| Flags | Tokens in |
+| --- | --- |
+| current | 62,181 |
+| + `--system-prompt` | 59,048 |
+| + `--strict-mcp-config --mcp-config '{"mcpServers":{}}'` | 619 |
+
+**Did:**
+- Every call now adds `--strict-mcp-config` with an empty server list, `--disable-slash-commands`, `--setting-sources ""`, a one-line `--system-prompt`, and `--output-format json`.
+- Jobs pick a model: `backgroundModel` (default `haiku`) for handoffs, plain lines and answers. `judgeModel` (default: the client's own) for deciding what is worth a lesson.
+- Each call's tokens and cost go into a new `llm_calls` table. `muninn report` and the UI's report tab show the last 30 days of muninn's own spend, the tokens added to agents' context, and how many kept lessons' problems came back.
+- Real run on a copy: one handoff 10,074 tokens and $0.003. Plain lines for 5 lessons 3,047 tokens and $0.001. Both came out as good as the earlier ones.
+
+**Not measured:** tokens saved in agent sessions. There's no clean way to count work that didn't happen. The report's stand-in is "problem came back after keeping".

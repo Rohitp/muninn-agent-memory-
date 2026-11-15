@@ -23,6 +23,10 @@ export const DEFAULTS = {
   notesPerRun: 30,
   handoffDays: 7,
   handoffsPerRun: 3,
+  /** Model for summaries: handoffs, plain lines, answers. "" uses the client default. */
+  backgroundModel: "haiku",
+  /** Model for deciding what is worth a lesson. "" uses the client default. */
+  judgeModel: "",
 };
 export type Settings = typeof DEFAULTS;
 export function settings(): Settings {

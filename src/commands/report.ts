@@ -7,7 +7,8 @@ export type LessonReport = {
   id: string; text: string; kind: string; repo: string | null; keptAt: string; route: string;
   sent: number; sentSessions: number; before: number; after: number; afterTools: string[]; verdict: string;
 };
-export type Report = { lessons: LessonReport[]; lastLearn: string; handoffs: { written: number; delivered: number } };
+export type Spend = { what: string; calls: number; tokens: number; costUsd: number | null };
+export type Report = { lessons: LessonReport[]; lastLearn: string; handoffs: { written: number; delivered: number }; days: number; spend: Spend[]; delivered: { tokens: number; sessions: number } };
 
 /**
  * Whether kept lessons worked. "Seen again" means the same moment (a repeat, a correction, a failure)
@@ -40,7 +41,12 @@ export async function reportData(db: Client, repo: string | null): Promise<Repor
   }
   const lastLearn = String((await db.execute("SELECT value FROM meta WHERE key='last_learn'")).rows[0]?.value ?? "");
   const h = (await db.execute({ sql: `SELECT count(*) n, (SELECT count(*) FROM deliveries WHERE handoff_id IS NOT NULL) d FROM handoffs ${repo ? "WHERE repo_id=?" : ""}`, args: repo ? [repo] : [] })).rows[0]!;
-  return { lessons: out, lastLearn, handoffs: { written: Number(h.n), delivered: Number(h.d) } };
+  // What muninn itself cost over the last 30 days, and what it added to agents' context. All repos, since calls aren't per repo.
+  const days = 30; const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const spend = (await db.execute({ sql: "SELECT what, count(*) calls, sum(input_tokens+output_tokens+cache_read+cache_write) tokens, sum(cost_usd) cost, count(cost_usd) priced FROM llm_calls WHERE ts>=? GROUP BY what ORDER BY tokens DESC", args: [since] })).rows
+    .map((r) => ({ what: String(r.what), calls: Number(r.calls), tokens: Number(r.tokens ?? 0), costUsd: Number(r.priced) ? Number(r.cost) : null }));
+  const dl = (await db.execute({ sql: "SELECT coalesce(sum(tokens),0) t, count(DISTINCT session) s FROM deliveries WHERE outcome='sent' AND ts>=?", args: [since] })).rows[0]!;
+  return { lessons: out, lastLearn, handoffs: { written: Number(h.n), delivered: Number(h.d) }, days, spend, delivered: { tokens: Number(dl.t), sessions: Number(dl.s) } };
 }
 
 export async function report(args: string[]) {
@@ -54,5 +60,10 @@ export async function report(args: string[]) {
     console.log(`  ${l.verdict}`);
   }
   console.log(`\nHandoffs: ${r.handoffs.written} written, ${r.handoffs.delivered} delivered.`);
+  console.log(`\nLast ${r.days} days, all repos:`);
+  console.log(`  Added to agents' context: about ${r.delivered.tokens.toLocaleString()} tokens across ${r.delivered.sessions} session(s).`);
+  if (!r.spend.length) console.log("  muninn's own AI calls: none recorded yet.");
+  for (const x of r.spend) console.log(`  ${x.what}: ${x.calls} call(s), ${x.tokens.toLocaleString()} tokens${x.costUsd != null ? `, about $${x.costUsd.toFixed(2)} at list price` : ""}`);
+  console.log(`  Kept lessons whose problem came back after keeping: ${r.lessons.filter((l) => l.after > 0).length} of ${r.lessons.length}.`);
   console.log(`"Seen again" is updated when muninn learn runs. Last run: ${r.lastLearn ? r.lastLearn.slice(0, 16).replace("T", " ") : "never"}.`);
 }

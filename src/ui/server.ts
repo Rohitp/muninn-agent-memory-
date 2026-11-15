@@ -6,7 +6,7 @@ import { askData, originOf, shortRepo } from "../commands/ask.js";
 import { answerData } from "../commands/answer.js";
 import { loadEmbedder, modelCached, type Embed } from "../embed/model.js";
 import { fillExplanations } from "../learn/explain.js";
-import { pickRunner } from "../learn/writer.js";
+import { pickRunner, saveUsage } from "../learn/writer.js";
 import { reportData } from "../commands/report.js";
 import { similar, suggestKeyword } from "../commands/review.js";
 import { settings } from "../config.js";
@@ -68,8 +68,8 @@ const routes: Record<string, Handler> = {
     await syncCursor(db);
     // New text needs a new plain line and questions. Written in the background, so the page doesn't wait.
     const fresh = await getLesson(db, id);
-    const runner = pickRunner();
-    if (fresh && !fresh.plain && runner && ["live", "proposed"].includes(fresh.status)) void embed().then((e) => fillExplanations(db, runner, e, { ids: [id], async: true })).catch(() => { /* filled on the next learn */ });
+    const runner = pickRunner("background");
+    if (fresh && !fresh.plain && runner && ["live", "proposed"].includes(fresh.status)) void embed().then((e) => fillExplanations(db, runner, e, { ids: [id], async: true })).then(() => saveUsage(db, runner, "plain lines")).catch(() => { /* filled on the next learn */ });
     return lessonDetail(db, id);
   },
   "GET /api/report": async (db, q) => reportData(db, q.get("repo") || null),
@@ -79,9 +79,10 @@ const routes: Record<string, Handler> = {
   },
   "GET /api/ask": async (db, q) => askData(db, q.get("q") ?? "", q.get("repo") || null, { includeWaiting: true, embed: await embed().catch(() => undefined) }),
   "POST /api/answer": async (db, _q, b) => {
-    const runner = pickRunner();
+    const runner = pickRunner("background");
     if (!runner) throw new Error("No Claude Code found to write an answer.");
-    return answerData(db, String(b.q ?? ""), b.repo || null, runner, await embed());
+    try { return await answerData(db, String(b.q ?? ""), b.repo || null, runner, await embed()); }
+    finally { await saveUsage(db, runner, "answer"); }
   },
   "GET /api/settings": async () => ({ maxPerDelivery: settings().maxPerDelivery }),
 };

@@ -2,7 +2,7 @@ import { createInterface } from "node:readline/promises";
 import { isPaused, settings } from "../config.js";
 import { loadEmbedder, modelCached, MODEL_SIZE, MODEL_SOURCE } from "../embed/model.js";
 import { learnRepo } from "../learn/pipeline.js";
-import { pickRunner, pickWriter } from "../learn/writer.js";
+import { pickRunner, pickWriter, saveUsage } from "../learn/writer.js";
 import { fillExplanations } from "../learn/explain.js";
 import { latestHandoff, makeHandoff, needsHandoff } from "../handoff/handoff.js";
 import { scanLogs } from "../logs/discover.js";
@@ -46,6 +46,7 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean }) {
     if (sessions.length < cfg.minSessions && !opts.auto) console.log(`${repo}: only ${sessions.length} session(s), which may be too few to find repeats.`);
     const folded = await foldDuplicates(db, repo);
     const r = await learnRepo(db, repo, sessions, { embed, writer, cutoff: cfg.similarityCutoff, minSessions: cfg.minSessions, notesPerRun: cfg.notesPerRun });
+    await saveUsage(db, writer?.runner ?? null, "lesson writing");
     if (!opts.auto) {
       const total = Object.values(r.moments).reduce((a, b) => a + b, 0);
       console.log(`${repo}: ${total} moments. ${r.known} already known (evidence added), ${r.newLessons} new lesson(s), ${r.discarded} discarded as noise.`);
@@ -54,11 +55,12 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean }) {
     }
     for (const s of sessions) if (s.unknown) { await db.execute({ sql: "INSERT OR REPLACE INTO scan_counts (repo_id,tool,client_version,scanned_at,unknown_records) VALUES (?,?,?,?,?)", args: [repo, s.tool, s.clientVersion, new Date().toISOString(), s.unknown] }); }
   }
-  const runner = writer ? pickRunner() : null;
+  const runner = writer ? pickRunner("background") : null;
   // A plain-English line and likely questions for each lesson, for the person and for search.
   if (runner) {
     try { const n = await fillExplanations(db, runner, embed); if (n && !opts.auto) console.log(`Wrote plain-English summaries for ${n} lesson(s).`); }
     catch (e) { if (!opts.auto) console.log(`Couldn't write summaries this time: ${e instanceof Error ? e.message : String(e)}`); }
+    await saveUsage(db, runner, "plain lines");
   }
   // Handoffs for recent sessions that ended without the SessionEnd hook, such as Cursor's.
   if (runner && !isPaused()) {
@@ -71,6 +73,7 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean }) {
       if (newer && newer.created_at >= (s.events.at(-1)?.ts ?? "")) continue;
       try { if (await makeHandoff(db, s, runner)) made++; } catch { /* a failed handoff shouldn't stop learning */ }
     }
+    await saveUsage(db, runner, "handoff");
     if (made && !opts.auto) console.log(`Wrote ${made} handoff(s) for recent sessions. See them with "muninn handoff --list".`);
   }
   await db.execute({ sql: "INSERT OR REPLACE INTO meta (key,value) VALUES ('last_learn',?)", args: [new Date().toISOString()] });

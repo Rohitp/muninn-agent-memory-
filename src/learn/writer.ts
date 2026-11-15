@@ -42,16 +42,35 @@ export function parseReply(reply: string, n: number): Written[] {
 const available = (cmd: string) => spawnSync(cmd, ["--version"], { stdio: "ignore" }).status === 0;
 const internalEnv = { ...process.env, MUNINN_INTERNAL: "1" };
 
-// No tools, no hooks and no saved session: the prompt holds untrusted log text.
+import { settings } from "../config.js";
+
+/** Background jobs summarise, so they use a cheaper model. Judging what is worth a lesson uses the default. */
+export type Job = "judge" | "background";
+export type Usage = { job: Job; provider: string; model: string | null; input: number; output: number; cacheRead: number; cacheWrite: number; costUsd: number | null };
+
+// No tools, no hooks, no MCP servers, no saved session, and a short system prompt: the prompt holds
+// untrusted log text, and Claude Code's own setup would otherwise add about 60,000 tokens to every call.
 // Other providers (an OpenRouter key, a local model) can be added here as more entries.
-const commands: Record<string, [string, string[]]> = {
-  claude: ["claude", ["-p", "--tools", "", "--no-session-persistence", "--settings", '{"disableAllHooks":true}', "--output-format", "text"]],
-  codex: ["codex", ["exec", "--ephemeral", "--sandbox", "read-only", "--skip-git-repo-check", "-c", "features.hooks=false", "-"]],
-};
-const runSync = ([cmd, args]: [string, string[]]) => (prompt: string) =>
+const SYSTEM = "You follow the instructions in the user's message exactly and reply only in the format it asks for.";
+export function command(name: string, job: Job): [string, string[]] {
+  const cfg = settings();
+  const model = job === "background" ? cfg.backgroundModel : cfg.judgeModel;
+  if (name === "claude") return ["claude", ["-p", "--tools", "", "--no-session-persistence", "--settings", '{"disableAllHooks":true}', "--setting-sources", "",
+    "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--system-prompt", SYSTEM, "--output-format", "json", ...(model ? ["--model", model] : [])]];
+  return ["codex", ["exec", "--ephemeral", "--sandbox", "read-only", "--skip-git-repo-check", "-c", "features.hooks=false", "-"]];
+}
+/** Claude's JSON reply carries the text and what it cost. Codex replies with plain text. */
+export function readReply(name: string, job: Job, raw: string): { text: string; usage: Usage } {
+  if (name !== "claude") return { text: raw, usage: { job, provider: name, model: null, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: null } };
+  const d = JSON.parse(raw);
+  if (d.is_error) throw new Error(`claude returned an error: ${String(d.result ?? d.subtype).slice(0, 200)}`);
+  const u = d.usage ?? {};
+  return { text: String(d.result ?? ""), usage: { job, provider: "claude", model: Object.keys(d.modelUsage ?? {})[0] ?? null, input: u.input_tokens ?? 0, output: u.output_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0, costUsd: typeof d.total_cost_usd === "number" ? d.total_cost_usd : null } };
+}
+const runSync = ([cmd, args]: [string, string[]], prompt: string) =>
   execFileSync(cmd, args, { input: prompt, encoding: "utf8", env: internalEnv, timeout: 180_000, maxBuffer: 1 << 24, stdio: ["pipe", "pipe", "ignore"] });
 /** The same call without blocking, for the UI server. */
-const runAsync = ([cmd, args]: [string, string[]]) => (prompt: string) => new Promise<string>((ok, fail) => {
+const runAsync = ([cmd, args]: [string, string[]], prompt: string) => new Promise<string>((ok, fail) => {
   const child = spawn(cmd, args, { env: internalEnv, stdio: ["pipe", "pipe", "ignore"] });
   let out = ""; const timer = setTimeout(() => { child.kill(); fail(new Error(`${cmd} took too long`)); }, 180_000);
   child.stdout.setEncoding("utf8"); child.stdout.on("data", (d) => { out += d; });
@@ -59,28 +78,33 @@ const runAsync = ([cmd, args]: [string, string[]]) => (prompt: string) => new Pr
   child.on("close", (code) => { clearTimeout(timer); if (code === 0) ok(out); else fail(new Error(`${cmd} exited with ${code}`)); });
   child.stdin.end(prompt);
 });
-const clients: Record<string, () => (prompt: string) => string> = Object.fromEntries(Object.entries(commands).map(([k, c]) => [k, () => runSync(c)]));
 
-export type Runner = { name: string; run: (prompt: string) => string; runAsync?: (prompt: string) => Promise<string> };
+/** Each call's usage is kept on the runner until the caller saves it with saveUsage. */
+export type Runner = { name: string; job?: Job; calls?: Usage[]; run: (prompt: string) => string; runAsync?: (prompt: string) => Promise<string> };
 /** The engineer's own Claude Code or Codex, run with no tools and no hooks. MUNINN_WRITER overrides. */
-export function pickRunner(): Runner | null {
+export function pickRunner(job: Job = "background"): Runner | null {
   const name = process.env.MUNINN_WRITER;
   if (name === "none") return null;
   const choice = name ?? (available("claude") ? "claude" : available("codex") ? "codex" : null);
-  if (!choice || !clients[choice]) return null;
-  return { name: choice, run: clients[choice]!(), runAsync: runAsync(commands[choice]!) };
+  if (choice !== "claude" && choice !== "codex") return null;
+  const cmd = command(choice, job);
+  const calls: Usage[] = [];
+  const done = (raw: string) => { const r = readReply(choice, job, raw); calls.push(r.usage); return r.text; };
+  return { name: choice, job, calls, run: (p) => done(runSync(cmd, p)), runAsync: async (p) => done(await runAsync(cmd, p)) };
 }
-export function pickWriter(): Writer | null {
-  const runner = pickRunner();
+/** Stores and clears the usage a runner has collected. */
+export async function saveUsage(db: { execute: (q: { sql: string; args: (string | number | null)[] }) => Promise<unknown> }, runner: Runner | null, what: string) {
+  for (const u of runner?.calls?.splice(0) ?? []) await db.execute({ sql: "INSERT INTO llm_calls (id,ts,what,job,provider,model,input_tokens,output_tokens,cache_read,cache_write,cost_usd) VALUES (lower(hex(randomblob(16))),?,?,?,?,?,?,?,?,?,?)", args: [new Date().toISOString(), what, u.job, u.provider, u.model, u.input, u.output, u.cacheRead, u.cacheWrite, u.costUsd] });
+}
+export function pickWriter(runner = pickRunner("judge")): (Writer & { runner: Runner }) | null {
   if (!runner) return null;
-  const { name: choice, run } = runner;
   return {
-    name: choice,
+    name: runner.name, runner,
     write: async (moments) => {
       const out: Written[] = [];
       for (let i = 0; i < moments.length; i += 15) {
         const batch = moments.slice(i, i + 15);
-        out.push(...parseReply(run(buildPrompt(batch)), batch.length));
+        out.push(...parseReply(runner.run(buildPrompt(batch)), batch.length));
       }
       return out;
     },

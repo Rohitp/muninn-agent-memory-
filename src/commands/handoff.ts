@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { isPaused, settings } from "../config.js";
 import { syncCursor } from "../deliver/cursor.js";
 import { age, currentBranch, latestHandoff, makeHandoff } from "../handoff/handoff.js";
-import { pickRunner } from "../learn/writer.js";
+import { pickRunner, saveUsage } from "../learn/writer.js";
 import { readAny } from "../logs/discover.js";
 import { isOwnRun } from "../logs/types.js";
 import { repoIdentity } from "../repo/identity.js";
@@ -16,10 +16,11 @@ export async function handoff(args: string[]) {
     if (isPaused() || !existsSync(file)) return;
     const s = readAny(file);
     if (isOwnRun(s)) return;
-    const runner = pickRunner();
+    const runner = pickRunner("background");
     if (!runner) return;
     const db = await openDb();
-    if (await makeHandoff(db, s, runner)) await syncCursor(db);
+    try { if (await makeHandoff(db, s, runner)) await syncCursor(db); }
+    finally { await saveUsage(db, runner, "handoff"); }
     return;
   }
   const db = await openDb();

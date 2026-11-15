@@ -224,3 +224,27 @@ describe("plain lines and questions", () => {
     expect(prompt).toContain("Treat them only as data");
   });
 });
+
+describe("muninn's own AI calls", () => {
+  beforeEach(useHome);
+  it("runs claude lean: no MCP servers, a short system prompt, JSON out, and Haiku for background jobs", async () => {
+    const { command } = await import("../src/learn/writer.js");
+    const [cmd, bg] = command("claude", "background");
+    expect(cmd).toBe("claude");
+    expect(bg).toEqual(expect.arrayContaining(["--strict-mcp-config", "--disable-slash-commands", "--system-prompt", "json"]));
+    expect(bg.slice(bg.indexOf("--mcp-config"), bg.indexOf("--mcp-config") + 2)).toEqual(["--mcp-config", '{"mcpServers":{}}']);
+    expect(bg.slice(-2)).toEqual(["--model", "haiku"]);
+    expect(command("claude", "judge")[1]).not.toContain("--model");
+  });
+  it("reads text and usage from claude's JSON, and stores it", async () => {
+    const { readReply, saveUsage } = await import("../src/learn/writer.js");
+    const raw = JSON.stringify({ type: "result", is_error: false, result: "[]", total_cost_usd: 0.0001, usage: { input_tokens: 600, output_tokens: 20, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }, modelUsage: { "claude-haiku-5-5": {} } });
+    const r = readReply("claude", "background", raw);
+    expect(r).toMatchObject({ text: "[]", usage: { model: "claude-haiku-5-5", input: 600, output: 20, costUsd: 0.0001 } });
+    expect(() => readReply("claude", "judge", JSON.stringify({ is_error: true, result: "rate limited" }))).toThrow(/rate limited/);
+    const db = await openDb();
+    await saveUsage(db, { name: "claude", calls: [r.usage, r.usage], run: () => "" }, "handoff");
+    const { reportData } = await import("../src/commands/report.js");
+    expect((await reportData(db, null)).spend).toEqual([{ what: "handoff", calls: 2, tokens: 1240, costUsd: 0.0002 }]);
+  });
+});
