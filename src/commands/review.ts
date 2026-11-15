@@ -38,9 +38,20 @@ export async function similar(db: Client, l: Lesson): Promise<{ lesson: Lesson; 
   return lesson && best ? { lesson, score: best.score } : null;
 }
 
+/**
+ * Lessons about how the engineer likes to work (explanations, tone, pace). They phrase these many ways,
+ * so a keyword misses most of them: on Nov 12 "simplify" never matched "step by step" in 99 prompts.
+ */
+export const isPreference = (l: { text: string; suggested_scope?: string | null }) =>
+  /\b(explain|explanation|answers?|step by step|plain (words|language|english)|jargon|concise|brief|overwhelm|tone|wording|i dont understand|the user|you've asked)\b/i.test(l.text);
+
 async function chooseRoute(db: Client, rl: Interface, l: Lesson, explained: { done: boolean }) {
   if (!explained.done) { console.log(HOW); explained.done = true; }
-  const route = (await rl.question("  Deliver: (a)lways-on, (k)eyword, or (n)either? ")).trim().toLowerCase();
+  const pref = isPreference(l);
+  if (pref) console.log("  This is about how you like to work, so always-on fits best. A keyword misses the many ways you'd say it.");
+  let route = (await rl.question(`  Deliver: (a)lways-on, (k)eyword, or (n)either?${pref ? " [a]" : ""} `)).trim().toLowerCase();
+  if (!route && pref) route = "a";
+  if (route.startsWith("k") && pref && !(await rl.question("  A keyword will often miss this one. Use a keyword anyway (y/n)? ")).trim().toLowerCase().startsWith("y")) route = "a";
   if (route.startsWith("a")) return { alwaysOn: true, triggers: [] as string[] };
   if (!route.startsWith("k")) { console.log("  Kept. It's searchable, but won't be sent automatically."); return { alwaysOn: false, triggers: [] as string[] }; }
   const used = await keywordsInUse(db, l.repo_id);
@@ -94,7 +105,7 @@ export async function review(db: Client, repo: string | null, lessons?: Lesson[]
     } else if (!a.startsWith("k")) continue;
     const news = (await rl.question("  Was this news to you (y/n)? ")).trim().toLowerCase().startsWith("y");
     let global: boolean | undefined;
-    if (l.suggested_scope === "global" && l.scope !== "global") global = !(await rl.question("  This looks like it applies to any repo. Make it global (Y/n)? ")).trim().toLowerCase().startsWith("n");
+    if ((l.suggested_scope === "global" || isPreference(l)) && l.scope !== "global") global = !(await rl.question("  This looks like it applies to any repo. Make it global (Y/n)? ")).trim().toLowerCase().startsWith("n");
     const route = await chooseRoute(db, rl, l, explained);
     await decide(db, l.id, { status: "live", ...(text ? { text } : {}), news, ...(global !== undefined ? { global } : {}), alwaysOn: route.alwaysOn, triggers: route.triggers });
   }

@@ -279,3 +279,14 @@ Entry template:
 - Real run on a copy: one handoff 10,074 tokens and $0.003. Plain lines for 5 lessons 3,047 tokens and $0.001. Both came out as good as the earlier ones.
 
 **Not measured:** tokens saved in agent sessions. There's no clean way to count work that didn't happen. The report's stand-in is "problem came back after keeping".
+
+## 2026-11-15 — Why "explain simply" didn't reach a session
+
+**Found:** in session `71351cc7` (cb-ai-agents, Nov 12), the engineer asked for "step by step" and "without overwhelming me" again. muninn sent the two always-on lessons at the start, then ran on 99 prompts with no match. Both "explain simply" lessons had been kept on Nov 6 with the keyword "simplify", which the engineer never typed.
+
+**Decided:** keywords suit task-specific lessons. Lessons about how the engineer likes to work are phrased too many ways for a keyword, so they belong always-on and global.
+
+**Did:**
+- Review spots these lessons (`isPreference`), recommends always-on and global, defaults to always-on on Enter, and asks again if a keyword is chosen. The UI shows the same advice and an "Any repo" checkbox.
+- The report finds sessions where a kept lesson's problem came back but the lesson wasn't sent, in tools where muninn's hook runs. It names the date and the keyword that didn't match, and the UI offers "Make it always-on".
+- On the real database, with the engineer's approval: combined `4d68f6e6` and `d949c23e` into `2c223396`, rewrote it to include "go step by step" and "don't overwhelm with detail", and made it always-on and global. A simulated session start in chargebee-app now receives it.

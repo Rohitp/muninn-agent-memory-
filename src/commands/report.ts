@@ -6,6 +6,8 @@ const TOOL: Record<string, string> = { "claude-code": "Claude Code", codex: "Cod
 export type LessonReport = {
   id: string; text: string; kind: string; repo: string | null; keptAt: string; route: string;
   sent: number; sentSessions: number; before: number; after: number; afterTools: string[]; verdict: string;
+  /** A one-click change that would likely have helped, if any. */
+  fix: "always-on" | null;
 };
 export type Spend = { what: string; calls: number; tokens: number; costUsd: number | null };
 export type Report = { lessons: LessonReport[]; lastLearn: string; handoffs: { written: number; delivered: number }; days: number; spend: Spend[]; delivered: { tokens: number; sessions: number } };
@@ -17,7 +19,8 @@ export type Report = { lessons: LessonReport[]; lastLearn: string; handoffs: { w
 export async function reportData(db: Client, repo: string | null): Promise<Report> {
   const where = repo ? "AND (l.repo_id=? OR l.scope='global')" : "";
   const lessons = (await db.execute({ sql: `SELECT l.id,l.text,l.kind,l.repo_id,coalesce(l.reviewed_at,l.created_at) kept,l.always_on,(SELECT group_concat(pattern, ', ') FROM triggers t WHERE t.lesson_id=l.id) kw FROM lessons l WHERE l.status='live' ${where} ORDER BY kept DESC`, args: repo ? [repo] : [] })).rows;
-  const toolsWithDelivery = new Set((await db.execute("SELECT DISTINCT tool FROM deliveries WHERE outcome='sent'")).rows.map((r) => String(r.tool)));
+  // A tool gets lessons if muninn's hook runs there, whether or not anything matched.
+  const toolsWithDelivery = new Set((await db.execute("SELECT DISTINCT tool FROM deliveries WHERE outcome NOT IN ('unsupported_client')")).rows.map((r) => String(r.tool)));
   const cursorOn = String((await db.execute("SELECT value FROM meta WHERE key='cursor_repos'")).rows[0]?.value ?? "[]");
   const out: LessonReport[] = [];
   for (const l of lessons) {
@@ -27,9 +30,20 @@ export async function reportData(db: Client, repo: string | null): Promise<Repor
     const afterTools = String(ev.t ?? "").split(",").filter(Boolean);
     const route = l.always_on ? "always-on" : l.kw ? `keyword: ${l.kw}` : "search only";
     const after = Number(ev.a), sent = Number(d.n);
-    let verdict: string;
+    // Sessions where the problem came back but this lesson was never sent, in tools that do get lessons.
+    const missed = (await db.execute({ sql: "SELECT e.session, min(e.seen_at) at FROM evidence e WHERE e.lesson_id=? AND e.seen_at>=? AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.lesson_id=e.lesson_id AND d.session=e.session AND d.outcome='sent') GROUP BY e.session ORDER BY at", args: [id, kept] })).rows;
+    const missedInDeliveredTools: string[] = [];
+    for (const r of missed) {
+      const tool = (await db.execute({ sql: "SELECT tool FROM evidence WHERE lesson_id=? AND session=? LIMIT 1", args: [id, String(r.session)] })).rows[0]?.tool;
+      if (tool && toolsWithDelivery.has(String(tool))) missedInDeliveredTools.push(String(r.at).slice(0, 10));
+    }
+    let verdict: string; let fix: LessonReport["fix"] = null;
     if (after === 0) verdict = sent ? "Not seen again since you kept it." : route === "search only" ? "Not seen again. It isn't sent automatically, only found by search." : "Not seen again, and not sent yet.";
-    else {
+    else if (missedInDeliveredTools.length && !l.always_on) {
+      const dates = [...new Set(missedInDeliveredTools)].map((d) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" })).join(", ");
+      verdict = `Came back on ${dates} in a session where it wasn't sent: ${l.kw ? `its keyword "${l.kw}" didn't match what you typed` : "it isn't sent automatically"}. Make it always-on?`;
+      fix = "always-on";
+    } else {
       const missing = afterTools.filter((t) => !toolsWithDelivery.has(t) && !(t === "cursor" && l.repo_id && cursorOn.includes(String(l.repo_id))));
       verdict = `Seen again in ${after} session(s) since you kept it (${afterTools.map((t) => TOOL[t] ?? t).join(", ")}).`;
       if (missing.length) verdict += ` ${missing.map((t) => TOOL[t] ?? t).join(" and ")} wasn't getting lessons.`;
@@ -37,7 +51,7 @@ export async function reportData(db: Client, repo: string | null): Promise<Repor
       else if (!sent) verdict += " It was never sent: check its keyword.";
       else verdict += " It was sent, so the wording may need to be clearer.";
     }
-    out.push({ id, text: String(l.text), kind: String(l.kind ?? "rule"), repo: l.repo_id ? String(l.repo_id) : null, keptAt: kept, route, sent, sentSessions: Number(d.s), before: Number(ev.b), after, afterTools, verdict });
+    out.push({ id, text: String(l.text), kind: String(l.kind ?? "rule"), repo: l.repo_id ? String(l.repo_id) : null, keptAt: kept, route, sent, sentSessions: Number(d.s), before: Number(ev.b), after, afterTools, verdict, fix });
   }
   const lastLearn = String((await db.execute("SELECT value FROM meta WHERE key='last_learn'")).rows[0]?.value ?? "");
   const h = (await db.execute({ sql: `SELECT count(*) n, (SELECT count(*) FROM deliveries WHERE handoff_id IS NOT NULL) d FROM handoffs ${repo ? "WHERE repo_id=?" : ""}`, args: repo ? [repo] : [] })).rows[0]!;

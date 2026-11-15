@@ -117,7 +117,9 @@ function routeControls(l) {
       <option value="none" ${r === "none" ? "selected" : ""}>Search only</option>
     </select>
     <input class="kw" type="text" data-f="keywords" placeholder="keywords, comma-separated" value="${esc(kws)}" ${r === "keyword" ? "" : "hidden"}>
-  </div>`;
+    ${l.status === "proposed" && l.scope !== "global" ? `<label><input type="checkbox" data-f="global" ${l.suggested_scope === "global" || l.preference ? "checked" : ""}> Any repo</label>` : ""}
+  </div>
+  ${l.preference ? `<div class="agent" data-prefnote>This is about how you like to work, so always-on fits best. A keyword misses the many ways you'd say it.</div>` : ""}`;
 }
 function card(l) {
   const ev = (l.evidence || []).slice(0, 6).map((e) => `<li><b>${esc(TOOL[e.tool] || e.tool)}</b> · ${esc(String(e.seen_at).slice(0, 10))} · ${esc(e.quote)}</li>`).join("");
@@ -157,7 +159,8 @@ async function showLessons(status) {
 async function act(el, a) {
   const c = el.closest(".card"); const id = c.dataset.id;
   if (a === "later") { c.remove(); return; }
-  const body = { id, action: a, text: $('[data-f=text]', c).value, route: $('[data-f=route]', c).value, keywords: $('[data-f=keywords]', c).value };
+  const g = $('[data-f=global]', c);
+  const body = { id, action: a, text: $('[data-f=text]', c).value, route: $('[data-f=route]', c).value, keywords: $('[data-f=keywords]', c).value, ...(g ? { global: g.checked } : {}) };
   if (a === "keep" || a === "combine") {
     if (body.route === "keyword" && !body.keywords.trim()) { toast("Add a keyword, or pick another delivery."); return; }
   }
@@ -188,7 +191,7 @@ async function showReport() {
       <p style="margin:4px 0">Kept lessons whose problem came back: ${back} of ${r.lessons.length}.</p>
       <div class="label" style="margin-top:10px">muninn's own AI calls</div><ul class="quotes">${spend}</ul></div>
     <p class="help">For each kept lesson: how often it was sent, and whether the same moment came back after you kept it. Updated when muninn learn runs (last: ${esc(r.lastLearn ? r.lastLearn.slice(0, 16).replace("T", " ") : "never")}). Handoffs: ${r.handoffs.written} written, ${r.handoffs.delivered} delivered.</p>` +
-    (r.lessons.length ? r.lessons.map((l) => `<div class="card"><div class="meta">${l.kind === "note" ? '<span class="chip note">note</span>' : '<span class="chip">rule</span>'}<span>kept ${esc(l.keptAt.slice(0, 10))}</span><span>· ${esc(l.route)}</span><span>· sent ${l.sent}× in ${l.sentSessions} session(s)</span><span>· seen ${l.before}× before</span></div><div>${esc(l.text)}</div><div class="verdict ${l.after ? "warn" : "ok"}">${esc(l.verdict)}</div></div>`).join("")
+    (r.lessons.length ? r.lessons.map((l) => `<div class="card"><div class="meta">${l.kind === "note" ? '<span class="chip note">note</span>' : '<span class="chip">rule</span>'}<span>kept ${esc(l.keptAt.slice(0, 10))}</span><span>· ${esc(l.route)}</span><span>· sent ${l.sent}× in ${l.sentSessions} session(s)</span><span>· seen ${l.before}× before</span></div><div>${esc(l.text)}</div><div class="verdict ${l.after ? "warn" : "ok"}">${esc(l.verdict)}</div>${l.fix === "always-on" ? `<div class="row"><button class="act primary" data-fix="always-on" data-id="${esc(l.id)}">Make it always-on</button></div>` : ""}</div>`).join("")
                      : '<div class="empty">No kept lessons yet.</div>');
 }
 
@@ -240,6 +243,8 @@ async function render() {
 document.addEventListener("click", (e) => {
   const t = e.target.closest("[data-tab]"); if (t) { tab = t.dataset.tab; render(); return; }
   const a = e.target.closest("[data-a]"); if (a) act(a, a.dataset.a);
+  const f = e.target.closest("[data-fix]");
+  if (f) { f.disabled = true; api("/api/decide", { id: f.dataset.id, action: "save", route: "always" }).then(() => { toast("Now always-on. It's sent at the start of every session."); render(); }).catch((err) => { toast(err.message); f.disabled = false; }); }
 });
 // Save changes is enabled only when a kept card differs from what was last saved.
 const snapshot = (c) => JSON.stringify(["text", "route", "keywords"].map((f) => $(`[data-f=${f}]`, c)?.value ?? ""));
@@ -253,7 +258,10 @@ document.addEventListener("input", dirtyCheck);
 document.addEventListener("change", dirtyCheck);
 document.addEventListener("change", (e) => {
   if (e.target.id === "repo") { repo = e.target.value; render(); }
-  if (e.target.dataset.f === "route") { const kw = $('[data-f=keywords]', e.target.closest(".card")); kw.hidden = e.target.value !== "keyword"; if (!kw.hidden) kw.focus(); }
+  if (e.target.dataset.f === "route") {
+    const c = e.target.closest(".card"); const kw = $('[data-f=keywords]', c); kw.hidden = e.target.value !== "keyword"; if (!kw.hidden) kw.focus();
+    if (e.target.value === "keyword" && $("[data-prefnote]", c)) toast("A keyword will often miss this one. Always-on is safer.");
+  }
 });
 loadRepos().then(render);
 </script>

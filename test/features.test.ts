@@ -248,3 +248,23 @@ describe("muninn's own AI calls", () => {
     expect((await reportData(db, null)).spend).toEqual([{ what: "handoff", calls: 2, tokens: 1240, costUsd: 0.0002 }]);
   });
 });
+
+describe("preference lessons", () => {
+  beforeEach(useHome);
+  it("spots lessons about how the engineer likes to work", async () => {
+    const { isPreference } = await import("../src/commands/review.js");
+    expect(isPreference({ text: "Give the main point first, then go step by step." })).toBe(true);
+    expect(isPreference({ text: "You've asked for clear, short answers." })).toBe(true);
+    expect(isPreference({ text: "Run Python through poetry run python." })).toBe(false);
+  });
+  it("reports a lesson that came back in a session where its keyword never matched", async () => {
+    const db = await openDb(); await ensureRepo(db, "r", "/x");
+    const id = await createLesson(db, { repo_id: "r", text: "Explain simply.", source: "inferred", status: "proposed", by: "learn" });
+    await decide(db, id, { status: "live", triggers: ["simplify"] });
+    await db.execute({ sql: "INSERT INTO deliveries (id,ts,tool,session,event,outcome,tokens) VALUES ('d1',?, 'claude-code','s12','UserPromptSubmit','no_match',0)", args: [new Date().toISOString()] });
+    await addEvidence(db, id, [{ tool: "claude-code", session: "s12", ts: "2099-11-12T16:13:00Z", quote: "lets go step by step" }]);
+    const [l] = (await reportData(db, "r")).lessons;
+    expect(l).toMatchObject({ fix: "always-on" });
+    expect(l!.verdict).toContain('keyword "simplify" didn\'t match');
+  });
+});
