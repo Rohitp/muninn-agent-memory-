@@ -211,7 +211,7 @@ function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.ad
 
 async function loadRepos() {
   const repos = await api("/api/repos");
-  $("#repo").innerHTML = '<option value="">All repos</option>' + repos.map((r) => `<option value="${esc(r.id)}" title="${esc(r.id)}">${esc(short(r.id))}${r.waiting ? ` · ${r.waiting} waiting` : ""}</option>`).join("");
+  $("#repo").innerHTML = '<option value="">All repos</option>' + repos.map((r) => `<option value="${esc(r.id)}" title="${esc(r.id)}">${esc(short(r.id))}${r.waiting ? ` · ${r.waiting} to review` : ""}</option>`).join("");
   if (repo && !repos.some((r) => r.id === repo)) repo = "";
   $("#repo").value = repo;
 }
@@ -253,28 +253,29 @@ async function showHome() {
     <div class="counters">
       <div class="counter"><b>${fmt3(h.stats.told)}</b><span>told agents this week</span></div>
       <div class="counter"><b>${fmt3(h.stats.sessions)}</b><span>sessions</span></div>
-      <div class="counter ${h.stats.cameBack ? "alert" : ""}"><b>${fmt3(h.stats.cameBack)}</b><span>came back after keeping</span></div>
+      <div class="counter ${h.stats.cameBack ? "alert" : ""}"><b>${fmt3(h.stats.cameBack)}</b><span>problems that came back after keeping a lesson</span></div>
       <div class="counter"><b>${h.stats.costUsd == null ? "–" : "$" + h.stats.costUsd.toFixed(3)}</b><span>muninn's own cost, 7 days</span></div>
     </div>
     <div class="cols">
       <section class="col-receipt" aria-labelledby="rc"><h2 class="label" id="rc">What muninn told your agents</h2>${receiptHTML(h)}</section>
       <div class="col-main">
         <section aria-labelledby="wt">
-          <h2 class="label" id="wt">Waiting for your word · ${h.waiting.count}</h2>
+          <h2 class="label" id="wt">New lessons to review · ${h.waiting.count}</h2>
+          <p class="help" style="margin:-4px 0 12px">muninn found these in your sessions. Your agents aren't told any of them until you keep it.</p>
           ${top ? `<article class="card" data-id="${esc(top.id)}">
             <div class="muted" style="font-size:13px">${esc(top.origin)}</div>
             <p class="lesson-big" style="margin-top:6px">${esc(top.plain || top.text)}</p>
             <div class="row">
-              <button class="key dark" data-quick="keep" data-id="${esc(top.id)}">Remember</button>
-              <button class="key" data-quick="reject" data-id="${esc(top.id)}">Let it go</button>
-              <span class="route-note">→ ${esc(top.route)}</span>
+              <button class="key dark" data-quick="keep" data-id="${esc(top.id)}">Keep</button>
+              <button class="key" data-quick="reject" data-id="${esc(top.id)}">Don't keep</button>
+              <span class="route-note">If kept: told to agents ${esc(top.route)}</span>
             </div>
           </article>
-          ${h.waiting.count > 1 ? `<p style="margin:10px 0 0"><a href="#" data-goto="review">Review the other ${h.waiting.count - 1}</a></p>` : ""}` : `<div class="card muted">Nothing waiting. muninn scans again on its own as you work.</div>`}
+          ${h.waiting.count > 1 ? `<p style="margin:10px 0 0"><a href="#" data-goto="review">Review the other ${h.waiting.count - 1}, one at a time</a></p>` : ""}` : `<div class="card muted">Nothing to review. muninn looks for new lessons on its own as you work.</div>`}
         </section>
         ${h.cameBack.map((c) => `<section class="alert">
           <span class="dot alert" aria-hidden="true"></span>
-          <div style="flex:1 1 300px;min-width:0"><h3>"${esc(c.text)}" came back</h3><p>${esc(c.verdict)}</p></div>
+          <div style="flex:1 1 300px;min-width:0"><h3>The problem came back: "${esc(c.text)}"</h3><p>${esc(c.verdict)}</p></div>
           ${c.fix === "always-on" ? `<button class="key warn small" data-fix="${esc(c.id)}">Tell it every session</button>` : ""}
         </section>`).join("")}
         <section aria-labelledby="cr">
@@ -299,13 +300,13 @@ async function showReview() {
 function drawReview() {
   const l = reviewQueue[reviewIndex];
   const wc = $("#waitCount"); wc.hidden = !reviewQueue.length; wc.textContent = reviewQueue.length;
-  if (!l) { $("#main").innerHTML = `<div class="review"><div class="empty-state">All reviewed. muninn scans again on its own as you work.</div></div>`; return; }
+  if (!l) { $("#main").innerHTML = `<div class="review"><div class="empty-state">All reviewed. muninn looks for new lessons on its own as you work.</div></div>`; return; }
   const d = l.defaults; const kws = (d.keywords.length ? d.keywords : l.suggested || []).join(", ");
   const ev = (l.evidence || []).slice(0, 3).map((e) => `↳ ${esc(String(e.seen_at).slice(0, 10))} · ${esc(TOOL[e.tool] || e.tool)} · "${esc(e.quote)}"`).join("<br>");
   const more = (l.evidence || []).length > 3 ? `  + ${l.evidence.length - 3} more` : "";
   $("#main").innerHTML = `<div class="review" data-id="${esc(l.id)}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-      <span class="muted">${esc(l.origin)}${l.sessions > 1 ? ` · ${l.sessions} sessions` : ""}</span>
+      <span><b>New lesson from your sessions.</b> <span class="muted">Keep it and your agents are told it. ${esc(l.origin)}${l.sessions > 1 ? ` · ${l.sessions} sessions` : ""}.</span></span>
       <span class="display" aria-label="${reviewIndex + 1} of ${reviewQueue.length}">${String(reviewIndex + 1).padStart(2, "0")}<span>/${String(reviewQueue.length).padStart(2, "0")}</span></span>
     </div>
     <article class="card" style="padding:26px;display:flex;flex-direction:column;gap:16px">
@@ -322,9 +323,9 @@ function drawReview() {
       </div>
     </article>
     <div class="bigkeys">
-      <button class="key dark" data-act="keep">Remember<kbd>K</kbd></button>
+      <button class="key dark" data-act="keep">Keep<kbd>K</kbd></button>
       <button class="key" data-act="later">Later<kbd>L</kbd></button>
-      <button class="key" data-act="reject" style="color:var(--signal-text)">Let it go<kbd>R</kbd></button>
+      <button class="key" data-act="reject" style="color:var(--signal-text)">Don't keep<kbd>R</kbd></button>
     </div>
   </div>`;
 }
@@ -339,7 +340,7 @@ async function reviewAct(a) {
   if (a === "combine") body.other = l.similar?.id;
   try {
     await api("/api/decide", body);
-    toast({ keep: "Remembered.", reject: "Let go. muninn won't propose it again.", combine: "Combined and remembered." }[a]);
+    toast({ keep: "Kept. Your agents are told from their next session.", reject: "Not kept. muninn won't suggest it again.", combine: "Combined and kept." }[a]);
     reviewQueue.splice(reviewIndex, 1); drawReview(); loadRepos();
   } catch (e) { toast(e.message); }
 }
@@ -423,8 +424,8 @@ document.addEventListener("click", async (e) => {
   if (quick) {
     const card = quick.closest("[data-id]"); quick.disabled = true;
     try {
-      if (quick.dataset.quick === "keep") { const ls = await api("/api/lessons?" + q({ repo, status: "proposed" })); const l = ls.find((x) => x.id === quick.dataset.id); await api("/api/decide", { id: quick.dataset.id, action: "keep", route: l.defaults.route, keywords: l.defaults.keywords.join(", "), global: l.defaults.global }); toast("Remembered."); }
-      else { await api("/api/decide", { id: quick.dataset.id, action: "reject" }); toast("Let go."); }
+      if (quick.dataset.quick === "keep") { const ls = await api("/api/lessons?" + q({ repo, status: "proposed" })); const l = ls.find((x) => x.id === quick.dataset.id); await api("/api/decide", { id: quick.dataset.id, action: "keep", route: l.defaults.route, keywords: l.defaults.keywords.join(", "), global: l.defaults.global }); toast("Kept. Your agents are told from their next session."); }
+      else { await api("/api/decide", { id: quick.dataset.id, action: "reject" }); toast("Not kept. muninn won't suggest it again."); }
       loadRepos(); render();
     } catch (err) { toast(err.message); quick.disabled = false; }
     return;

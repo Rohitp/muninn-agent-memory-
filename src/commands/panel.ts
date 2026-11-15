@@ -102,16 +102,16 @@ export async function feedback(args: string[]) {
 export async function keepWithDefaults(args: string[]) {
   const db = await openDb();
   const l = args[0] ? await getLesson(db, args[0]) : null;
-  if (!l || l.status !== "proposed") { console.error("No waiting lesson with that id."); process.exitCode = 1; return; }
+  if (!l || l.status !== "proposed") { console.error("No lesson to review with that id."); process.exitCode = 1; return; }
   const d = defaultRoute(l);
   await decide(db, l.id, { status: "live", alwaysOn: d.route === "always", triggers: d.route === "keyword" ? d.keywords : [], ...(d.global ? { global: true } : {}) });
   await syncCursor(db);
-  console.log(`Kept ${l.id.slice(0, 8)}: ${d.route === "always" ? "always-on" : d.route === "keyword" ? `keyword ${d.keywords.join(", ")}` : "search only"}${d.global ? ", any repo" : ""}.`);
+  console.log(`Kept ${l.id.slice(0, 8)}. Agents are told it ${d.route === "always" ? "every session" : d.route === "keyword" ? `when "${d.keywords.join('", "')}" comes up` : "only when they search"}${d.global ? ", in every repo" : ""}, from their next session.`);
 }
 export async function reject(args: string[]) {
   const db = await openDb();
   const l = args[0] ? await getLesson(db, args[0]) : null;
-  if (!l || l.status !== "proposed") { console.error("No waiting lesson with that id."); process.exitCode = 1; return; }
+  if (!l || l.status !== "proposed") { console.error("No lesson to review with that id."); process.exitCode = 1; return; }
   await decide(db, l.id, { status: "rejected" });
-  console.log(`Rejected ${l.id.slice(0, 8)}. muninn won't propose it again.`);
+  console.log(`Not kept: ${l.id.slice(0, 8)}. muninn won't suggest it again.`);
 }

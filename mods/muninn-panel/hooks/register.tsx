@@ -131,12 +131,13 @@ export const register: Register = on => {
 
         {top && (
           <Box flexDirection="column">
-            <Text color={MUTED}>WAITING FOR YOUR WORD · {data.waiting.count}</Text>
+            <Text color={MUTED}>NEW LESSONS TO REVIEW · {data.waiting.count}</Text>
+            <Text color={MUTED} wrap="wrap">Found in your sessions. Agents aren't told until you keep one.</Text>
             <Text wrap="wrap">{top.plain ?? top.text}</Text>
-            <Text color={MUTED} wrap="wrap">→ {top.route}</Text>
+            <Text color={MUTED} wrap="wrap">if kept: told {top.route}</Text>
             <Box flexDirection="row" gap={2}>
-              <Button key={`keep-${top.id}`} plain hotkey="1" onPress={() => act($, ['keep', top.id], 'Remembered.')}>remember</Button>
-              <Button key={`reject-${top.id}`} plain hotkey="2" onPress={() => act($, ['reject', top.id], 'Let go.')}>let go</Button>
+              <Button key={`keep-${top.id}`} plain hotkey="1" onPress={() => act($, ['keep', top.id], 'Kept. Agents are told from their next session.')}>keep</Button>
+              <Button key={`reject-${top.id}`} plain hotkey="2" onPress={() => act($, ['reject', top.id], "Not kept. muninn won't suggest it again.")}>don't keep</Button>
               <Button key="open-review" plain dimColor hotkey="3" onPress={() => act($, ['ui', '--detach'], 'Opened muninn in your browser.')}>review all</Button>
             </Box>
           </Box>
@@ -144,7 +145,7 @@ export const register: Register = on => {
 
         {data.cameBack.map(c => (
           <Box key={`back-${c.id}`} flexDirection="column">
-            <Text color={SIGNAL} wrap="wrap">● came back: {c.text}</Text>
+            <Text color={SIGNAL} wrap="wrap">● the problem came back: {c.text}</Text>
             <Text color={MUTED} wrap="wrap">  {c.verdict}</Text>
             {c.fix === 'always-on' && <Button key={`fix-${c.id}`} plain onPress={() => act($, ['edit', c.id, '--always-on'], 'Told every session now.')}>  [ tell it every session ]</Button>}
           </Box>
@@ -162,7 +163,7 @@ export const register: Register = on => {
         )}
 
         <Box flexDirection="row" justifyContent="space-between">
-          <Text color={MUTED}>{pad3(data.stats.told)} told · {pad3(data.stats.cameBack)} came back{data.stats.costUsd != null ? ` · $${data.stats.costUsd.toFixed(3)}` : ''}</Text>
+          <Text color={MUTED}>{pad3(data.stats.told)} told · {pad3(data.stats.cameBack)} problems came back{data.stats.costUsd != null ? ` · $${data.stats.costUsd.toFixed(3)}` : ''}</Text>
           <Button key="open-ui" plain onPress={() => act($, ['ui', '--detach'], 'Opened muninn in your browser.')}>open ↗</Button>
         </Box>
       </Box>

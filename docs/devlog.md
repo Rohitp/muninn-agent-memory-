@@ -316,3 +316,5 @@ Entry template:
 - The Claude Code panel is rebuilt to match: dashed receipt box, dial words, dots, feedback buttons.
 
 **Follow-up (author):** "quiet, at start, anytime" weren't clear: they named settings without saying what they were about. The dial now answers "when should muninn speak up to your agents?" with *only when asked*, *at session start* and *whenever relevant*, and shows the current setting's one-line meaning on Home, in the header tooltip, in the panel and in `muninn dial`. The CLI also accepts `asked`, `session-start` and `relevant`.
+
+**Follow-up (author):** "Waiting for your word" didn't say what word or what to do. The design voice now prefers literal over clever: "New lessons to review", with a line saying agents aren't told until you keep one; "Keep / Don't keep" in place of "Remember / Let it go"; "If kept: told to agents every session"; "The problem came back: …". The same wording is used on the web, in the panel and in the CLI.

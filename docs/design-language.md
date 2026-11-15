@@ -23,14 +23,14 @@ It's grounded in Bruce Liu's *Beyond Taking Turns in Human-AI Interaction* (UCLA
 
 ## Voice
 
-Plain, short, about what happened. muninn reports back.
+Plain, short, about what happened. **Literal beats clever:** every label should make sense to someone seeing it for the first time, with no figures of speech. "Waiting for your word" and "quiet / at start / anytime" were tried and confused the author, so each option or section says what it is and what happens next.
 
 | Say | Not |
 | --- | --- |
 | told your agents | delivered lessons |
-| waiting for your word | proposed |
-| remember / let it go | keep / reject (the CLI keeps these words) |
-| came back | recurrence detected |
+| new lessons to review (agents aren't told until you keep one) | waiting for your word, proposed |
+| keep / don't keep | remember / let it go, reject |
+| the problem came back | came back, recurrence detected |
 | every session / when a word comes up / only when searched | always-on / keyword / none |
 | speaks up only when asked / at session start / whenever relevant | quiet / start / anytime |
 | fading | stale |
