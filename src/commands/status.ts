@@ -1,3 +1,4 @@
+import type { Client } from "@libsql/client";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -5,38 +6,66 @@ import { home, isPaused } from "../config.js";
 import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
 import { keywordsInUse } from "../store/lessons.js";
-import { codexPresent, installed } from "./install.js";
+import { EVENTS, codexPresent, installed } from "./install.js";
+
+const ago = (iso: string, now = Date.now()) => {
+  const m = Math.round((now - Date.parse(iso)) / 60_000);
+  return m < 1 ? "just now" : m < 60 ? `${m} minute${m === 1 ? "" : "s"} ago` : m < 2880 ? `${Math.round(m / 60)} hours ago` : `${Math.round(m / 1440)} days ago`;
+};
+const HOOK_WORDS: Record<string, string> = { SessionStart: "session start", UserPromptSubmit: "your prompts", PostToolUseFailure: "failed commands", PostToolUse: "failed commands", SubagentStart: "subagents", SessionEnd: "session end" };
+
+export type Health = { state: "not-set-up" | "paused" | "waiting" | "working" | "problem"; line: string; lastCall: string | null; errors: string[] };
+
+/**
+ * Is muninn working? There's no process to check: Claude Code calls muninn at set moments.
+ * So "working" means its hooks are installed and Claude Code called them recently, with no error since.
+ */
+export async function health(db: Client, opts: { hooks?: string[]; paused?: boolean; errorLog?: string } = {}): Promise<Health> {
+  const hooks = opts.hooks ?? installed();
+  const lastCall = String((await db.execute("SELECT max(ts) t FROM deliveries WHERE tool='claude-code'")).rows[0]?.t ?? "") || null;
+  const log = opts.errorLog ?? join(home(), "hook-errors.log");
+  // Only errors newer than the last successful call matter: older ones were followed by a working call.
+  const errors = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).filter((l) => !lastCall || l.slice(0, 24) > lastCall).slice(-3) : [];
+  if (!hooks.length) return { state: "not-set-up", line: "muninn isn't set up on this machine. Run: muninn setup", lastCall, errors };
+  if (opts.paused ?? isPaused()) return { state: "paused", line: "muninn is paused, so your agents aren't told anything. Run: muninn resume", lastCall, errors };
+  if (errors.length) return { state: "problem", line: `muninn had a problem the last time Claude Code called it (${ago(errors.at(-1)!.slice(0, 24))}). The error is below.`, lastCall, errors };
+  if (!lastCall) return { state: "waiting", line: "muninn is set up, but Claude Code hasn't called it yet. Start a Claude Code session in a git repo, send a message, then check again.", lastCall, errors };
+  return { state: "working", line: `muninn is working. Claude Code last called it ${ago(lastCall)}.`, lastCall, errors };
+}
 
 export async function status() {
   const db = await openDb();
   const repo = repoIdentity(process.cwd());
   const meta = async (k: string) => String((await db.execute({ sql: "SELECT value FROM meta WHERE key=?", args: [k] })).rows[0]?.value ?? "");
-  const counts = (await db.execute({ sql: "SELECT status,count(*) n FROM lessons WHERE repo_id IS ? OR repo_id=? OR scope='global' GROUP BY status", args: [repo, repo] })).rows.map((r) => `${r.n} ${r.status}`).join(", ");
-  const lastLearn = await meta("last_learn");
-  console.log(`Repo: ${repo ?? "not in a git repo"}`);
-  console.log(`Lessons here and global: ${counts || "none"}`);
-  console.log(`Last learn: ${lastLearn || "never"}`);
-  if (lastLearn && Date.now() - Date.parse(lastLearn) > 21 * 86_400_000) console.log("  That's over 3 weeks ago. Claude Code deletes logs after 30 days by default.");
+  const h = await health(db);
+  console.log(h.line);
+  for (const e of h.errors) console.log(`  ${e}`);
+
+  console.log("");
   const hooks = installed();
-  console.log(`Claude Code hooks: ${hooks.length ? hooks.join(", ") : "not installed. Run muninn install"}${isPaused() ? " (paused)" : ""}`);
+  const missing = Object.keys(EVENTS["claude-code"]).filter((e) => !hooks.includes(e));
+  console.log(`Claude Code: ${hooks.length ? (missing.length ? `connected, but not for ${missing.map((e) => HOOK_WORDS[e]).join(", ")}. Run: muninn install` : "connected") : "not connected"}`);
   if (codexPresent()) {
     const ch = installed("codex");
-    console.log(`Codex hooks: ${ch.length ? `${ch.join(", ")}. Codex runs them only after you trust them in /hooks.` : "not installed. Run muninn install"}`);
-    const shape = await meta("codex_tool_response_shape");
-    if (shape) console.log(`Codex command results look like ${shape}. muninn reads failures from an exit code in there.`);
+    const cm = Object.keys(EVENTS.codex).filter((e) => !ch.includes(e));
+    console.log(`Codex: ${ch.length ? `${cm.length ? `connected, but not for ${cm.map((e) => HOOK_WORDS[e]).join(", ")}. Run: muninn install, then trust it in Codex's /hooks` : "connected (Codex runs the hooks only after you trust them in /hooks)"}` : "not connected. Run: muninn install"}`);
   }
-  const ho = (await db.execute({ sql: "SELECT count(*) n, max(created_at) last FROM handoffs WHERE repo_id IS ?", args: [repo] })).rows[0];
-  if (ho && Number(ho.n)) console.log(`Handoffs here: ${ho.n}, newest ${String(ho.last).slice(0, 16).replace("T", " ")}. See "muninn handoff".`);
-  for (const r of (await db.execute("SELECT tool, max(ts) last, sum(outcome='sent') sent FROM deliveries GROUP BY tool")).rows) console.log(`Last hook run from ${r.tool}: ${r.last}. Lessons sent so far: ${r.sent}`);
-  const kw = await keywordsInUse(db, repo);
-  if (kw.length) console.log(`Keywords: ${kw.map((k) => `${k.pattern} (${k.lessons})`).join(", ")}`);
-  for (const r of (await db.execute("SELECT tool, client_version, unknown_records FROM scan_counts WHERE unknown_records>0")).rows) console.log(`Unrecognised log records: ${r.tool} ${r.client_version}: ${r.unknown_records}`);
-  const errors = join(home(), "hook-errors.log");
-  if (existsSync(errors)) console.log(`Recent hook errors:\n${readFileSync(errors, "utf8").trim().split("\n").slice(-3).join("\n")}`);
+  const lastLearn = await meta("last_learn");
+  console.log(`Checked your sessions for lessons: ${lastLearn ? ago(lastLearn) : "not yet"} (it does this on its own after you work)`);
+  const live = (await db.execute({ sql: "SELECT count(*) n FROM lessons WHERE status='live' AND off=0 AND (repo_id IS ? OR repo_id=? OR scope='global')", args: [repo, repo] })).rows[0]?.n ?? 0;
+  const waiting = (await db.execute({ sql: "SELECT count(*) n FROM lessons WHERE status='proposed' AND (repo_id IS ? OR repo_id=?)", args: [repo, repo] })).rows[0]?.n ?? 0;
+  console.log(`${repo ? `In this repo (${repo.split("/").pop()})` : "Here (not a git repo)"}: agents are told ${live} lesson${Number(live) === 1 ? "" : "s"}${Number(waiting) ? `, and ${waiting} suggestion${Number(waiting) === 1 ? " is" : "s are"} waiting in muninn ui` : ""}.`);
+  if (!repo) console.log("  muninn learns per repo, so run your agents inside a project that's a git repo.");
+
+  const notes: string[] = [];
+  for (const r of (await db.execute("SELECT tool, client_version, unknown_records FROM scan_counts WHERE unknown_records>0")).rows) notes.push(`Some ${r.tool} ${r.client_version} log records weren't recognised (${r.unknown_records}), so a log format may have changed.`);
+  const shape = await meta("codex_tool_response_shape");
+  if (shape) notes.push(`Codex command results look like ${shape}; muninn reads failures from an exit code in there.`);
   try {
     const s = JSON.parse(readFileSync(join(homedir(), ".claude", "settings.json"), "utf8"));
-    if (!s.cleanupPeriodDays || s.cleanupPeriodDays <= 30) console.log("Claude Code keeps logs for 30 days by default. Set cleanupPeriodDays in ~/.claude/settings.json to keep more for muninn to learn from.");
+    if (!s.cleanupPeriodDays || s.cleanupPeriodDays <= 30) notes.push('Claude Code deletes session logs after 30 days. Add "cleanupPeriodDays": 365 to ~/.claude/settings.json so muninn can learn from more.');
   } catch { /* no settings file */ }
+  if (notes.length) { console.log(""); for (const n of notes) console.log(`Note: ${n}`); }
 }
 export async function keywords() {
   const db = await openDb();

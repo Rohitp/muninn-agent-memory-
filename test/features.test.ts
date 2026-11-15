@@ -387,3 +387,21 @@ describe("the on/off switch", () => {
     expect(await start("c")).toContain("Quote ===");
   });
 });
+
+describe("is muninn working?", () => {
+  beforeEach(useHome);
+  it("answers in one line: not set up, paused, waiting, working, or a problem since the last good call", async () => {
+    const { health } = await import("../src/commands/status.js");
+    const { writeFileSync } = await import("node:fs");
+    const db = await openDb();
+    const log = join(tmp(), "errors.log");
+    expect((await health(db, { hooks: [], errorLog: log })).state).toBe("not-set-up");
+    expect((await health(db, { hooks: ["SessionStart"], paused: true, errorLog: log })).state).toBe("paused");
+    expect((await health(db, { hooks: ["SessionStart"], paused: false, errorLog: log })).state).toBe("waiting");
+    await db.execute({ sql: "INSERT INTO deliveries (id,ts,tool,session,event,outcome,tokens) VALUES ('d','2026-11-15T12:00:00.000Z','claude-code','s','SessionStart','no_match',0)", args: [] });
+    writeFileSync(log, "2026-11-15T08:50:03.414Z claude-code SQLITE_ERROR: old and fixed\n");
+    expect(await health(db, { hooks: ["SessionStart"], paused: false, errorLog: log })).toMatchObject({ state: "working", errors: [] });
+    writeFileSync(log, "2026-11-15T13:00:00.000Z claude-code SQLITE_ERROR: new\n");
+    expect(await health(db, { hooks: ["SessionStart"], paused: false, errorLog: log })).toMatchObject({ state: "problem", errors: ["2026-11-15T13:00:00.000Z claude-code SQLITE_ERROR: new"] });
+  });
+});
