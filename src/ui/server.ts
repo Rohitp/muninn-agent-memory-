@@ -19,7 +19,7 @@ import { settings } from "../config.js";
 import { syncCursor } from "../deliver/cursor.js";
 import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
-import { combine, decide, getLesson, keywordsInUse, listLessons } from "../store/lessons.js";
+import { combine, decide, ensureRepo, getLesson, keywordsInUse, listLessons } from "../store/lessons.js";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -197,6 +197,13 @@ async function serveNow(args: string[], want: number) {
   const token = process.env.MUNINN_UI_TOKEN || randomBytes(18).toString("base64url");
   const here = repoIdentity(process.cwd());
   await adoptRepo(db, here, process.cwd());
+  // List every repo you have sessions in, straight from the logs, so the picker doesn't wait for a scan.
+  const listReposFromLogs = async () => {
+    try { const { reposInLogs } = await import("../logs/discover.js"); for (const [id, dir] of reposInLogs()) await ensureRepo(db, id, dir); }
+    catch { /* the picker still has what muninn already knew */ }
+  };
+  await listReposFromLogs();
+  setInterval(listReposFromLogs, 10 * 60_000).unref();
   const port = process.env.MUNINN_UI_PORT ? Number(process.env.MUNINN_UI_PORT) : want;
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");

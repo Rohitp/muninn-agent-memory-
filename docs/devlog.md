@@ -388,3 +388,5 @@ Entry template:
 **Author:** "there's a new repo I'm working on and it didn't pick it up." On this Mac every recent session was in a known repo, so it was the other machine. Repos were only registered by a scan, and scans run at most daily or after 5 new sessions, so a new repo could wait a day to appear.
 
 **Did:** the SessionStart hook registers the repo (one insert), so the page lists it immediately and its handoffs and plan work from the first session. When a session ends in a repo no scan has seen (no `scanned:<repo>` mark and no lessons), the SessionEnd hook starts a scan straight away instead of waiting. Learn marks each repo it scans.
+
+**Follow-up (author, new machine):** "muninn itself and the new repo: started in muninn's folder it showed only muninn; in the new repo's folder, only that." The picker listed only repos already stored, and a fresh machine had none stored. The page now reads which folders your sessions ran in from the start of each log (the `cwd` field; Cursor's folder name) and lists every repo found, on opening and every ten minutes. About a second for 286 logs here.

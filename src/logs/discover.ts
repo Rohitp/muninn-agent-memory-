@@ -1,10 +1,10 @@
-import { globSync } from "node:fs";
+import { closeSync, globSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { logRoots } from "../config.js";
 import { repoIdentity } from "../repo/identity.js";
 import { readClaude } from "./claude-code.js";
 import { readCodex } from "./codex.js";
-import { readCursor } from "./cursor.js";
+import { readCursor, slugToPath } from "./cursor.js";
 import { isOwnRun, type Session } from "./types.js";
 
 export type Scan = { sessions: Session[]; byRepo: Map<string, Session[]>; missingFolder: number; ownRuns: number; files: { claude: number; codex: number; cursor: number } };
@@ -41,4 +41,35 @@ export function scanLogs(): Scan {
     scan.byRepo.get(repo)!.push(s);
   }
   return scan;
+}
+
+/** The working folder a log was recorded in, read from the first part of the file only, so it's quick. */
+function folderOf(file: string, tool: "claude" | "codex" | "cursor", cursorRoot: string): string | null {
+  if (tool === "cursor") return slugToPath(file.slice(cursorRoot.length + 1).split(/[\\/]/)[0] ?? "");
+  let head = "";
+  try {
+    const fd = openSync(file, "r");
+    const buf = Buffer.alloc(65536);
+    const n = readSync(fd, buf, 0, buf.length, 0);
+    closeSync(fd);
+    head = buf.subarray(0, n).toString("utf8");
+  } catch { return null; }
+  const m = head.match(/"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (!m) return null;
+  try { return JSON.parse(`"${m[1]}"`); } catch { return null; }
+}
+
+/**
+ * Every repo you have sessions in on this machine, from the logs themselves, without a scan.
+ * The page lists these so a repo shows up whether or not muninn has learned anything there yet.
+ */
+export function reposInLogs(): Map<string, string> {
+  const f = logFiles();
+  const folders = new Set<string>();
+  for (const [tool, files] of [["claude", f.claude], ["codex", f.codex], ["cursor", f.cursor]] as const) {
+    for (const file of files) { const d = folderOf(file, tool, f.roots.cursor); if (d) folders.add(d); }
+  }
+  const repos = new Map<string, string>();
+  for (const d of folders) { const r = repoIdentity(d); if (r && !repos.has(r)) repos.set(r, d); }
+  return repos;
 }

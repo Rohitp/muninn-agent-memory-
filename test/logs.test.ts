@@ -61,3 +61,22 @@ describe("scanLogs", () => {
     expect(scan.missingFolder).toBe(1);
   });
 });
+
+describe("repos in the logs", () => {
+  it("finds every repo you have sessions in, from the start of each log, without a scan", async () => {
+    const { reposInLogs } = await import("../src/logs/discover.js");
+    const { execFileSync } = await import("node:child_process");
+    const { mkdirSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmp, write } = await import("./helpers.js");
+    const root = tmp(); process.env.MUNINN_LOG_ROOT = root;
+    const a = join(tmp(), "alpha"); mkdirSync(a); execFileSync("git", ["init", "-q", a]);
+    const b = join(tmp(), "beta"); mkdirSync(b); execFileSync("git", ["init", "-q", b]);
+    write(join(root, "claude", "projects", "p1", "s1.jsonl"), [{ type: "user", cwd: a, message: { content: "hi" } }]);
+    write(join(root, "codex", "sessions", "2026", "11", "15", "rollout-x.jsonl"), [{ type: "session_meta", payload: { cwd: b } }]);
+    write(join(root, "claude", "projects", "p2", "s2.jsonl"), [{ type: "user", cwd: "/no/such/folder", message: { content: "hi" } }]);
+    const found = reposInLogs();
+    expect(found.size).toBe(2);
+    delete process.env.MUNINN_LOG_ROOT;
+  });
+});
