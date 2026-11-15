@@ -15,8 +15,9 @@ const isOurs = (h: any) => typeof h?.command === "string" && h.command.includes(
 
 /** Event and matcher per client. Codex has no failure event, so muninn checks each Bash result itself. */
 export const EVENTS: Record<Client, Record<string, string | undefined>> = {
-  "claude-code": { SessionStart: undefined, UserPromptSubmit: undefined, PostToolUseFailure: "Bash", SubagentStart: undefined, SessionEnd: undefined },
-  codex: { SessionStart: undefined, UserPromptSubmit: undefined, PostToolUse: "Bash", SubagentStart: undefined, SessionEnd: undefined },
+  // Stop (Claude finished a reply) and PreCompact keep the branch's plan current during long sessions.
+  "claude-code": { SessionStart: undefined, UserPromptSubmit: undefined, PostToolUseFailure: "Bash", SubagentStart: undefined, Stop: undefined, PreCompact: undefined, SessionEnd: undefined },
+  codex: { SessionStart: undefined, UserPromptSubmit: undefined, PostToolUse: "Bash", SubagentStart: undefined, Stop: undefined, PreCompact: undefined, SessionEnd: undefined },
 };
 export const DELIVERY_EVENTS = Object.fromEntries(Object.entries(EVENTS["claude-code"]).filter(([e]) => e !== "SessionEnd"));
 export const ALL_EVENTS = Object.keys(EVENTS["claude-code"]);

@@ -87,6 +87,7 @@ async function main() {
     case "ask": return (await import("./commands/ask.js")).ask(args);
     case "cursor": return cursorCmd(args[0] ?? "");
     case "handoff": return (await import("./commands/handoff.js")).handoff(args);
+    case "checkpoint": return (await import("./commands/handoff.js")).checkpointCmd(args);
     case "report": return (await import("./commands/report.js")).report(args);
     case "setup": return (await import("./commands/setup.js")).setup(args);
     case "panel": return (await import("./commands/panel.js")).panel(args);
@@ -133,6 +134,16 @@ async function runHook(client: string) {
       auto.startAutoScan({ force: await neverScanned(input.cwd) }); return;
     }
     if (!existsSync(join(home(), "muninn.db"))) return;
+    // Claude finished a reply, or is about to compact: if the session has grown enough, update the plan in the background.
+    if (event === "Stop" || event === "PreCompact") {
+      const t = typeof input.transcript_path === "string" ? input.transcript_path : "";
+      if (!t || !existsSync(t) || typeof input.session_id !== "string") return;
+      const [{ openDb }, cp, auto, { statSync }] = await Promise.all([import("./store/db.js"), import("./handoff/checkpoint.js"), import("./commands/auto.js"), import("node:fs")]);
+      const db = await openDb({ lockWaitMs: 100 });
+      const grown = statSync(t).size - (await cp.lastCheckpointSize(db, input.session_id));
+      if (grown >= (event === "PreCompact" ? cp.GROWTH.compact : cp.GROWTH.working)) auto.startCheckpoint(t, client);
+      return;
+    }
     const [{ openDb }, { deliver, hookOutput }] = await Promise.all([import("./store/db.js"), import("./deliver/hook.js")]);
     // Upgrades the database if muninn was updated since, so new code never meets an old schema (a no-op otherwise).
     const db = await openDb({ lockWaitMs: 100 });

@@ -63,10 +63,10 @@ describe("install", () => {
   it("installs every hook once, with a Bash matcher on failures, and uninstall removes them all", () => {
     install(); install();
     const c = JSON.parse(readFileSync(f(), "utf8"));
-    expect(installed()).toEqual(["SessionStart", "UserPromptSubmit", "PostToolUseFailure", "SubagentStart", "SessionEnd"]);
+    expect(installed()).toEqual(["SessionStart", "UserPromptSubmit", "PostToolUseFailure", "SubagentStart", "Stop", "PreCompact", "SessionEnd"]);
     expect(c.hooks.PostToolUseFailure).toEqual([expect.objectContaining({ matcher: "Bash" })]);
     const codex = JSON.parse(readFileSync(process.env.MUNINN_CODEX_HOOKS!, "utf8"));
-    expect(installed("codex")).toEqual(["SessionStart", "UserPromptSubmit", "PostToolUse", "SubagentStart", "SessionEnd"]);
+    expect(installed("codex")).toEqual(["SessionStart", "UserPromptSubmit", "PostToolUse", "SubagentStart", "Stop", "PreCompact", "SessionEnd"]);
     expect(codex.hooks.PostToolUse).toEqual([expect.objectContaining({ matcher: "Bash" })]);
     expect(codex.hooks.SessionEnd[0].hooks[0]).toMatchObject({ timeout: 3 });
     expect(codex.hooks.SessionStart[0].hooks[0].command).toContain("hook --client codex");

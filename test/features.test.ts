@@ -13,7 +13,7 @@ import { parseCursorTime, readCursor, slugToPath } from "../src/logs/cursor.js";
 import { repoIdentity } from "../src/repo/identity.js";
 import { openDb } from "../src/store/db.js";
 import { addEvidence, createLesson, decide, ensureRepo, listLessons } from "../src/store/lessons.js";
-import { fakeEmbed, session, tmp, useHome, write } from "./helpers.js";
+import { day, fakeEmbed, session, tmp, useHome, write } from "./helpers.js";
 
 const EXPLAIN = "The contract ingestion benchmark loads the PDFs in benchmarks/contracts and runs the parser on each one. It scores fields against the gold JSON in benchmarks/gold with the v4 scorer. We only care about the overall F1 and the per-field recall for dates and amounts. Run it from the repo root, not from apps/api.";
 
@@ -510,5 +510,40 @@ describe("a brand-new repo", () => {
     expect((await db.execute({ sql: "SELECT 1 FROM repos WHERE id=?", args: [repo] })).rows.length).toBe(0);
     await deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "startup", session_id: "n1", cwd });
     expect((await db.execute({ sql: "SELECT 1 FROM repos WHERE id=?", args: [repo] })).rows.length).toBe(1);
+  });
+});
+
+describe("plan updates during a long session", () => {
+  let cwd = "";
+  beforeEach(() => { useHome(); cwd = join(tmp(), "repo"); mkdirSync(cwd); execFileSync("git", ["init", "-q", "-b", "feat", cwd]); });
+  const long = (n: number): Session => ({ id: "long1", tool: "claude-code", cwd, clientVersion: "1", unknown: 0, branch: "feat",
+    events: Array.from({ length: n }, (_, i) => (i % 2 ? { k: "agent" as const, text: `Answer ${i} ${"x".repeat(500)}`, ts: day(1) } : { k: "typed" as const, text: `Step ${i}: do the next thing ${"y".repeat(400)}`, ts: day(1) })) });
+  it("splits the new part into pieces small enough to read whole", async () => {
+    const { pieces } = await import("../src/handoff/checkpoint.js");
+    const ps = pieces(long(80).events, 0);
+    expect(ps.length).toBeGreaterThan(1);
+    expect(ps[0]!.from).toBe(0);
+    expect(ps.at(-1)!.to).toBe(80);
+    expect(ps.every((p) => p.text.length <= 14_000)).toBe(true);
+  });
+  it("folds each piece into the branch's plan, and only reads what's new next time", async () => {
+    const { checkpoint } = await import("../src/handoff/checkpoint.js");
+    const P = await import("../src/plan/plan.js");
+    const db = await openDb();
+    let calls = 0;
+    const runner = { name: "fake", run: (p: string) => {
+      calls++;
+      if (p.includes("short running plan")) return JSON.stringify({ goal: null, add: [{ kind: "open", text: `Item from call ${calls}` }], close: [] });
+      return "Next: keep going";
+    } };
+    const s = long(80);
+    expect(await checkpoint(db, s, runner)).toBeGreaterThan(1);
+    const items = (await P.getPlan(db, repoIdentity(cwd)!, "feat")).open.length;
+    expect(items).toBeGreaterThan(1);
+    const before = calls;
+    expect(await checkpoint(db, s, runner)).toBe(0);
+    expect(calls).toBe(before);
+    s.events.push({ k: "typed", text: "One more thing to do", ts: day(2) });
+    expect(await checkpoint(db, s, runner)).toBe(1);
   });
 });

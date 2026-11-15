@@ -390,3 +390,14 @@ Entry template:
 **Did:** the SessionStart hook registers the repo (one insert), so the page lists it immediately and its handoffs and plan work from the first session. When a session ends in a repo no scan has seen (no `scanned:<repo>` mark and no lessons), the SessionEnd hook starts a scan straight away instead of waiting. Learn marks each repo it scans.
 
 **Follow-up (author, new machine):** "muninn itself and the new repo: started in muninn's folder it showed only muninn; in the new repo's folder, only that." The picker listed only repos already stored, and a fresh machine had none stored. The page now reads which folders your sessions ran in from the start of each log (the `cwd` field; Cursor's folder name) and lists every repo found, on opening and every ten minutes. About a second for 286 logs here.
+
+## 2026-11-15 — The plan updates during long sessions
+
+**Author:** handoffs read only the end of a session, and a long session updates the plan only when it ends. "Is there a way to start this earlier, before compaction even?"
+
+**Did:**
+- Checkpoints (`checkpoints` table, migration 010): each covers the part of a session since the last one, split into pieces of at most 14,000 characters with events kept whole. Each piece gets a short note (Goal, Done, Decided, Next, Open) that is folded into the branch's plan.
+- New hooks: `Stop` (Claude finished a reply) checks the transcript's size against the last checkpoint and starts one in the background after about 60 KB of growth; `PreCompact` starts one after 5 KB. Both are a size check in the hook and print nothing. At session end, a long or already-checkpointed session has its uncovered part checkpointed before the handoff. One lock per session stops overlapping runs.
+- Real run on a copy: an 11.5 MB session became 7 pieces, giving 6 open items, 12 decisions and 24 done items for $0.024 (the end-only handoff had given 5 open and 3 decisions).
+
+**To do on each machine:** `muninn install` adds the two hooks (Codex asks to trust them in /hooks). `muninn status` names them while they're missing.

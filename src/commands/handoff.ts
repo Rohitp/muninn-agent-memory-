@@ -20,6 +20,12 @@ export async function handoff(args: string[]) {
     if (!runner) return;
     const db = await openDb();
     try {
+      // A long session (or one already checkpointed) first gets its uncovered part folded in, piece by piece,
+      // so early work isn't lost to a handoff that only reads the end.
+      const { checkpoint } = await import("../handoff/checkpoint.js");
+      const covered = (await db.execute({ sql: "SELECT 1 FROM checkpoints WHERE session=? LIMIT 1", args: [s.id] })).rows.length > 0;
+      const size = s.events.reduce((n, e) => n + (e.k === "cmd" ? e.cmd.length : e.text.length), 0);
+      if (covered || size > 14_000) await checkpoint(db, s, runner, { file }).catch(() => 0);
       const h = await makeHandoff(db, s, runner);
       if (h) {
         // Fold the session into the repo's running plan, then refresh the files that carry it.
@@ -42,6 +48,28 @@ export async function handoff(args: string[]) {
   }
   const branch = currentBranch(process.cwd()) ?? "unknown";
   const h = await latestHandoff(db, repo, branch, settings().handoffDays);
-  if (!h) { console.log(`No handoff on ${branch} in the last ${settings().handoffDays} days. They're written when a session ends.`); return; }
+  if (!h) { console.log(`No handoff on ${branch} yet. One is written when a session on this branch ends.`); return; }
   console.log(`${h.branch} · ${h.tool} · ${age(h.created_at)}\n${h.text}`);
+}
+
+/** `muninn checkpoint --transcript <file>`: the plan update during a session (run by the Stop and PreCompact hooks). */
+export async function checkpointCmd(args: string[]) {
+  const i = args.indexOf("--transcript");
+  const file = i >= 0 ? args[i + 1] ?? "" : "";
+  if (isPaused() || !existsSync(file)) return;
+  const s = readAny(file);
+  if (isOwnRun(s)) return;
+  const runner = pickRunner("background");
+  if (!runner) return;
+  const db = await openDb();
+  const { checkpoint } = await import("../handoff/checkpoint.js");
+  const { writePlanFile } = await import("../plan/plan.js");
+  try {
+    if (await checkpoint(db, s, runner, { file })) {
+      const { repoIdentity: id } = await import("../repo/identity.js");
+      const repo = s.cwd ? id(s.cwd) : null;
+      if (repo) await writePlanFile(db, repo).catch(() => null);
+      await syncCursor(db);
+    }
+  } finally { await saveUsage(db, runner, "plan update"); }
 }

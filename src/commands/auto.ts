@@ -50,3 +50,11 @@ export function startHandoff(transcript: string, client: string) {
   const child = spawn(process.execPath, [cli, "handoff", "--transcript", transcript, "--client", client], { detached: true, stdio: "ignore", env: { ...process.env, MUNINN_INTERNAL: "" } });
   child.unref();
 }
+
+/** Called from the Stop and PreCompact hooks: updates the branch's plan from the new part of the session, in a separate process. */
+export function startCheckpoint(transcript: string, client: string) {
+  if (isPaused() || process.env.MUNINN_INTERNAL) return;
+  const cli = join(dirname(fileURLToPath(import.meta.url)), "..", "cli.js");
+  const child = spawn(process.execPath, [cli, "checkpoint", "--transcript", transcript, "--client", client], { detached: true, stdio: "ignore", env: { ...process.env, MUNINN_INTERNAL: "" } });
+  child.unref();
+}
