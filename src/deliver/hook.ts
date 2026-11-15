@@ -84,16 +84,17 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   if (event === "SessionStart" && input.source === "startup" && nudgeDue) waiting = Number((await db.execute({ sql: "SELECT count(*) n FROM lessons l WHERE l.status='proposed' AND (l.repo_id IS ? OR l.repo_id=?)", args: [repo, repo] })).rows[0]?.n ?? 0);
   // Where the last session on this branch left off, at the start of a fresh session only.
   let handoff: string | null = null;
-  if (event === "SessionStart" && (input.source === "startup" || input.source === "clear") && repo && input.cwd) {
-    const branch = currentBranch(input.cwd);
+  const freshStart = event === "SessionStart" && (input.source === "startup" || input.source === "clear") && !!repo && !!input.cwd;
+  const branch = freshStart ? currentBranch(input.cwd!) : null;
+  if (freshStart && repo) {
     const h = branch ? await latestHandoff(db, repo, branch, cfg.handoffDays, session) : null;
     if (h) {
       handoff = handoffText(h, cfg.handoffStaleDays);
       await db.execute({ sql: "INSERT INTO deliveries (id,ts,tool,session,event,source,lesson_id,outcome,tokens,handoff_id) VALUES (?,?,?,?,?,?,NULL,'sent',?,?)", args: [randomUUID(), ts, client, session, event, input.source ?? null, tokens(handoff), h.id] });
     }
   }
-  // The repo's running plan, at the start of a fresh session, after where the last session left off.
-  const plan = event === "SessionStart" && (input.source === "startup" || input.source === "clear") && repo ? planText(await getPlan(db, repo), repo.split("/").pop() ?? repo) : null;
+  // This branch's plan, at the start of a fresh session, after where the last session left off.
+  const plan = freshStart && repo && branch ? planText(await getPlan(db, repo, branch), repo.split("/").pop() ?? repo, branch) : null;
   if (!out.length && !waiting && !handoff && !plan) { await log("no_match"); return null; }
   const lines: string[] = [];
   if (handoff) lines.push(handoff, "");

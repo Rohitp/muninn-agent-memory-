@@ -18,7 +18,7 @@ You tell an agent the same things over and over: "explain it step by step", "the
 
    Your own Claude (or Codex) turns each one into a short lesson.
 2. **You decide what's kept.** Lessons arrive as suggestions. Nothing reaches an agent until you add it.
-3. **It tells your agents when it matters.** At the start of a session, when a word you chose comes up, or when a command fails the way it has before. It also hands the next session a short note of where you left off, and keeps a running plan for each project (goal, what's open, decisions, what's done) that you can edit and, if you like, keep in the repo as `PLAN.md`.
+3. **It tells your agents when it matters.** At the start of a session, when a word you chose comes up, or when a command fails the way it has before. It also hands the next session a short note of where you left off, and keeps a running plan for each branch you work on (goal, what's open, decisions, what's done) that you can edit and, if you like, keep in the repo as `PLAN.md`.
 
 ## What it looks like
 

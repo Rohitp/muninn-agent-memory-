@@ -6,7 +6,8 @@ import { askData, originOf, shortRepo } from "../commands/ask.js";
 import { answerData } from "../commands/answer.js";
 import { homeData } from "../commands/home.js";
 import { adoptRepo } from "../repo/adopt.js";
-import { addItem, editItem, getPlan, planFileOn, setPlanFile, setStatus, writePlanFile } from "../plan/plan.js";
+import { addItem, editItem, getPlan, planBranches, planFileOn, setPlanFile, setStatus, writePlanFile } from "../plan/plan.js";
+import { currentBranch } from "../handoff/handoff.js";
 import { scanRunning, startAutoScan } from "../commands/auto.js";
 import { getDial, recordFeedback, setDial } from "../store/dial.js";
 import { loadEmbedder, modelCached, type Embed } from "../embed/model.js";
@@ -19,7 +20,7 @@ import { syncCursor } from "../deliver/cursor.js";
 import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
 import { combine, decide, getLesson, keywordsInUse, listLessons } from "../store/lessons.js";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,6 +44,17 @@ async function lessonDetail(db: Client, id: string) {
   const suggested = l.suggested_keywords ? (JSON.parse(l.suggested_keywords) as string[]) : [suggestKeyword(l.text)].filter(Boolean);
   const origin = await originOf(db, { id: l.id, source: l.source, signal: l.signal });
   return { ...l, preference: isPreference(l), defaults: defaultRoute(l), repo_short: shortRepo(l.repo_id), origin, evidence, triggers, suggested, similar: sim ? { id: sim.lesson.id, text: sim.lesson.text, plain: sim.lesson.plain, status: sim.lesson.status, score: sim.score } : null };
+}
+
+/** A branch's plan for the page, defaulting to the branch checked out in the repo's folder, plus the other branches with plans. */
+async function planView(db: Client, repo: string, branch: string | null) {
+  const row = (await db.execute({ sql: "SELECT paths FROM repos WHERE id=?", args: [repo] })).rows[0];
+  const root = row ? ((JSON.parse(String(row.paths)) as string[]).find((p) => existsSync(p)) ?? null) : null;
+  const checkedOut = root ? currentBranch(root) : null;
+  const b = branch || checkedOut || "main";
+  const branches = await planBranches(db, repo, root);
+  if (!branches.some((x) => x.name === b)) branches.unshift({ name: b, open: 0, merged: false });
+  return { branch: b, checkedOut, branches, plan: await getPlan(db, repo, b), fileOn: await planFileOn(db, repo) };
 }
 
 const routes: Record<string, Handler> = {
@@ -90,18 +102,19 @@ const routes: Record<string, Handler> = {
   // The running plan: read it, change it, and the PLAN.md switch. Changes refresh PLAN.md (if on) and Cursor's rules.
   "GET /api/plan": async (db, q) => {
     const repo = q.get("repo"); if (!repo) throw new Error("Pick a repo to see its plan.");
-    return { plan: await getPlan(db, repo), fileOn: await planFileOn(db, repo) };
+    return planView(db, repo, q.get("branch"));
   },
   "POST /api/plan": async (db, _q, b) => {
     const repo = String(b.repo ?? ""); if (!repo) throw new Error("Pick a repo first.");
-    if (b.action === "add") await addItem(db, repo, b.kind, String(b.text ?? ""), { person: true });
+    const branch = String(b.branch ?? "") || (await planView(db, repo, null)).branch;
+    if (b.action === "add") await addItem(db, repo, branch, b.kind === "goal" ? "goal" : "open", String(b.text ?? ""), { person: true });
     else if (b.action === "edit") await editItem(db, String(b.id), String(b.text ?? ""));
     else if (b.action === "close") await setStatus(db, String(b.id), "closed", "person");
     else if (b.action === "reopen") await setStatus(db, String(b.id), "active", "person");
     else if (b.action === "remove") await setStatus(db, String(b.id), "removed", "person");
     else throw new Error("Unknown action.");
     await writePlanFile(db, repo); await syncCursor(db);
-    return { plan: await getPlan(db, repo), fileOn: await planFileOn(db, repo) };
+    return planView(db, repo, branch);
   },
   "POST /api/plan-file": async (db, _q, b) => {
     const repo = String(b.repo ?? ""); if (!repo) throw new Error("Pick a repo first.");

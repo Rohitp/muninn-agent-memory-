@@ -13,13 +13,14 @@ import { OWN_RUN_MARK } from "../logs/types.js";
  * items and close open ones the session finished. The person can edit, close, reopen, add or remove anything.
  */
 export type Kind = "goal" | "open" | "decision" | "done";
-export type PlanItem = { id: string; repo_id: string; kind: Kind; text: string; status: "active" | "closed" | "removed"; handoff_id: string | null; session: string | null; created_at: string; closed_at: string | null; closed_by: string | null; by_person: number };
+export type PlanItem = { id: string; repo_id: string; branch: string; kind: Kind; text: string; status: "active" | "closed" | "removed"; handoff_id: string | null; session: string | null; created_at: string; closed_at: string | null; closed_by: string | null; by_person: number };
 export type Plan = { goal: PlanItem | null; open: PlanItem[]; decisions: PlanItem[]; done: PlanItem[] };
 
 const now = () => new Date().toISOString();
 
-export async function getPlan(db: Client, repo: string): Promise<Plan> {
-  const rows = (await db.execute({ sql: "SELECT * FROM plan_items WHERE repo_id=? AND status!='removed' ORDER BY created_at", args: [repo] })).rows as unknown as PlanItem[];
+/** The plan for one branch of a repo. Each branch is its own piece of work. */
+export async function getPlan(db: Client, repo: string, branch: string): Promise<Plan> {
+  const rows = (await db.execute({ sql: "SELECT * FROM plan_items WHERE repo_id=? AND branch=? AND status!='removed' ORDER BY created_at", args: [repo, branch] })).rows as unknown as PlanItem[];
   const goal = rows.filter((r) => r.kind === "goal" && r.status === "active").at(-1) ?? null;
   return {
     goal,
@@ -30,13 +31,13 @@ export async function getPlan(db: Client, repo: string): Promise<Plan> {
   };
 }
 
-export async function addItem(db: Client, repo: string, kind: Kind, text: string, from: { handoff?: Handoff | null; person?: boolean } = {}) {
+export async function addItem(db: Client, repo: string, branch: string, kind: Kind, text: string, from: { handoff?: Handoff | null; person?: boolean } = {}) {
   const t = text.trim().slice(0, 300);
   if (!t) return null;
   // One goal at a time: a new goal replaces the old one.
-  if (kind === "goal") await db.execute({ sql: "UPDATE plan_items SET status='closed', closed_at=?, closed_by=? WHERE repo_id=? AND kind='goal' AND status='active'", args: [now(), from.person ? "person" : "session", repo] });
+  if (kind === "goal") await db.execute({ sql: "UPDATE plan_items SET status='closed', closed_at=?, closed_by=? WHERE repo_id=? AND branch=? AND kind='goal' AND status='active'", args: [now(), from.person ? "person" : "session", repo, branch] });
   const id = randomUUID();
-  await db.execute({ sql: "INSERT INTO plan_items (id,repo_id,kind,text,handoff_id,session,created_at,by_person) VALUES (?,?,?,?,?,?,?,?)", args: [id, repo, kind, t, from.handoff?.id ?? null, from.handoff?.session ?? null, from.handoff?.created_at ?? now(), from.person ? 1 : 0] });
+  await db.execute({ sql: "INSERT INTO plan_items (id,repo_id,branch,kind,text,handoff_id,session,created_at,by_person) VALUES (?,?,?,?,?,?,?,?,?)", args: [id, repo, branch, kind, t, from.handoff?.id ?? null, from.handoff?.session ?? null, from.handoff?.created_at ?? now(), from.person ? 1 : 0] });
   return id;
 }
 export async function setStatus(db: Client, id: string, status: "active" | "closed" | "removed", by: "person" | "session") {
@@ -91,11 +92,11 @@ export function parsePlanOps(reply: string): PlanOps {
 /** Folds one handoff into its repo's plan. Each handoff is applied once. */
 export async function applyHandoff(db: Client, h: Handoff, runner: Runner): Promise<boolean> {
   if ((await db.execute({ sql: "SELECT 1 FROM plan_applied WHERE handoff_id=?", args: [h.id] })).rows.length) return false;
-  const plan = await getPlan(db, h.repo_id);
+  const plan = await getPlan(db, h.repo_id, h.branch);
   const reply = runner.runAsync ? await runner.runAsync(buildPlanPrompt(plan, h)) : runner.run(buildPlanPrompt(plan, h));
   const ops = parsePlanOps(reply);
-  if (ops.goal) await addItem(db, h.repo_id, "goal", ops.goal, { handoff: h });
-  for (const a of ops.add ?? []) await addItem(db, h.repo_id, a.kind, a.text, { handoff: h });
+  if (ops.goal) await addItem(db, h.repo_id, h.branch, "goal", ops.goal, { handoff: h });
+  for (const a of ops.add ?? []) await addItem(db, h.repo_id, h.branch, a.kind, a.text, { handoff: h });
   for (const short of ops.close ?? []) {
     const item = plan.open.find((o) => o.id.startsWith(short));
     if (item) await setStatus(db, item.id, "closed", "session");
@@ -112,10 +113,10 @@ export async function applyPending(db: Client, runner: Runner, limit = 6): Promi
 }
 
 /** The plan as agents read it at session start: short, and labelled as muninn's summary. */
-export function planText(plan: Plan, repoShort: string): string | null {
+export function planText(plan: Plan, repoShort: string, branch: string): string | null {
   if (!plan.goal && !plan.open.length && !plan.decisions.length) return null;
   const date = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-  const lines = [`Where the project ${repoShort} stands, kept by muninn from earlier sessions and edited by the engineer. Check it against the code:`];
+  const lines = [`The plan for branch ${branch} of ${repoShort}, kept by muninn from earlier sessions on this branch and edited by the engineer. Check it against the code:`];
   if (plan.goal) lines.push(`Goal: ${plan.goal.text}`);
   if (plan.open.length) lines.push("Open:", ...plan.open.slice(-6).map((o) => `- ${o.text}`));
   if (plan.decisions.length) lines.push("Recent decisions:", ...plan.decisions.slice(0, 3).map((d) => `- (${date(d.created_at)}) ${d.text}`));
@@ -123,9 +124,9 @@ export function planText(plan: Plan, repoShort: string): string | null {
 }
 
 /** The plan as a Markdown file, for people who want it in the repo. */
-export function planMarkdown(plan: Plan, repoShort: string): string {
+export function planMarkdown(plan: Plan, repoShort: string, branch = ""): string {
   const date = (iso: string) => iso.slice(0, 10);
-  const out = [`# Plan: ${repoShort}`, "", "_Kept by muninn from your coding sessions, and edited by you in muninn ui. Changes made here are overwritten; edit in muninn ui instead._", ""];
+  const out = [`# Plan: ${repoShort}${branch ? `, branch ${branch}` : ""}`, "", "_Kept by muninn from your coding sessions, and edited by you in muninn ui. Changes made here are overwritten; edit in muninn ui instead._", ""];
   out.push("## Goal", "", plan.goal ? plan.goal.text : "_Not set yet._", "");
   out.push("## Open", "", ...(plan.open.length ? plan.open.map((o) => `- [ ] ${o.text}`) : ["_Nothing open._"]), "");
   out.push("## Decisions", "", ...(plan.decisions.length ? plan.decisions.map((d) => `- ${date(d.created_at)}: ${d.text}`) : ["_None yet._"]), "");
@@ -148,6 +149,22 @@ export async function writePlanFile(db: Client, repo: string): Promise<string | 
   let top = root;
   try { top = execFileSync("git", ["-C", root, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { /* use the folder as is */ }
   const file = join(top, "PLAN.md");
-  writeFileSync(file, planMarkdown(await getPlan(db, repo), repo.split("/").pop() ?? repo));
+  // PLAN.md holds the plan of the branch checked out, so each branch carries its own in git.
+  const { currentBranch } = await import("../handoff/handoff.js");
+  const branch = currentBranch(top) ?? "main";
+  writeFileSync(file, planMarkdown(await getPlan(db, repo, branch), repo.split("/").pop() ?? repo, branch));
   return file;
+}
+
+/** Branches of a repo that have a plan, with whether each is merged into the main branch. For the page's picker. */
+export async function planBranches(db: Client, repo: string, root: string | null): Promise<{ name: string; open: number; merged: boolean }[]> {
+  const rows = (await db.execute({ sql: "SELECT branch, sum(kind='open' AND status='active') open FROM plan_items WHERE repo_id=? AND status!='removed' GROUP BY branch ORDER BY max(created_at) DESC", args: [repo] })).rows;
+  const { execFileSync } = await import("node:child_process");
+  const git = (...a: string[]) => { try { return execFileSync("git", ["-C", root ?? ".", ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 2000 }).trim(); } catch { return null; } };
+  const main = root ? (git("symbolic-ref", "--short", "refs/remotes/origin/HEAD")?.replace(/^origin\//, "") ?? (git("rev-parse", "--verify", "-q", "main") ? "main" : git("rev-parse", "--verify", "-q", "master") ? "master" : null)) : null;
+  return rows.map((r) => {
+    const name = String(r.branch);
+    const merged = !!(root && main && name !== main && git("rev-parse", "--verify", "-q", name) && git("merge-base", "--is-ancestor", name, main) !== null);
+    return { name, open: Number(r.open ?? 0), merged };
+  });
 }

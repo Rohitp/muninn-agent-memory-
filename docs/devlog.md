@@ -376,3 +376,9 @@ Entry template:
 **Found (author):** "I have all repos selected and it asks for a project plan?" The muninn repo had no remote, so its lessons were filed under its folder path. Pushing it to GitHub added a remote, which changed its identity. The page then opened on the new, empty identity while the picker showed "All repos", and the two lessons kept for this repo stopped reaching agents here.
 
 **Did:** `adoptRepo` moves lessons, handoffs, plan items, judged moments, scan counts and per-repo settings (dial, PLAN.md, Cursor) from the path identity to the remote one. It runs at session start in the hook, per repo in learn, and when the page opens. It matches either spelling of a macOS temp path (/var and /private/var). The picker always shows the repo the page is on, even a new one. On the real database the two lessons moved over when the page restarted.
+
+## 2026-11-15 — One plan per branch
+
+**Author:** "a project plan is not per repo, it's per build", then chose one plan per branch.
+
+**Did:** plan items carry their branch (migration 009, existing items take the branch of the handoff they came from, else main). A handoff updates its own branch's plan. Agents get the plan of the branch they're on at session start, and Cursor's rules file has the branch checked out. The page shows "Plan for this branch" with a picker of branches that have plans, marking the checked-out one and any merged into the main branch. PLAN.md holds the checked-out branch's plan, so each branch carries its own in git.
