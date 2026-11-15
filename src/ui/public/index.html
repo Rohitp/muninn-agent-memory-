@@ -128,7 +128,7 @@ function card(l) {
     ${routeControls(l)}
     <div class="row">
       ${proposed ? '<button class="act primary" data-a="keep">Keep</button><button class="act" data-a="later">Later</button><button class="act danger" data-a="reject">Reject</button>'
-                 : '<button class="act primary" data-a="save">Save</button><button class="act danger" data-a="retire">Retire</button>'}
+                 : '<button class="act primary" data-a="save" disabled title="Edit the text or delivery first">Save changes</button><button class="act danger" data-a="retire">Retire</button>'}
     </div>
   </div>`;
 }
@@ -141,6 +141,7 @@ async function showLessons(status) {
     ? "Lessons muninn found in your sessions. Nothing reaches an agent until you keep it. Edit the text first if you like."
     : "Lessons and notes your agents get. Change the text or how it's delivered, or retire it.";
   main.innerHTML = `<p class="help">${help}</p>` + (ls.length ? ls.map(card).join("") : `<div class="empty">${status === "proposed" ? "Nothing waiting." : "Nothing kept yet."}</div>`);
+  main.querySelectorAll(".card").forEach((c) => { c.dataset.initial = snapshot(c); });
 }
 
 async function act(el, a) {
@@ -156,6 +157,7 @@ async function act(el, a) {
     await api("/api/decide", body);
     toast({ keep: "Kept.", reject: "Rejected. muninn won't propose it again.", retire: "Retired.", save: "Saved.", combine: "Combined and kept." }[a]);
     if (a !== "save") c.remove();
+    else { c.dataset.saved = snapshot(c); el.disabled = true; return; }
     loadRepos();
   } catch (e) { toast(e.message); el.disabled = false; }
 }
@@ -199,6 +201,16 @@ document.addEventListener("click", (e) => {
   const t = e.target.closest("[data-tab]"); if (t) { tab = t.dataset.tab; render(); return; }
   const a = e.target.closest("[data-a]"); if (a) act(a, a.dataset.a);
 });
+// Save changes is enabled only when a kept card differs from what was last saved.
+const snapshot = (c) => JSON.stringify(["text", "route", "keywords"].map((f) => $(`[data-f=${f}]`, c)?.value ?? ""));
+function dirtyCheck(e) {
+  const c = e.target.closest?.(".card"); const btn = c && $('[data-a=save]', c);
+  if (!btn) return;
+  c.dataset.saved ??= c.dataset.initial;
+  btn.disabled = snapshot(c) === c.dataset.saved;
+}
+document.addEventListener("input", dirtyCheck);
+document.addEventListener("change", dirtyCheck);
 document.addEventListener("change", (e) => {
   if (e.target.id === "repo") { repo = e.target.value; render(); }
   if (e.target.dataset.f === "route") { const kw = $('[data-f=keywords]', e.target.closest(".card")); kw.hidden = e.target.value !== "keyword"; if (!kw.hidden) kw.focus(); }
