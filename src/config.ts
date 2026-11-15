@@ -21,7 +21,10 @@ export const DEFAULTS = {
   tokensPerSession: 1000,
   hookLimitMs: 500,
   notesPerRun: 30,
-  handoffDays: 7,
+  /** How old a handoff can be and still be given to the next session. 0 means no limit. */
+  handoffDays: 0,
+  /** Past this many days, a handoff is given with a note that it may be out of date. */
+  handoffStaleDays: 7,
   handoffsPerRun: 3,
   /** Model for summaries: handoffs, plain lines, answers. "" uses the client default. */
   backgroundModel: "haiku",

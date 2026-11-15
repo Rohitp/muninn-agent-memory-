@@ -4,6 +4,7 @@ import { isPaused, settings } from "../config.js";
 import { repoIdentity } from "../repo/identity.js";
 import { currentBranch, handoffText, latestHandoff } from "../handoff/handoff.js";
 import { getDial } from "../store/dial.js";
+import { getPlan, planText } from "../plan/plan.js";
 
 export type HookInput = { hook_event_name?: string; session_id?: string; cwd?: string; source?: string; prompt?: string; tool_input?: { command?: string }; tool_response?: unknown; error?: string; transcript_path?: string | null; [k: string]: unknown };
 type Row = { id: string; text: string; always_on: number; updated_at: string; pattern: string | null };
@@ -84,13 +85,16 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
     const branch = currentBranch(input.cwd);
     const h = branch ? await latestHandoff(db, repo, branch, cfg.handoffDays, session) : null;
     if (h) {
-      handoff = handoffText(h);
+      handoff = handoffText(h, cfg.handoffStaleDays);
       await db.execute({ sql: "INSERT INTO deliveries (id,ts,tool,session,event,source,lesson_id,outcome,tokens,handoff_id) VALUES (?,?,?,?,?,?,NULL,'sent',?,?)", args: [randomUUID(), ts, client, session, event, input.source ?? null, tokens(handoff), h.id] });
     }
   }
-  if (!out.length && !waiting && !handoff) { await log("no_match"); return null; }
+  // The repo's running plan, at the start of a fresh session, after where the last session left off.
+  const plan = event === "SessionStart" && (input.source === "startup" || input.source === "clear") && repo ? planText(await getPlan(db, repo), repo.split("/").pop() ?? repo) : null;
+  if (!out.length && !waiting && !handoff && !plan) { await log("no_match"); return null; }
   const lines: string[] = [];
   if (handoff) lines.push(handoff, "");
+  if (plan) lines.push(plan, "");
   if (out.length) lines.push("Lessons the engineer kept in muninn, from earlier sessions:", ...out.map((r) => `- ${r.text}`));
   if (waiting) await db.execute({ sql: "INSERT OR REPLACE INTO meta (key,value) VALUES (?,?)", args: [nudgeKey, ts] });
   if (waiting) lines.push(`muninn has ${waiting} new lesson(s) waiting. If it fits the conversation, mention that the engineer can review them with "muninn review".`);

@@ -19,7 +19,15 @@ export async function handoff(args: string[]) {
     const runner = pickRunner("background");
     if (!runner) return;
     const db = await openDb();
-    try { if (await makeHandoff(db, s, runner)) await syncCursor(db); }
+    try {
+      const h = await makeHandoff(db, s, runner);
+      if (h) {
+        // Fold the session into the repo's running plan, then refresh the files that carry it.
+        const { applyHandoff, writePlanFile } = await import("../plan/plan.js");
+        try { await applyHandoff(db, h, runner); await writePlanFile(db, h.repo_id); } catch { /* the next learn catches up */ }
+        await syncCursor(db);
+      }
+    }
     finally { await saveUsage(db, runner, "handoff"); }
     return;
   }

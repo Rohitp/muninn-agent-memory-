@@ -62,6 +62,12 @@ input[type=text] { width: 100%; height: 40px; border: 1px solid var(--line-stron
 .fix { height: 30px; padding: 0 12px; border-radius: 999px; border: 0; background: var(--warn-bg); color: var(--warn); font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 6px; }
 .evidence { font-size: 13px; color: var(--muted); margin-top: 12px; }
 .empty { padding: 16px 18px; color: var(--muted); }
+.check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line-strong); background: var(--group); cursor: pointer; flex: none; padding: 0; }
+.check:hover { border-color: var(--on); }
+.check[aria-checked="true"] { background: var(--on); border-color: var(--on); }
+.sublist { list-style: none; margin: 0; padding: 0 18px 12px; }
+.sublist li { padding: 6px 0; font-size: 15px; display: flex; gap: 8px; align-items: baseline; }
+.sublist .x { width: 26px; height: 26px; font-size: 15px; margin-left: auto; }
 .scan { margin: 10px 0 0; font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .linkbtn { border: 0; background: none; padding: 0; color: var(--link); font-size: 14px; font-weight: 500; cursor: pointer; }
 .linkbtn:disabled { opacity: .5; }
@@ -89,6 +95,38 @@ let repo = HERE || "";
 let showAll = false;
 let open = null; // the id of the row opened for editing
 let data = null;
+let planEdit = null; // the plan item being edited: an id, "goal", or "new"
+const planShow = { decisions: false, done: false };
+
+/* The running plan: built from your sessions' handoffs, and yours to edit. */
+const shortDate = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+function planEditor(kind, id, value, placeholder) {
+  return `<div class="row" style="gap:8px"><label class="vh" for="pe">${esc(placeholder)}</label><input id="pe" type="text" data-plan-input data-kind="${kind}" data-id="${esc(id || "")}" value="${esc(value)}" placeholder="${esc(placeholder)}" style="margin:0;flex:1"><button class="btn primary" data-plan-save>Save</button><button class="btn" data-plan-cancel>Cancel</button></div>`;
+}
+function planSection() {
+  if (!repo || !data.plan) return "";
+  const p = data.plan.plan;
+  const empty = !p.goal && !p.open.length && !p.decisions.length && !p.done.length;
+  const openRow = (o) => planEdit === o.id ? `<li>${planEditor("open", o.id, o.text, "A next step or open question")}</li>` : `<li><div class="row">
+      <button class="check" role="checkbox" aria-checked="false" aria-label="Mark done: ${esc(o.text)}" data-plan-close="${esc(o.id)}"></button>
+      <button class="main" data-plan-edit="${esc(o.id)}"><div class="title">${esc(o.text)}</div><div class="sub">${o.by_person ? "added by you" : `from a session on ${shortDate(o.created_at)}`}</div></button>
+      <button class="x" data-plan-remove="${esc(o.id)}" aria-label="Remove" title="Remove">×</button></div></li>`;
+  return `<section aria-labelledby="pl">
+    <h2 id="pl">Project plan</h2>
+    <ul class="group">
+      ${planEdit === "goal" ? `<li>${planEditor("goal", "", p.goal?.text ?? "", "What this project is trying to do")}</li>`
+        : `<li><div class="row"><button class="main" data-plan-edit="goal"><div class="sub">Goal</div><div class="title">${p.goal ? esc(p.goal.text) : '<span style="color:var(--link)">Add a goal</span>'}</div></button></div></li>`}
+      ${p.open.map(openRow).join("")}
+      ${planEdit === "new" ? `<li>${planEditor("open", "", "", "A next step or open question")}</li>` : `<li><button class="more" data-plan-new>+ Add a next step</button></li>`}
+      ${p.decisions.length ? `<li><button class="more" data-plan-toggle="decisions" style="color:var(--ink)">Decisions · ${p.decisions.length} <span class="sub">${planShow.decisions ? "hide" : "show"}</span></button>
+        ${planShow.decisions ? `<ul class="sublist">${p.decisions.map((d) => `<li><span class="sub">${shortDate(d.created_at)}</span> ${esc(d.text)} <button class="x" data-plan-remove="${esc(d.id)}" aria-label="Remove">×</button></li>`).join("")}</ul>` : ""}</li>` : ""}
+      ${p.done.length ? `<li><button class="more" data-plan-toggle="done" style="color:var(--ink)">Done · ${p.done.length} <span class="sub">${planShow.done ? "hide" : "show"}</span></button>
+        ${planShow.done ? `<ul class="sublist">${p.done.map((d) => `<li><span class="sub">${shortDate(d.closed_at || d.created_at)}</span> ${esc(d.text)}${d.kind === "open" ? ` <button class="linkbtn" data-plan-reopen="${esc(d.id)}">reopen</button>` : ""}</li>`).join("")}</ul>` : ""}</li>` : ""}
+    </ul>
+    <p class="note">${empty ? "muninn builds this from your sessions: each time one ends, it adds next steps and decisions, and ticks off what got done. You can also add your own." : "Built from your sessions and kept up to date as they end. Agents get the goal, what's open and recent decisions when a session starts."}</p>
+  </section>`;
+}
+async function planDo(body) { const r = await api("/api/plan", { repo, ...body }); data.plan = r; planEdit = null; draw(); }
 
 async function api(path, body) {
   const r = await fetch(path, { method: body ? "POST" : "GET", headers: { "x-muninn-token": TOKEN, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
@@ -102,7 +140,8 @@ async function load() {
   const [repos, suggested, kept, home, scan] = await Promise.all([
     api("/api/repos"), api("/api/lessons?" + q({ repo, status: "proposed" })), api("/api/lessons?" + q({ repo, status: "live" })), api("/api/home?" + q({ repo })), api("/api/scan"),
   ]);
-  data = { repos, suggested, kept, home, scan };
+  const plan = repo ? await api("/api/plan?" + q({ repo })) : null;
+  data = { repos, suggested, kept, home, scan, plan };
 }
 
 /* muninn checks your sessions on its own after they end. This line shows when it last did, and lets you ask now. */
@@ -213,6 +252,8 @@ function draw() {
       <p class="note">Tap a suggestion to change its wording or when it's told before adding it.</p>
     </section>` : ""}
 
+    ${planSection()}
+
     <section aria-labelledby="ls">
       <h2 id="ls">Your lessons · ${kept.length}</h2>
       ${kept.length ? `<ul class="group">${kept.map(lessonRow).join("")}</ul><p class="note">Tap a lesson to change its wording or when it's told.</p>`
@@ -226,11 +267,26 @@ function draw() {
           <button class="switch" role="switch" aria-checked="${dial !== "quiet"}" aria-label="Tell agents when a session starts" data-dial="start"></button></div></li>
         <li><div class="row"><div class="main" style="cursor:default"><div class="title">Tell agents mid-task too</div><div class="sub">When a word you chose comes up, or a command fails the way it has before.</div></div>
           <button class="switch" role="switch" aria-checked="${dial === "anytime"}" aria-label="Tell agents mid-task too" data-dial="mid"></button></div></li>
+        <li><div class="row"><div class="main" style="cursor:default"><div class="title">Keep a copy of the plan in PLAN.md</div><div class="sub">Written at the root of this repo and kept up to date, so it's in git for teammates and your other machines.</div></div>
+          <button class="switch" role="switch" aria-checked="${!!data.plan?.fileOn}" aria-label="Keep a copy of the plan in PLAN.md" data-plan-file></button></div></li>
       </ul>
       ${dial === "quiet" ? `<p class="note">Both off: muninn tells agents nothing unless they ask with muninn ask.</p>` : ""}
     </section>` : ""}`;
 }
 async function refresh() { await load(); draw(); if (data.scan.running) followScan(data.suggested.length); }
+async function savePlanInput() {
+  const input = $("[data-plan-input]"); if (!input) return;
+  const text = input.value.trim();
+  if (!text) { planEdit = null; draw(); return; }
+  if (input.dataset.id) await planDo({ action: "edit", id: input.dataset.id, text });
+  else await planDo({ action: "add", kind: input.dataset.kind, text });
+  toast("Saved to the plan.");
+}
+document.addEventListener("keydown", (e) => {
+  if (!e.target.matches?.("[data-plan-input]")) return;
+  if (e.key === "Enter") { e.preventDefault(); savePlanInput().catch((err) => toast(err.message)); }
+  if (e.key === "Escape") { planEdit = null; draw(); }
+});
 
 document.addEventListener("click", async (e) => {
   const el = e.target.closest("button"); if (!el) return;
@@ -238,6 +294,20 @@ document.addEventListener("click", async (e) => {
   try {
     if (el.dataset.open) { open = open === el.dataset.open ? null : el.dataset.open; draw(); return; }
     if (el.dataset.more !== undefined) { showAll = !showAll; draw(); return; }
+    // The plan
+    if (el.dataset.planEdit) { planEdit = el.dataset.planEdit; draw(); $("#pe")?.focus(); return; }
+    if (el.dataset.planNew !== undefined) { planEdit = "new"; draw(); $("#pe")?.focus(); return; }
+    if (el.dataset.planCancel !== undefined) { planEdit = null; draw(); return; }
+    if (el.dataset.planSave !== undefined) { await savePlanInput(); return; }
+    if (el.dataset.planClose) { el.setAttribute("aria-checked", "true"); await planDo({ action: "close", id: el.dataset.planClose }); toast("Marked done."); return; }
+    if (el.dataset.planReopen) { await planDo({ action: "reopen", id: el.dataset.planReopen }); toast("Reopened."); return; }
+    if (el.dataset.planRemove) { await planDo({ action: "remove", id: el.dataset.planRemove }); toast("Removed from the plan."); return; }
+    if (el.dataset.planToggle) { planShow[el.dataset.planToggle] = !planShow[el.dataset.planToggle]; draw(); return; }
+    if (el.dataset.planFile !== undefined) {
+      const on = el.getAttribute("aria-checked") !== "true";
+      const r = await api("/api/plan-file", { repo, on }); data.plan.fileOn = r.fileOn; draw();
+      toast(r.fileOn ? "PLAN.md is written at the root of this repo, and kept up to date." : "PLAN.md is no longer updated. The file stays where it is."); return;
+    }
     if (el.dataset.scan !== undefined) { await startScan(el); return; }
     if (el.dataset.repo) { repo = el.dataset.repo; open = null; showAll = false; await refresh(); window.scrollTo(0, 0); return; }
     if (el.dataset.route) {

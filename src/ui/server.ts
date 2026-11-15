@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { askData, originOf, shortRepo } from "../commands/ask.js";
 import { answerData } from "../commands/answer.js";
 import { homeData } from "../commands/home.js";
+import { addItem, editItem, getPlan, planFileOn, setPlanFile, setStatus, writePlanFile } from "../plan/plan.js";
 import { scanRunning, startAutoScan } from "../commands/auto.js";
 import { getDial, recordFeedback, setDial } from "../store/dial.js";
 import { loadEmbedder, modelCached, type Embed } from "../embed/model.js";
@@ -85,6 +86,27 @@ const routes: Record<string, Handler> = {
   },
   "GET /api/report": async (db, q) => reportData(db, q.get("repo") || null),
   "GET /api/home": async (db, q) => homeData(db, q.get("repo") || null),
+  // The running plan: read it, change it, and the PLAN.md switch. Changes refresh PLAN.md (if on) and Cursor's rules.
+  "GET /api/plan": async (db, q) => {
+    const repo = q.get("repo"); if (!repo) throw new Error("Pick a repo to see its plan.");
+    return { plan: await getPlan(db, repo), fileOn: await planFileOn(db, repo) };
+  },
+  "POST /api/plan": async (db, _q, b) => {
+    const repo = String(b.repo ?? ""); if (!repo) throw new Error("Pick a repo first.");
+    if (b.action === "add") await addItem(db, repo, b.kind, String(b.text ?? ""), { person: true });
+    else if (b.action === "edit") await editItem(db, String(b.id), String(b.text ?? ""));
+    else if (b.action === "close") await setStatus(db, String(b.id), "closed", "person");
+    else if (b.action === "reopen") await setStatus(db, String(b.id), "active", "person");
+    else if (b.action === "remove") await setStatus(db, String(b.id), "removed", "person");
+    else throw new Error("Unknown action.");
+    await writePlanFile(db, repo); await syncCursor(db);
+    return { plan: await getPlan(db, repo), fileOn: await planFileOn(db, repo) };
+  },
+  "POST /api/plan-file": async (db, _q, b) => {
+    const repo = String(b.repo ?? ""); if (!repo) throw new Error("Pick a repo first.");
+    await setPlanFile(db, repo, !!b.on);
+    return { fileOn: await planFileOn(db, repo) };
+  },
   "POST /api/dial": async (db, _q, b) => { await setDial(db, b.repo || null, b.dial); return { dial: await getDial(db, b.repo || null) }; },
   "POST /api/feedback": async (db, _q, b) => {
     if (b.verdict !== "helped" && b.verdict !== "wrong") throw new Error("Feedback is helped or wrong.");

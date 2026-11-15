@@ -32,7 +32,10 @@ export async function cursorRules(db: Client, repo: string, root?: string): Prom
   }
   const branch = root ? currentBranch(root) : null;
   const h = branch ? await latestHandoff(db, repo, branch, settings().handoffDays) : null;
-  if (h) files.push({ name: `${PREFIX}-handoff.mdc`, body: `---\ndescription: Where the last session on this branch left off\nalwaysApply: true\n---\n\n${handoffText(h)}\n` });
+  if (h) files.push({ name: `${PREFIX}-handoff.mdc`, body: `---\ndescription: Where the last session on this branch left off\nalwaysApply: true\n---\n\n${handoffText(h, settings().handoffStaleDays)}\n` });
+  const { getPlan, planText } = await import("../plan/plan.js");
+  const plan = planText(await getPlan(db, repo), repo.split("/").pop() ?? repo);
+  if (plan) files.push({ name: `${PREFIX}-plan.mdc`, body: `---\ndescription: Where this project stands: goal, open items, recent decisions\nalwaysApply: true\n---\n\n${plan}\n` });
   return files;
 }
 

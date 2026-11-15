@@ -70,14 +70,18 @@ export async function makeHandoff(db: Client, s: Session, runner: Runner, branch
   if (!text) return null;
   const h: Handoff = { id: randomUUID(), repo_id: repo, branch, session: s.id, tool: s.tool, text, created_at: new Date().toISOString() };
   await db.execute({ sql: "INSERT INTO repos (id,paths) VALUES (?,?) ON CONFLICT(id) DO NOTHING", args: [repo, JSON.stringify([s.cwd])] });
-  if (exists) await db.execute({ sql: "UPDATE handoffs SET text=?, branch=?, created_at=? WHERE session=?", args: [text, branch, h.created_at, s.id] });
+  if (exists) {
+    await db.execute({ sql: "UPDATE handoffs SET text=?, branch=?, created_at=? WHERE session=?", args: [text, branch, h.created_at, s.id] });
+    h.id = String((await db.execute({ sql: "SELECT id FROM handoffs WHERE session=?", args: [s.id] })).rows[0]!.id);
+  }
   else await db.execute({ sql: "INSERT INTO handoffs (id,repo_id,branch,session,tool,text,created_at) VALUES (?,?,?,?,?,?,?)", args: [h.id, h.repo_id, h.branch, h.session, h.tool, h.text, h.created_at] });
   return h;
 }
 
 /** The newest handoff for a repo and branch within the age limit, from a different session. */
+/** The newest handoff for a repo and branch from a different session. days of 0 (the default setting) means no age limit. */
 export async function latestHandoff(db: Client, repo: string, branch: string, days: number, excludeSession?: string | null): Promise<Handoff | null> {
-  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const since = days > 0 ? new Date(Date.now() - days * 86_400_000).toISOString() : "";
   const r = await db.execute({ sql: "SELECT id,repo_id,branch,session,tool,text,created_at FROM handoffs WHERE repo_id=? AND branch=? AND created_at>=? AND session IS NOT ? ORDER BY created_at DESC LIMIT 1", args: [repo, branch, since, excludeSession ?? null] });
   return (r.rows[0] as unknown as Handoff) ?? null;
 }
@@ -88,8 +92,11 @@ export function age(iso: string, now = Date.now()): string {
   if (m < 48 * 60) return `${Math.round(m / 60)} hour(s) ago`;
   return `${Math.round(m / 1440)} day(s) ago`;
 }
-export const handoffText = (h: Handoff) =>
-  `Where the last session on branch ${h.branch} left off (${TOOL_NAMES[h.tool] ?? h.tool}, ${age(h.created_at)}). Written by muninn from that session's log. Check it against the code before relying on it:\n${h.text}`;
+/** The handoff as the next session reads it. An old one is still given, with its age and a nudge to check what changed since. */
+export const handoffText = (h: Handoff, staleDays = 7, now = Date.now()) => {
+  const old = now - Date.parse(h.created_at) > staleDays * 86_400_000;
+  return `Where the last session on branch ${h.branch} left off (${TOOL_NAMES[h.tool] ?? h.tool}, ${age(h.created_at, now)}). Written by muninn from that session's log. Check it against the code before relying on it${old ? `. It's ${age(h.created_at, now)} old, so run git log to see what changed since, and treat its next steps as possibly out of date` : ""}:\n${h.text}`;
+};
 
 /** For sessions that ended without a SessionEnd hook (Cursor, or hooks not installed): the newest recent session per branch with no handoff. */
 export function needsHandoff(sessions: Session[], have: Set<string>, days: number, now = Date.now()): Session[] {

@@ -359,3 +359,14 @@ Entry template:
 - The hook now upgrades the database if needed (a no-op when current), so an update can't silently stop delivery.
 
 **Accounts (checked 2026-11-15):** the desktop app's Claude Code sessions (signed into the work account) write to `~/.claude/projects` and run `~/.claude/settings.json` hooks, same as the terminal (personal account). All 45 desktop sessions are learned from, and the hook ran in the 15 since it was installed. Desktop chats outside the Code tab live on the server and can't be read. muninn's own AI calls use the terminal `claude` (personal); a setting to choose the account is on the plan.
+
+## 2026-11-15 — A running plan per repo; handoffs don't expire
+
+**Author:** "why only 7 days? and why can't muninn cover the plan as well?"
+
+**Did:**
+- Handoffs no longer expire: the latest for the branch always reaches the next session (`handoffDays` now defaults to 0, no limit). Past `handoffStaleDays` (7) it comes with its age and "run git log to see what changed since, and treat its next steps as possibly out of date".
+- A running plan per repo (`plan_items`, migration 008): goal, open items, decisions (dated, with reasons), done. Each handoff is folded in once by the background writer (Haiku): it may set the goal, add open/decision/done items, and close open items the session finished. Handoffs not yet folded are caught up oldest first during learn.
+- Agents get it at session start after the handoff: goal, up to 6 open items, 3 recent decisions. Cursor gets `muninn-plan.mdc`.
+- The page has a "Project plan" section: tick items done, reopen, edit, remove, add a next step or goal. A setting writes `PLAN.md` at the repo root and keeps it current, for git, teammates and other machines.
+- Real run on a copy: two handoffs gave sensible plans for cb-ai-agents and muninn ($0.0014). One open item was already resolved by a later commit, which shows why items stay editable and link back to their session.

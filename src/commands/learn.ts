@@ -74,6 +74,11 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
       try { if (await makeHandoff(db, s, runner)) made++; } catch { /* a failed handoff shouldn't stop learning */ }
     }
     await saveUsage(db, runner, "handoff");
+    // Fold any handoffs not yet in a plan (older ones, or ones whose update failed), then rewrite PLAN.md where it's on.
+    const { applyPending, writePlanFile } = await import("../plan/plan.js");
+    const folded = await applyPending(db, runner);
+    await saveUsage(db, runner, "plan");
+    if (folded) for (const repo of repos) await writePlanFile(db, repo).catch(() => null);
     if (made && !opts.auto) console.log(`Wrote ${made} handoff(s) for recent sessions. See them with "muninn handoff --list".`);
   }
   await db.execute({ sql: "INSERT OR REPLACE INTO meta (key,value) VALUES ('last_learn',?)", args: [new Date().toISOString()] });
