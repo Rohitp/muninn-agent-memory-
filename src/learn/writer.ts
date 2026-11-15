@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { z } from "zod";
 import { OWN_RUN_MARK } from "../logs/types.js";
 import type { Moment } from "./signals.js";
@@ -42,22 +42,33 @@ export function parseReply(reply: string, n: number): Written[] {
 const available = (cmd: string) => spawnSync(cmd, ["--version"], { stdio: "ignore" }).status === 0;
 const internalEnv = { ...process.env, MUNINN_INTERNAL: "1" };
 
-const clients: Record<string, () => (prompt: string) => string> = {
-  // No tools, no hooks and no saved session: the prompt holds untrusted log text.
-  claude: () => (prompt) => execFileSync("claude", ["-p", "--tools", "", "--no-session-persistence", "--settings", '{"disableAllHooks":true}', "--output-format", "text"],
-    { input: prompt, encoding: "utf8", env: internalEnv, timeout: 180_000, maxBuffer: 1 << 24, stdio: ["pipe", "pipe", "ignore"] }),
-  codex: () => (prompt) => execFileSync("codex", ["exec", "--ephemeral", "--sandbox", "read-only", "--skip-git-repo-check", "-c", "features.hooks=false", "-"],
-    { input: prompt, encoding: "utf8", env: internalEnv, timeout: 180_000, maxBuffer: 1 << 24, stdio: ["pipe", "pipe", "ignore"] }),
+// No tools, no hooks and no saved session: the prompt holds untrusted log text.
+// Other providers (an OpenRouter key, a local model) can be added here as more entries.
+const commands: Record<string, [string, string[]]> = {
+  claude: ["claude", ["-p", "--tools", "", "--no-session-persistence", "--settings", '{"disableAllHooks":true}', "--output-format", "text"]],
+  codex: ["codex", ["exec", "--ephemeral", "--sandbox", "read-only", "--skip-git-repo-check", "-c", "features.hooks=false", "-"]],
 };
+const runSync = ([cmd, args]: [string, string[]]) => (prompt: string) =>
+  execFileSync(cmd, args, { input: prompt, encoding: "utf8", env: internalEnv, timeout: 180_000, maxBuffer: 1 << 24, stdio: ["pipe", "pipe", "ignore"] });
+/** The same call without blocking, for the UI server. */
+const runAsync = ([cmd, args]: [string, string[]]) => (prompt: string) => new Promise<string>((ok, fail) => {
+  const child = spawn(cmd, args, { env: internalEnv, stdio: ["pipe", "pipe", "ignore"] });
+  let out = ""; const timer = setTimeout(() => { child.kill(); fail(new Error(`${cmd} took too long`)); }, 180_000);
+  child.stdout.setEncoding("utf8"); child.stdout.on("data", (d) => { out += d; });
+  child.on("error", (e) => { clearTimeout(timer); fail(e); });
+  child.on("close", (code) => { clearTimeout(timer); if (code === 0) ok(out); else fail(new Error(`${cmd} exited with ${code}`)); });
+  child.stdin.end(prompt);
+});
+const clients: Record<string, () => (prompt: string) => string> = Object.fromEntries(Object.entries(commands).map(([k, c]) => [k, () => runSync(c)]));
 
-export type Runner = { name: string; run: (prompt: string) => string };
+export type Runner = { name: string; run: (prompt: string) => string; runAsync?: (prompt: string) => Promise<string> };
 /** The engineer's own Claude Code or Codex, run with no tools and no hooks. MUNINN_WRITER overrides. */
 export function pickRunner(): Runner | null {
   const name = process.env.MUNINN_WRITER;
   if (name === "none") return null;
   const choice = name ?? (available("claude") ? "claude" : available("codex") ? "codex" : null);
   if (!choice || !clients[choice]) return null;
-  return { name: choice, run: clients[choice]!() };
+  return { name: choice, run: clients[choice]!(), runAsync: runAsync(commands[choice]!) };
 }
 export function pickWriter(): Writer | null {
   const runner = pickRunner();

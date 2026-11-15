@@ -1,8 +1,8 @@
 import type { Client } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 
-export type Lesson = { kind: string; suggested_keywords: string | null; suggested_scope: string | null; updated_at: string; id: string; repo_id: string | null; scope: string; text: string; source: string; signal: string | null; status: string; sessions: number; last_seen: string | null; reviewed_at: string | null; first_shown_at: string | null; news_to_engineer: number | null; edited_by_person: number; always_on: number };
-const COLS = "kind,suggested_keywords,suggested_scope,updated_at,id,repo_id,scope,text,source,signal,status,sessions,last_seen,reviewed_at,first_shown_at,news_to_engineer,edited_by_person,always_on";
+export type Lesson = { plain: string | null; kind: string; suggested_keywords: string | null; suggested_scope: string | null; updated_at: string; id: string; repo_id: string | null; scope: string; text: string; source: string; signal: string | null; status: string; sessions: number; last_seen: string | null; reviewed_at: string | null; first_shown_at: string | null; news_to_engineer: number | null; edited_by_person: number; always_on: number };
+const COLS = "plain,kind,suggested_keywords,suggested_scope,updated_at,id,repo_id,scope,text,source,signal,status,sessions,last_seen,reviewed_at,first_shown_at,news_to_engineer,edited_by_person,always_on";
 const now = () => new Date().toISOString();
 
 export async function ensureRepo(db: Client, id: string, path: string) {
@@ -52,7 +52,8 @@ export async function markShown(db: Client, id: string) {
 export async function decide(db: Client, id: string, d: { status?: "live" | "rejected" | "retired"; text?: string; news?: boolean; alwaysOn?: boolean; global?: boolean; triggers?: string[] }) {
   const sets = ["updated_at=?", "reviewed_at=?"]; const t = now(); const args: (string | number)[] = [t, t];
   if (d.status) { sets.push("status=?"); args.push(d.status); }
-  if (d.text !== undefined) { sets.push("text=?", "edited_by_person=1"); args.push(d.text); }
+  // New text makes the plain line and questions stale. The next learn, or the UI, writes them again.
+  if (d.text !== undefined) { sets.push("text=?", "edited_by_person=1", "plain=NULL"); args.push(d.text); }
   if (d.news !== undefined) { sets.push("news_to_engineer=?"); args.push(d.news ? 1 : 0); }
   if (d.alwaysOn !== undefined) { sets.push("always_on=?"); args.push(d.alwaysOn ? 1 : 0); }
   if (d.global !== undefined) { sets.push("scope=?"); args.push(d.global ? "global" : "repo"); }
@@ -60,6 +61,7 @@ export async function decide(db: Client, id: string, d: { status?: "live" | "rej
   if (d.text !== undefined) {
     await db.execute({ sql: "DELETE FROM lessons_fts WHERE lesson_id=?", args: [id] });
     await db.execute({ sql: "INSERT INTO lessons_fts (lesson_id,text) VALUES (?,?)", args: [id, d.text] });
+    await db.execute({ sql: "DELETE FROM lesson_questions WHERE lesson_id=?", args: [id] });
   }
   if (d.triggers) {
     await db.execute({ sql: "DELETE FROM triggers WHERE lesson_id=?", args: [id] });

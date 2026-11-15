@@ -2,7 +2,11 @@ import type { Client } from "@libsql/client";
 import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { askData } from "../commands/ask.js";
+import { askData, originOf, shortRepo } from "../commands/ask.js";
+import { answerData } from "../commands/answer.js";
+import { loadEmbedder, modelCached, type Embed } from "../embed/model.js";
+import { fillExplanations } from "../learn/explain.js";
+import { pickRunner } from "../learn/writer.js";
 import { reportData } from "../commands/report.js";
 import { similar, suggestKeyword } from "../commands/review.js";
 import { settings } from "../config.js";
@@ -17,6 +21,8 @@ import { fileURLToPath } from "node:url";
 const PAGE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "public", "index.html"), "utf8");
 
 type Handler = (db: Client, q: URLSearchParams, body: any) => Promise<unknown>;
+let embedder: Promise<Embed> | null = null;
+const embed = () => (embedder ??= modelCached() ? loadEmbedder() : Promise.reject(new Error("The search model isn't downloaded yet. Run muninn learn once.")));
 
 async function lessonDetail(db: Client, id: string) {
   const l = await getLesson(db, id);
@@ -25,7 +31,8 @@ async function lessonDetail(db: Client, id: string) {
   const triggers = (await db.execute({ sql: "SELECT pattern FROM triggers WHERE lesson_id=?", args: [l.id] })).rows.map((r) => String(r.pattern));
   const sim = l.status === "proposed" ? await similar(db, l) : null;
   const suggested = l.suggested_keywords ? (JSON.parse(l.suggested_keywords) as string[]) : [suggestKeyword(l.text)].filter(Boolean);
-  return { ...l, evidence, triggers, suggested, similar: sim ? { id: sim.lesson.id, text: sim.lesson.text, status: sim.lesson.status, score: sim.score } : null };
+  const origin = await originOf(db, { id: l.id, source: l.source, signal: l.signal });
+  return { ...l, repo_short: shortRepo(l.repo_id), origin, evidence, triggers, suggested, similar: sim ? { id: sim.lesson.id, text: sim.lesson.text, plain: sim.lesson.plain, status: sim.lesson.status, score: sim.score } : null };
 }
 
 const routes: Record<string, Handler> = {
@@ -59,6 +66,10 @@ const routes: Record<string, Handler> = {
       await decide(db, id, { status: "live", alwaysOn: b.route === "always", triggers: b.route === "keyword" ? String(b.keywords ?? "").toLowerCase().split(",").map((k: string) => k.trim()).filter(Boolean) : [] });
     } else throw new Error("Unknown action.");
     await syncCursor(db);
+    // New text needs a new plain line and questions. Written in the background, so the page doesn't wait.
+    const fresh = await getLesson(db, id);
+    const runner = pickRunner();
+    if (fresh && !fresh.plain && runner && ["live", "proposed"].includes(fresh.status)) void embed().then((e) => fillExplanations(db, runner, e, { ids: [id], async: true })).catch(() => { /* filled on the next learn */ });
     return lessonDetail(db, id);
   },
   "GET /api/report": async (db, q) => reportData(db, q.get("repo") || null),
@@ -66,7 +77,12 @@ const routes: Record<string, Handler> = {
     const repo = q.get("repo");
     return (await db.execute({ sql: `SELECT id,repo_id,branch,tool,created_at,text FROM handoffs ${repo ? "WHERE repo_id=?" : ""} ORDER BY created_at DESC LIMIT 30`, args: repo ? [repo] : [] })).rows;
   },
-  "GET /api/ask": async (db, q) => askData(db, q.get("q") ?? "", q.get("repo") || null),
+  "GET /api/ask": async (db, q) => askData(db, q.get("q") ?? "", q.get("repo") || null, { includeWaiting: true, embed: await embed().catch(() => undefined) }),
+  "POST /api/answer": async (db, _q, b) => {
+    const runner = pickRunner();
+    if (!runner) throw new Error("No Claude Code found to write an answer.");
+    return answerData(db, String(b.q ?? ""), b.repo || null, runner, await embed());
+  },
   "GET /api/settings": async () => ({ maxPerDelivery: settings().maxPerDelivery }),
 };
 

@@ -246,3 +246,16 @@ Entry template:
 - Cursor puts its own "Briefly inform the user about the task result…" prompt inside `<user_query>` 123 times. It's now on the not-typed list.
 - `git rev-parse --abbrev-ref HEAD` fails before the first commit. `symbolic-ref --short -q HEAD` doesn't.
 - The first real handoff hit the length cap mid-sentence. The prompt now asks for under 900 characters, and long replies are cut at a line break.
+
+## 2026-11-15 — Plain English in search
+
+**Why:** a search for "how did the contract benchmarks run?" returned a rule written for agents ("raises FileNotFoundError"), labelled with a long repo id. Accurate, but not something a person can read at a glance.
+
+**Did:**
+- A separate pass writes, for every lesson without one, a plain line addressed to the engineer and 2-3 questions it answers. Questions are embedded, and search compares the question typed with them, which matches better than question to rule. Editing a lesson's text clears both. The next learn, or the UI in the background, writes them again.
+- Search results show the plain line first, "Agents are told:" second, where it came from ("Learned from a command that failed and was then fixed, in Codex, 28 Sept"), and waiting items marked "not kept yet". `muninn ask` for agents still returns kept items only.
+- The Answer button writes up to 5 sentences from the top kept items and the two newest handoffs, citing them. On a copy of the real database it said the kept items don't cover how the benchmark ran, which was true.
+
+**Decided:**
+- Plain lines are computed when lessons are written, because the question isn't known then but the lesson is. Answers that combine several items still need a call at search time, so that's a button, not automatic.
+- Claude only for now. Other providers go in `writer.ts` later.

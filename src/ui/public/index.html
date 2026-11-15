@@ -49,6 +49,15 @@ pre.handoff { white-space: pre-wrap; font: 14px/1.5 var(--mono); margin: 0; over
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 .toast.show { opacity: 1; }
 .help { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+.plain { font-size: 16px; margin: 0 0 10px; }
+.label { font-size: 12px; color: var(--muted); margin: 8px 0 4px; text-transform: uppercase; letter-spacing: .4px; }
+.agent { font-size: 13px; color: var(--muted); margin-top: 6px; }
+details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 10px; }
+.answer { border-left: 3px solid var(--accent); }
+.answer p { margin: 0 0 8px; white-space: pre-wrap; }
+.answer ol { margin: 6px 0 0; padding-left: 20px; font-size: 13px; color: var(--muted); }
+.searchrow { display: flex; gap: 8px; }
+.searchrow input { flex: 1; min-width: 0; }
 @media (max-width: 560px) { .row { flex-direction: column; align-items: stretch; } }
 </style>
 </head>
@@ -74,6 +83,7 @@ const HERE = __REPO__;
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const TOOL = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor" };
+const short = (r) => (r ? String(r).split("/").filter(Boolean).pop() : "global");
 const SIGNAL = { repeat: "you repeated this", correction: "you corrected this", failure_then_fix: "failed, then fixed", mistake_returned: "mistake came back", explained: "you explained this" };
 let repo = HERE || "";
 let tab = "waiting";
@@ -90,7 +100,7 @@ const q = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toS
 async function loadRepos() {
   const repos = await api("/api/repos");
   const sel = $("#repo");
-  sel.innerHTML = '<option value="">All repos</option>' + repos.map((r) => `<option value="${esc(r.id)}">${esc(r.id)} (${r.waiting} waiting, ${r.live} kept)</option>`).join("");
+  sel.innerHTML = '<option value="">All repos</option>' + repos.map((r) => `<option value="${esc(r.id)}" title="${esc(r.id)}">${esc(short(r.id))} (${r.waiting} waiting, ${r.live} kept)</option>`).join("");
   if (repo && !repos.some((r) => r.id === repo)) repo = "";
   sel.value = repo;
 }
@@ -110,20 +120,20 @@ function routeControls(l) {
   </div>`;
 }
 function card(l) {
-  const ev = (l.evidence || []).slice(0, 4).map((e) => `<li><b>${esc(TOOL[e.tool] || e.tool)}</b> · ${esc(String(e.seen_at).slice(0, 10))} · ${esc(e.quote)}</li>`).join("");
-  const sim = l.similar ? `<div class="similar" data-other="${esc(l.similar.id)}">Similar to a ${esc(l.similar.status)} lesson: “${esc(l.similar.text)}” <div class="row"><button class="act" data-a="combine">Combine: keep this, retire that</button></div></div>` : "";
+  const ev = (l.evidence || []).slice(0, 6).map((e) => `<li><b>${esc(TOOL[e.tool] || e.tool)}</b> · ${esc(String(e.seen_at).slice(0, 10))} · ${esc(e.quote)}</li>`).join("");
+  const sim = l.similar ? `<div class="similar" data-other="${esc(l.similar.id)}">Says nearly the same as a ${l.similar.status === "live" ? "kept" : "waiting"} lesson: “${esc(l.similar.plain || l.similar.text)}” <div class="row"><button class="act" data-a="combine">Combine: keep this one, retire the other</button></div></div>` : "";
   const proposed = l.status === "proposed";
   return `<div class="card" data-id="${esc(l.id)}">
     <div class="meta">
       ${l.kind === "note" ? '<span class="chip note">note</span>' : '<span class="chip">rule</span>'}
-      <span>${esc(SIGNAL[l.signal] || l.source)}</span>
-      <span>· ${l.sessions} session(s)</span>
-      ${l.scope === "global" ? '<span class="chip">global</span>' : ""}
-      ${!repo && l.repo_id ? `<span>· ${esc(l.repo_id)}</span>` : ""}
-      <span style="margin-left:auto">${esc(l.id.slice(0, 8))}</span>
+      <span>${esc(l.origin)}</span>
+      ${l.sessions > 1 ? `<span>· ${l.sessions} sessions</span>` : ""}
+      ${l.scope === "global" ? '<span class="chip">any repo</span>' : !repo && l.repo_id ? `<span class="chip">${esc(l.repo_short)}</span>` : ""}
     </div>
-    <textarea data-f="text" aria-label="Lesson text">${esc(l.text)}</textarea>
-    ${ev ? `<ul class="quotes">${ev}</ul>` : ""}
+    ${l.plain ? `<p class="plain">${esc(l.plain)}</p>` : ""}
+    <div class="label">What agents are told</div>
+    <textarea data-f="text" aria-label="What agents are told">${esc(l.text)}</textarea>
+    ${ev ? `<details><summary>Where muninn saw this (${l.evidence.length})</summary><ul class="quotes">${ev}</ul></details>` : ""}
     ${sim}
     ${routeControls(l)}
     <div class="row">
@@ -165,7 +175,7 @@ async function act(el, a) {
 async function showHandoffs() {
   const hs = await api("/api/handoffs?" + q({ repo }));
   $("#main").innerHTML = '<p class="help">Written when a session ends. The next session on the same branch, in any tool, starts with the newest one.</p>' +
-    (hs.length ? hs.map((h) => `<div class="card"><div class="meta"><span class="chip">${esc(h.branch)}</span><span>${esc(TOOL[h.tool] || h.tool)}</span><span>· ${esc(String(h.created_at).slice(0, 16).replace("T", " "))}</span>${!repo ? `<span>· ${esc(h.repo_id)}</span>` : ""}</div><pre class="handoff">${esc(h.text)}</pre></div>`).join("")
+    (hs.length ? hs.map((h) => `<div class="card"><div class="meta"><span class="chip">${esc(h.branch)}</span><span>${esc(TOOL[h.tool] || h.tool)}</span><span>· ${esc(String(h.created_at).slice(0, 16).replace("T", " "))}</span>${!repo ? `<span>· ${esc(short(h.repo_id))}</span>` : ""}</div><pre class="handoff">${esc(h.text)}</pre></div>`).join("")
                : '<div class="empty">No handoffs yet.</div>');
 }
 
@@ -176,14 +186,38 @@ async function showReport() {
                      : '<div class="empty">No kept lessons yet.</div>');
 }
 
+function hitCard(x) {
+  const waiting = x.status === "proposed";
+  return `<div class="card">
+    <div class="meta">${x.kind === "note" ? '<span class="chip note">note</span>' : '<span class="chip">rule</span>'}${waiting ? '<span class="chip" style="color:var(--warn)">not kept yet</span>' : ""}<span>${esc(x.where)}</span><span>· ${esc(x.origin)}</span></div>
+    <p class="plain">${esc(x.plain || x.text)}</p>
+    ${x.plain ? `<div class="agent">Agents are told: ${esc(x.text)}</div>` : ""}
+    ${x.matched ? `<div class="agent">Matched: “${esc(x.matched)}”</div>` : ""}
+    ${waiting ? '<div class="row"><button class="act" data-tab="waiting">Review it in Waiting</button></div>' : ""}
+  </div>`;
+}
 function showSearch() {
-  $("#main").innerHTML = '<p class="help">Searches kept lessons and notes in every repo, by word and by meaning. Agents can do the same with <code>muninn ask</code>.</p><input type="search" id="ask" placeholder="How do the contract benchmarks run?" style="width:100%"><div id="hits" style="margin-top:14px"></div>';
+  $("#main").innerHTML = `<p class="help">Ask in your own words. muninn looks through what you've kept${repo ? ` (${esc(short(repo))} first)` : ""}, and shows items still waiting for review too. <b>Answer</b> writes a short reply from them with your Claude, which takes a few seconds.</p>
+    <div class="searchrow"><input type="search" id="ask" placeholder="How do the contract benchmarks run?" aria-label="Question"><button class="act primary" id="answerBtn">Answer</button></div>
+    <div id="answer" style="margin-top:14px"></div><div id="hits" style="margin-top:14px"></div>`;
   const input = $("#ask"); input.focus();
-  let h; input.addEventListener("input", () => { clearTimeout(h); h = setTimeout(async () => {
+  let h; input.addEventListener("input", () => { clearTimeout(h); $("#answer").innerHTML = ""; h = setTimeout(async () => {
     const v = input.value.trim(); if (!v) { $("#hits").innerHTML = ""; return; }
     const hits = await api("/api/ask?" + q({ q: v, repo }));
-    $("#hits").innerHTML = hits.length ? hits.map((x) => `<div class="card"><div class="meta">${x.kind === "note" ? '<span class="chip note">note</span>' : '<span class="chip">rule</span>'}<span>${esc(x.where)}</span></div>${esc(x.text)}</div>`).join("") : '<div class="empty">No matches.</div>';
+    $("#hits").innerHTML = hits.length ? hits.map(hitCard).join("") : `<div class="empty">Nothing you've kept or have waiting matches. If you've explained this to an agent, run <code>muninn learn</code> and it may come up as a note.</div>`;
   }, 250); });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") $("#answerBtn").click(); });
+  $("#answerBtn").addEventListener("click", async () => {
+    const v = input.value.trim(); if (!v) return;
+    const btn = $("#answerBtn"); btn.disabled = true; btn.textContent = "Thinking…";
+    try {
+      const a = await api("/api/answer", { q: v, repo });
+      $("#answer").innerHTML = a.answer
+        ? `<div class="card answer"><p>${esc(a.answer)}</p><ol>${a.sources.map((s) => `<li>${esc(s.kind)}: ${esc(s.text.length > 140 ? s.text.slice(0, 139) + "…" : s.text)}</li>`).join("")}</ol></div>`
+        : `<div class="card answer"><p>muninn doesn't know this yet. Nothing you've kept covers it.</p></div>`;
+    } catch (e) { toast(e.message); }
+    finally { btn.disabled = false; btn.textContent = "Answer"; }
+  });
 }
 
 async function render() {

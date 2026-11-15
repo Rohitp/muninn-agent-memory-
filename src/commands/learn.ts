@@ -3,6 +3,7 @@ import { isPaused, settings } from "../config.js";
 import { loadEmbedder, modelCached, MODEL_SIZE, MODEL_SOURCE } from "../embed/model.js";
 import { learnRepo } from "../learn/pipeline.js";
 import { pickRunner, pickWriter } from "../learn/writer.js";
+import { fillExplanations } from "../learn/explain.js";
 import { latestHandoff, makeHandoff, needsHandoff } from "../handoff/handoff.js";
 import { scanLogs } from "../logs/discover.js";
 import { repoIdentity } from "../repo/identity.js";
@@ -53,8 +54,13 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean }) {
     }
     for (const s of sessions) if (s.unknown) { await db.execute({ sql: "INSERT OR REPLACE INTO scan_counts (repo_id,tool,client_version,scanned_at,unknown_records) VALUES (?,?,?,?,?)", args: [repo, s.tool, s.clientVersion, new Date().toISOString(), s.unknown] }); }
   }
-  // Handoffs for recent sessions that ended without the SessionEnd hook, such as Cursor's.
   const runner = writer ? pickRunner() : null;
+  // A plain-English line and likely questions for each lesson, for the person and for search.
+  if (runner) {
+    try { const n = await fillExplanations(db, runner, embed); if (n && !opts.auto) console.log(`Wrote plain-English summaries for ${n} lesson(s).`); }
+    catch (e) { if (!opts.auto) console.log(`Couldn't write summaries this time: ${e instanceof Error ? e.message : String(e)}`); }
+  }
+  // Handoffs for recent sessions that ended without the SessionEnd hook, such as Cursor's.
   if (runner && !isPaused()) {
     const have = new Set((await db.execute("SELECT session FROM handoffs")).rows.map((r) => String(r.session)));
     let made = 0;

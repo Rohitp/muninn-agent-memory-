@@ -48,5 +48,8 @@ Status legend: ⬜ todo · 🟦 in progress · ✅ done · ⛔ blocked · ⏭️
 - ✅ Handoffs: written when a session ends (Claude Code and Codex hooks) and during learn for recent sessions without one (Cursor). Sent at the next fresh start on the same branch, and written to `.cursor/rules/muninn-handoff.mdc`. `muninn handoff [--list]`
 - ✅ `muninn report`: sent counts, and whether each kept lesson's moment came back after it was kept
 - ✅ `muninn ui`: local page for waiting, kept, handoffs, report and search, on 127.0.0.1 with a per-run token
+- ✅ Plain lines and questions: each lesson gets a plain-English line for the engineer and 2-3 questions it answers, written in a separate pass during learn (and after an edit in the UI). Search matches questions to questions. Cards say where each item came from
+- ✅ Answer button in the UI: one writer call over the top kept items and recent handoffs, with sources, and "doesn't know" when they don't cover it
+- ⬜ More writer providers: an OpenRouter or other API key, and a local model through Ollama for the plain lines and answers. Kept to one place in `writer.ts`
 - ⬜ Author tests all of the above from real use
 - ⬜ Items 32-37 not covered above
