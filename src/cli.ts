@@ -47,7 +47,19 @@ async function cursorCmd(sub: string) {
   console.log(`Wrote ${r.files.join(", ")} in ${r.root}/.cursor/rules. They're listed in .git/info/exclude, so git ignores them without changing any shared file. muninn rewrites them when lessons change.`);
 }
 
+/** muninn uses Node 22 features (fs.globSync among them). On older Node, say so plainly instead of crashing on an import. */
+function nodeTooOld(): boolean {
+  const major = Number(process.versions.node.split(".")[0]);
+  if (major >= 22) return false;
+  console.error(`muninn needs Node 22 or newer. This is Node ${process.versions.node}.
+Install Node 22 (for example "fnm install 22", "nvm install 22" or "brew install node@22"), open a new terminal,
+then in the muninn folder run: pnpm install && pnpm build && npm link`);
+  process.exitCode = 1;
+  return true;
+}
+
 async function main() {
+  if (nodeTooOld() && cmd !== "hook") return;
   switch (cmd) {
     case "learn": {
       const auto = args.includes("--auto");
