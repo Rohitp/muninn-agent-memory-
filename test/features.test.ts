@@ -162,7 +162,7 @@ describe("ui", () => {
   it("serves only with the token, on localhost", async () => {
     const { serve } = await import("../src/ui/server.js");
     const logs: string[] = []; const orig = console.log; console.log = (m: string) => logs.push(m);
-    void serve(["--port", "0", "--no-open"]);
+    void serve(["--port", "0", "--no-open", "--no-watch"]);
     for (let i = 0; i < 50 && !logs.length; i++) await new Promise((r) => setTimeout(r, 20));
     console.log = orig;
     const link = logs[0]!.match(/http:\/\/\S+/)![0];

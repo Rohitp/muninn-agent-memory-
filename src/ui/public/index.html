@@ -58,8 +58,17 @@ select.repo { min-height: 40px; border: 1px solid var(--line); border-radius: 10
 .dial-labels button[aria-checked="true"] { color: var(--ink); font-weight: 600; }
 .dial-labels button[aria-checked="true"]::after { content: " ●"; color: var(--signal); }
 .dial-q { font-family: var(--sans); font-size: 11px; color: var(--muted); }
-.dial-now { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 18px; font-size: 14px; }
+.dial-now { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-top: 12px; font-size: 14px; }
 .dial-now b { font-weight: 600; }
+.intro { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
+.next { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 22px 24px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 10px 26px rgba(20,22,30,.06); margin-bottom: 14px; }
+.next.alert { background: var(--alert-bg); border-color: var(--alert-line); display: block; }
+.next-kicker { font: 500 12px var(--mono); letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+.next h1 { margin: 4px 0 6px; font-size: 26px; line-height: 1.25; letter-spacing: -.3px; font-weight: 600; }
+.next p { margin: 0; max-width: 70ch; color: var(--muted); }
+.next.ok h1::before { content: "● "; color: var(--eye); }
+.sec { margin: 0; font-size: 17px; font-weight: 600; }
+.sec-sub { margin: 2px 0 12px; font-size: 14px; color: var(--muted); }
 .knob { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--line-strong); padding: 0; cursor: pointer; position: relative; background: radial-gradient(circle at 38% 30%, var(--key-1) 0%, var(--key-2) 50%, var(--line-strong) 100%); box-shadow: inset 0 1px 1px rgba(255,255,255,.7), inset 0 -2px 4px rgba(0,0,0,.12), 0 3px 6px rgba(20,22,30,.18); }
 .knob i { position: absolute; left: 50%; top: 5px; width: 3px; height: 12px; margin-left: -1.5px; border-radius: 2px; background: var(--signal); transform-origin: 50% 19px; transition: transform .25s cubic-bezier(.3,1.5,.6,1); }
 
@@ -240,54 +249,77 @@ function receiptHTML(h) {
   const d = new Date();
   return `<div class="receipt" aria-label="What muninn told your agents"><div class="head">MUNINN · ${esc(d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }).toUpperCase())}</div><hr>${lines}<hr><div class="foot">${h.receipt.length} TOLD</div></div>`;
 }
-async function showHome() {
+/**
+ * The one thing to do next, in priority order: fix a lesson that didn't reach an agent, review new lessons,
+ * learn for the first time, or nothing (all set). Home leads with it, so the page always has one obvious action.
+ */
+function nextStep(h) {
+  const where = repo ? ` in ${esc(short(repo))}` : "";
+  const c = h.cameBack.find((x) => x.fix);
+  if (c) return { tone: "alert", title: `A lesson you kept didn't reach your agent`, body: `"${esc(c.text)}". ${esc(c.verdict)}`, action: `<button class="key warn" data-fix="${esc(c.id)}">Tell agents every session</button>` };
+  if (h.waiting.count) {
+    const mins = Math.max(1, Math.round(h.waiting.count * 8 / 60));
+    return { tone: "main", title: `Review ${h.waiting.count} new lesson${h.waiting.count === 1 ? "" : "s"}${where}`, body: `muninn found these in your coding sessions: things you repeated, corrected or explained. Your agents aren't told any of them until you keep it. About ${mins} minute${mins === 1 ? "" : "s"} with the keyboard.`, action: `<button class="key dark" data-goto="review">Start review</button>` };
+  }
+  if (!h.carry.length) return { tone: "main", title: `Nothing learned yet${where}`, body: `muninn learns from your past Claude Code, Codex and Cursor sessions. Run <code class="mono">muninn learn</code> in a terminal, in this repo's folder. It takes a few minutes.`, action: "" };
+  return { tone: "ok", title: "You're all set", body: `Work as usual. muninn tells your agents what they need${where}, and this page shows what it told them and why.`, action: "" };
+}
+async function showHome(silent) {
   const h = await api("/api/home?" + q({ repo }));
+  const snapshot = JSON.stringify(h);
+  // A background refresh redraws only when something changed and nothing is being typed.
+  if (silent && (snapshot === window._homeSnap || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || ""))) return;
+  window._homeSnap = snapshot;
   setDialUI(h.dial);
   const light = $("#light");
-  light.innerHTML = h.lastToldAt && Date.now() - Date.parse(h.lastToldAt) < 3600e3 ? `<span class="dot on"></span><span>told an agent ${esc(ago(h.lastToldAt))}</span>` : `<span class="dot off"></span><span>${h.lastToldAt ? `last told ${esc(ago(h.lastToldAt))}` : "quiet so far"}</span>`;
+  light.innerHTML = h.lastToldAt && Date.now() - Date.parse(h.lastToldAt) < 3600e3 ? `<span class="dot on"></span><span>told an agent ${esc(ago(h.lastToldAt))}</span>` : `<span class="dot off"></span><span>${h.lastToldAt ? `last told an agent ${esc(ago(h.lastToldAt))}` : "hasn't told an agent anything yet"}</span>`;
   const wc = $("#waitCount"); wc.hidden = !h.waiting.count; wc.textContent = h.waiting.count;
-  const top = h.waiting.top[0];
   const fmt3 = (n) => String(n).padStart(3, "0");
+  const n = nextStep(h);
+  const otherAlerts = h.cameBack.filter((c) => !(n.tone === "alert" && n.action.includes(c.id)));
   $("#main").innerHTML = `
-    <div class="dial-now" id="dialNow">${dialNowHTML(h.dial)}</div>
-    <div class="counters">
-      <div class="counter"><b>${fmt3(h.stats.told)}</b><span>told agents this week</span></div>
-      <div class="counter"><b>${fmt3(h.stats.sessions)}</b><span>sessions</span></div>
-      <div class="counter ${h.stats.cameBack ? "alert" : ""}"><b>${fmt3(h.stats.cameBack)}</b><span>problems that came back after keeping a lesson</span></div>
-      <div class="counter"><b>${h.stats.costUsd == null ? "–" : "$" + h.stats.costUsd.toFixed(3)}</b><span>muninn's own cost, 7 days</span></div>
+    <p class="intro">muninn learns from your coding sessions and tells your agents what you've taught them, at the right moment.</p>
+
+    <section class="next ${n.tone}" aria-labelledby="nx">
+      <div class="next-kicker">${n.tone === "ok" ? "Status" : "Your next step"}</div>
+      <h1 id="nx">${n.title}</h1>
+      <p>${n.body}</p>
+      ${n.action ? `<div class="row" style="margin-top:14px">${n.action}</div>` : ""}
+    </section>
+
+    ${otherAlerts.map((c) => `<section class="alert" style="margin-bottom:14px">
+      <span class="dot alert" aria-hidden="true"></span>
+      <div style="flex:1 1 300px;min-width:0"><h3>The problem came back: "${esc(c.text)}"</h3><p>${esc(c.verdict)}</p></div>
+      ${c.fix === "always-on" ? `<button class="key warn small" data-fix="${esc(c.id)}">Tell agents every session</button>` : ""}
+    </section>`).join("")}
+
+    <div class="cols" style="margin-top:28px">
+      <section class="col-receipt" aria-labelledby="rc">
+        <h2 class="sec" id="rc">What muninn told your agents today</h2>
+        <p class="sec-sub">Each line is something it told an agent, and why. Press <b>helped</b> or <b>wrong here</b> so it learns what works.</p>
+        ${receiptHTML(h)}
+      </section>
+      <section class="col-main" aria-labelledby="cr" style="gap:0">
+        <h2 class="sec" id="cr">What your agents know${repo ? ` in ${esc(short(repo))}` : ""}</h2>
+        <p class="sec-sub">Lessons you kept. Change any of them in <a href="#" data-goto="memory">Memory</a>.</p>
+        ${h.carry.length ? `<div class="carry">${h.carry.map((c) => `<div class="chip ${c.state === "fading" ? "fading" : ""}">
+          <span class="dot ${c.state === "lit" ? "on" : c.state === "armed" ? "ring" : "off"}" aria-hidden="true"></span>
+          <div><div style="font-weight:500">${esc(c.label)}</div><small>${esc(c.state === "fading" ? `not needed ${c.lastTold ? "since " + ago(c.lastTold) : "yet"}, fading` : "told " + c.route + (c.global ? ", in every repo" : ""))}</small></div>
+        </div>`).join("")}</div>
+        <div class="legend"><span><i class="dot on"></i>told every session</span><span><i class="dot ring"></i>told when its word comes up</span><span><i class="dot off"></i>not needed lately</span></div>` : `<div class="card muted">Nothing kept yet. Keep a lesson in Review and it shows here.</div>`}
+      </section>
     </div>
-    <div class="cols">
-      <section class="col-receipt" aria-labelledby="rc"><h2 class="label" id="rc">What muninn told your agents</h2>${receiptHTML(h)}</section>
-      <div class="col-main">
-        <section aria-labelledby="wt">
-          <h2 class="label" id="wt">New lessons to review · ${h.waiting.count}</h2>
-          <p class="help" style="margin:-4px 0 12px">muninn found these in your sessions. Your agents aren't told any of them until you keep it.</p>
-          ${top ? `<article class="card" data-id="${esc(top.id)}">
-            <div class="muted" style="font-size:13px">${esc(top.origin)}</div>
-            <p class="lesson-big" style="margin-top:6px">${esc(top.plain || top.text)}</p>
-            <div class="row">
-              <button class="key dark" data-quick="keep" data-id="${esc(top.id)}">Keep</button>
-              <button class="key" data-quick="reject" data-id="${esc(top.id)}">Don't keep</button>
-              <span class="route-note">If kept: told to agents ${esc(top.route)}</span>
-            </div>
-          </article>
-          ${h.waiting.count > 1 ? `<p style="margin:10px 0 0"><a href="#" data-goto="review">Review the other ${h.waiting.count - 1}, one at a time</a></p>` : ""}` : `<div class="card muted">Nothing to review. muninn looks for new lessons on its own as you work.</div>`}
-        </section>
-        ${h.cameBack.map((c) => `<section class="alert">
-          <span class="dot alert" aria-hidden="true"></span>
-          <div style="flex:1 1 300px;min-width:0"><h3>The problem came back: "${esc(c.text)}"</h3><p>${esc(c.verdict)}</p></div>
-          ${c.fix === "always-on" ? `<button class="key warn small" data-fix="${esc(c.id)}">Tell it every session</button>` : ""}
-        </section>`).join("")}
-        <section aria-labelledby="cr">
-          <h2 class="label" id="cr">What agents carry</h2>
-          ${h.carry.length ? `<div class="carry">${h.carry.map((c) => `<div class="chip ${c.state === "fading" ? "fading" : ""}">
-            <span class="dot ${c.state === "lit" ? "on" : c.state === "armed" ? "ring" : "off"}" aria-hidden="true"></span>
-            <div><div style="font-weight:500">${esc(c.label)}</div><small>${esc(c.state === "fading" ? `not needed ${c.lastTold ? "since " + ago(c.lastTold) : "yet"} · fading` : c.route + (c.global ? " · every repo" : ""))}</small></div>
-          </div>`).join("")}</div>
-          <div class="legend"><span><i class="dot on"></i>every session</span><span><i class="dot ring"></i>when its word comes up</span><span><i class="dot off"></i>fading</span></div>` : `<div class="card muted">Nothing kept yet.</div>`}
-        </section>
+
+    <section aria-labelledby="wk" style="margin-top:34px">
+      <h2 class="sec" id="wk">This week</h2>
+      <div class="counters" style="margin-top:10px">
+        <div class="counter"><b>${fmt3(h.stats.told)}</b><span>times muninn told an agent something</span></div>
+        <div class="counter"><b>${fmt3(h.stats.sessions)}</b><span>sessions it helped in</span></div>
+        <div class="counter ${h.stats.cameBack ? "alert" : ""}"><b>${fmt3(h.stats.cameBack)}</b><span>problems that came back after you kept a lesson</span></div>
+        <div class="counter"><b>${h.stats.costUsd == null ? "–" : "$" + h.stats.costUsd.toFixed(3)}</b><span>what muninn's own AI use cost</span></div>
       </div>
-    </div>`;
+      <div class="dial-now" id="dialNow">${dialNowHTML(h.dial)}</div>
+    </section>`;
 }
 
 /* ---------- Review: one at a time ---------- */
@@ -448,6 +480,21 @@ document.addEventListener("keydown", (e) => {
   if (k === "k") reviewAct("keep"); else if (k === "l") reviewAct("later"); else if (k === "r") reviewAct("reject");
 });
 loadRepos().then(render);
+
+// Stay current without a manual reload: reload the page when muninn's code or this page changes
+// (the server restarts itself on a rebuild), and refresh Home's data in the background.
+let version = null;
+setInterval(async () => {
+  try {
+    const v = await api("/api/version");
+    const key = `${v.boot}:${v.page}`;
+    if (version && key !== version) location.reload();
+    version = key;
+  } catch { /* restarting: try again shortly */ }
+}, 2000);
+const refreshHome = () => { if (tab === "home" && document.visibilityState === "visible") showHome(true).catch(() => {}); };
+setInterval(refreshHome, 20000);
+window.addEventListener("focus", () => { refreshHome(); loadRepos().catch(() => {}); });
 </script>
 </body>
 </html>

@@ -318,3 +318,11 @@ Entry template:
 **Follow-up (author):** "quiet, at start, anytime" weren't clear: they named settings without saying what they were about. The dial now answers "when should muninn speak up to your agents?" with *only when asked*, *at session start* and *whenever relevant*, and shows the current setting's one-line meaning on Home, in the header tooltip, in the panel and in `muninn dial`. The CLI also accepts `asked`, `session-start` and `relevant`.
 
 **Follow-up (author):** "Waiting for your word" didn't say what word or what to do. The design voice now prefers literal over clever: "New lessons to review", with a line saying agents aren't told until you keep one; "Keep / Don't keep" in place of "Remember / Let it go"; "If kept: told to agents every session"; "The problem came back: …". The same wording is used on the web, in the panel and in the CLI.
+
+## 2026-11-15 — The UI updates itself; Home leads with one next step
+
+**Author:** "why can't the UI auto update without restarting?" and "the landing page is unclear: what am I looking at, what's my main action?"
+
+**Did:**
+- `muninn ui` runs the page server under `node --watch-path dist`, with the token and port fixed for the whole run, so a rebuild restarts the server under the same link. The page file is read on every request. The open tab polls `/api/version` (process start id plus a hash of the page) every 2 seconds and reloads when either changes. Home's data refreshes on focus and every 20 seconds, redrawing only when it changed and nothing is being typed. `--no-watch` runs it in one process (tests use it). Checked end to end: editing the page and touching a built file each restarted the server with the same link still answering.
+- Home now opens with a one-line description of muninn, then **one next step**, in priority order: a kept lesson that didn't reach an agent (with its fix), reviewing new lessons (with a time estimate), running the first learn, or "You're all set". Below: "What muninn told your agents today" and "What your agents know", each with a one-line explanation, then "This week" with plain labels and the dial sentence last.

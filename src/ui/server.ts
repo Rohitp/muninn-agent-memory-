@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client";
 import { spawn } from "node:child_process";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { askData, originOf, shortRepo } from "../commands/ask.js";
 import { answerData } from "../commands/answer.js";
@@ -20,7 +20,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const PAGE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "public", "index.html"), "utf8");
+// Read on every request, so an edited page shows on the next load without a restart.
+const PAGE_PATH = join(dirname(fileURLToPath(import.meta.url)), "public", "index.html");
+const page = () => readFileSync(PAGE_PATH, "utf8");
+// Changes whenever this process starts, so an open tab can tell the server restarted with new code.
+const BOOT = randomBytes(6).toString("hex");
+const pageHash = () => createHash("sha1").update(page()).digest("hex").slice(0, 12);
 
 type Handler = (db: Client, q: URLSearchParams, body: any) => Promise<unknown>;
 let embedder: Promise<Embed> | null = null;
@@ -94,6 +99,7 @@ const routes: Record<string, Handler> = {
     finally { await saveUsage(db, runner, "answer"); }
   },
   "GET /api/settings": async () => ({ maxPerDelivery: settings().maxPerDelivery }),
+  "GET /api/version": async () => ({ boot: BOOT, page: pageHash() }),
 };
 
 const readBody = (req: IncomingMessage) => new Promise<string>((ok, fail) => {
@@ -107,12 +113,47 @@ const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(
  * A local page for reviewing and editing lessons. Listens on 127.0.0.1 only, and every request needs
  * a random token from the URL muninn prints, so other web pages in the browser can't call it.
  */
+/** A free local port: the one asked for if it's free, else any. */
+function freePort(want: number): Promise<number> {
+  return new Promise((ok) => {
+    const probe = createServer();
+    probe.once("error", () => { const any = createServer(); any.listen(0, "127.0.0.1", () => { const a = any.address(); any.close(() => ok(typeof a === "object" && a ? a.port : 0)); }); });
+    probe.listen(want, "127.0.0.1", () => probe.close(() => ok(want)));
+  });
+}
+const openLink = (link: string) => {
+  if (process.platform === "darwin") spawn("open", [link], { stdio: "ignore", detached: true }).unref();
+  else if (process.platform === "linux") spawn("xdg-open", [link], { stdio: "ignore", detached: true }).unref();
+};
+
+/**
+ * Runs the page server under Node's watcher, so it restarts by itself when muninn's code is rebuilt.
+ * The token and port are fixed for the whole run, so an open tab keeps working across restarts and reloads itself.
+ */
 export async function serve(args: string[]) {
-  const db = await openDb();
-  const token = randomBytes(18).toString("base64url");
-  const here = repoIdentity(process.cwd());
   const portArg = args.indexOf("--port");
-  const port = portArg >= 0 ? Number(args[portArg + 1]) : 4747;
+  const want = portArg >= 0 ? Number(args[portArg + 1]) : 4747;
+  if (process.env.MUNINN_UI_CHILD || args.includes("--no-watch")) return serveNow(args, want);
+  const token = randomBytes(18).toString("base64url");
+  const port = await freePort(want);
+  const dist = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const cli = join(dist, "cli.js");
+  const child = spawn(process.execPath, ["--watch-path", dist, "--watch-preserve-output", cli, "ui", ...args.filter((a) => a !== "--detach")], {
+    stdio: "inherit", env: { ...process.env, MUNINN_UI_CHILD: "1", MUNINN_UI_TOKEN: token, MUNINN_UI_PORT: String(port) },
+  });
+  const link = `http://127.0.0.1:${port}/?t=${token}`;
+  if (!args.includes("--no-open")) {
+    for (let i = 0; i < 50; i++) { try { await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(200) }); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
+    openLink(link);
+  }
+  await new Promise<void>((done) => child.on("exit", () => done()));
+}
+
+async function serveNow(args: string[], want: number) {
+  const db = await openDb();
+  const token = process.env.MUNINN_UI_TOKEN || randomBytes(18).toString("base64url");
+  const here = repoIdentity(process.cwd());
+  const port = process.env.MUNINN_UI_PORT ? Number(process.env.MUNINN_UI_PORT) : want;
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     const send = (code: number, body: unknown, type = "application/json") => {
@@ -122,7 +163,7 @@ export async function serve(args: string[]) {
     if (req.headers.host && !/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host)) return send(403, { error: "Wrong host." });
     if (req.method === "GET" && url.pathname === "/") {
       if (!same(url.searchParams.get("t") ?? "", token)) return send(403, "Open the link muninn printed in the terminal.", "text/plain");
-      return send(200, PAGE.replace("__TOKEN__", token).replace("__REPO__", JSON.stringify(here)), "text/html; charset=utf-8");
+      return send(200, page().replace("__TOKEN__", token).replace("__REPO__", JSON.stringify(here)), "text/html; charset=utf-8");
     }
     if (!same(String(req.headers["x-muninn-token"] ?? ""), token)) return send(403, { error: "Missing token." });
     const h = routes[`${req.method} ${url.pathname}`];
@@ -138,8 +179,8 @@ export async function serve(args: string[]) {
   });
   const addr = server.address();
   const link = `http://127.0.0.1:${typeof addr === "object" && addr ? addr.port : port}/?t=${token}`;
-  console.log(`muninn is open at ${link}\nPress Ctrl+C to stop.`);
-  if (!args.includes("--no-open") && process.platform === "darwin") spawn("open", [link], { stdio: "ignore", detached: true }).unref();
-  else if (!args.includes("--no-open") && process.platform === "linux") spawn("xdg-open", [link], { stdio: "ignore", detached: true }).unref();
+  console.log(`muninn is open at ${link}\nIt updates by itself when muninn changes. Press Ctrl+C to stop.`);
+  // Under the watcher the parent opens the browser once; on its own, open it here.
+  if (!process.env.MUNINN_UI_CHILD && !args.includes("--no-open")) openLink(link);
   await new Promise(() => { /* runs until Ctrl+C */ });
 }

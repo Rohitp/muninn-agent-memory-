@@ -53,5 +53,6 @@ Dots: ● lit (told every session), ○ armed (told when its word comes up), gre
 
 ## Surfaces
 
-- **Web (`muninn ui`):** Home (counters, the receipt, waiting, came back, what agents carry), Review (one card at a time, a three-way switch for how agents are told, three big keys K, L, R), Memory (grouped by how agents are told, with fading last), Ask (answer first, then sources).
+- **Web (`muninn ui`):** Home leads with one sentence on what muninn is and **one next step** (fix, review, first learn, or all set), then the receipt and what agents know, each with a one-line explanation, then this week's numbers. Every screen should answer "what am I looking at, and what do I do here?" in its first lines.
+- **Web, other screens:**, Review (one card at a time, a three-way switch for how agents are told, three big keys K, L, R), Memory (grouped by how agents are told, with fading last), Ask (answer first, then sources).
 - **Claude Code panel (`mods/muninn-panel`):** the same receipt as terminal text in a dashed box, the dial as words with the current one bracketed, the same dots. A terminal can't draw materials, so the physical touches become their text equivalents.
