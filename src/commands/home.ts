@@ -10,6 +10,14 @@ export type Carried = { id: string; label: string; route: string; state: "lit" |
 export type HomeData = {
   repo: string | null; repoShort: string; dial: Dial;
   stats: { told: number; sessions: number; cameBack: number; costUsd: number | null };
+  /** The week as answers to "is muninn helping?", for plain sentences rather than raw counters. */
+  week: {
+    sessions: number;
+    mostTold: { label: string; sessions: number } | null;
+    problems: { kept: number; cameBack: number };
+    handoffs: number;
+    costUsd: number | null;
+  };
   lastToldAt: string | null;
   receipt: ReceiptLine[];
   waiting: { count: number; top: { id: string; text: string; plain: string | null; origin: string; route: string }[] };
@@ -19,7 +27,13 @@ export type HomeData = {
 
 const FADE_DAYS = 14;
 /** A short name for a lesson: its plain line or text, up to the first sentence or 60 characters. */
-export const label = (s: string) => { const first = s.split(/(?<=[.!?])\s/)[0] ?? s; return first.length > 60 ? first.slice(0, 59).trimEnd() + "…" : first.replace(/\.$/, ""); };
+export const label = (s: string) => {
+  const first = (s.split(/(?<=[.!?])\s/)[0] ?? s).replace(/\.$/, "");
+  if (first.length <= 60) return first;
+  const cut = first.slice(0, 60);
+  // Cut at a word, never mid-word.
+  return cut.slice(0, cut.lastIndexOf(" ") > 30 ? cut.lastIndexOf(" ") : 59).replace(/[\s,;:]+$/, "") + "…";
+};
 
 /** Everything the Home screen and the Claude Code panel show. With a session, the receipt is that session's; otherwise the last day's in this repo. */
 export async function homeData(db: Client, repo: string | null, session?: string | null): Promise<HomeData> {
@@ -59,7 +73,20 @@ export async function homeData(db: Client, repo: string | null, session?: string
     return { id: String(r.id), label: label(String(r.plain ?? r.text)), route: r.always_on ? "every session" : r.kw ? `when "${r.kw}" comes up` : "only when searched", state: fading ? "fading" : r.always_on ? "lit" : "armed", lastTold: last, global: r.scope === "global" };
   });
 
+  const most = (await db.execute({ sql: `SELECT l.text, l.plain, count(DISTINCT d.session) s FROM deliveries d JOIN lessons l ON l.id=d.lesson_id WHERE d.outcome='sent' AND d.ts>=? AND ${inRepo} GROUP BY l.id ORDER BY s DESC LIMIT 1`, args: [since7, ...rargs] })).rows[0];
+  const lessonSessions = Number((await db.execute({ sql: `SELECT count(DISTINCT d.session) s FROM deliveries d JOIN lessons l ON l.id=d.lesson_id WHERE d.outcome='sent' AND d.ts>=? AND ${inRepo}`, args: [since7, ...rargs] })).rows[0]?.s ?? 0);
+  const handoffs = Number((await db.execute({ sql: `SELECT count(*) n FROM deliveries d JOIN handoffs h ON h.id=d.handoff_id WHERE d.outcome='sent' AND d.ts>=? ${repo ? "AND h.repo_id=?" : ""}`, args: [since7, ...rargs] })).rows[0]?.n ?? 0);
+  // "Problems you kept a lesson for": kept lessons that came from something going wrong before (evidence before keeping).
+  const withProblem = report.lessons.filter((l) => l.before > 0);
+
   return {
+    week: {
+      sessions: lessonSessions,
+      mostTold: most ? { label: label(String(most.plain ?? most.text)), sessions: Number(most.s) } : null,
+      problems: { kept: withProblem.length, cameBack: withProblem.filter((l) => l.after > 0).length },
+      handoffs,
+      costUsd: Number(c.priced) ? Number(c.cost) : null,
+    },
     repo, repoShort: shortRepo(repo), dial: await getDial(db, repo),
     stats: { told: Number(w.n), sessions: Number(w.s), cameBack: cameBack.length, costUsd: Number(c.priced) ? Number(c.cost) : null },
     lastToldAt: w.last ? String(w.last) : null,

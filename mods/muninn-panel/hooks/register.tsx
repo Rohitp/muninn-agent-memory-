@@ -18,7 +18,7 @@ const DIAL_WORDS = {
   anytime: 'Also mid-task, when your word comes up or a command fails the way it has before.',
 } as const
 // Change the tag when PanelView's fields change, so a value stored by an older version is dropped.
-const view = atom({ plugin: 'muninn-panel', key: 'view' } as const, { data: null, error: null, marked: [] } as PanelView, { shape: 'view-2' })
+const view = atom({ plugin: 'muninn-panel', key: 'view' } as const, { data: null, error: null, marked: [] } as PanelView, { shape: 'view-3' })
 
 /** Runs the muninn CLI. It must be on the PATH Claude Code was started with. */
 async function muninn($: any, args: string[]): Promise<{ ok: boolean; out: string }> {
@@ -51,7 +51,13 @@ async function act($: any, args: string[], done?: string) {
 }
 
 const time = (iso: string) => { const d = new Date(iso); return isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
-const pad3 = (n: number) => String(n).padStart(3, '0')
+/** The week in one plain line, answering "is muninn helping?". */
+function weekLine(w: PanelData['week']): string {
+  const parts = [`this week: agents told in ${w.sessions} session${w.sessions === 1 ? '' : 's'}`]
+  if (w.problems.kept) parts.push(w.problems.cameBack ? `${w.problems.cameBack} kept problem${w.problems.cameBack === 1 ? '' : 's'} came back` : 'no kept problem came back')
+  if (w.costUsd != null) parts.push(`cost $${w.costUsd.toFixed(3)}`)
+  return parts.join(' · ')
+}
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -163,7 +169,7 @@ export const register: Register = on => {
         )}
 
         <Box flexDirection="row" justifyContent="space-between">
-          <Text color={MUTED}>{pad3(data.stats.told)} told · {pad3(data.stats.cameBack)} problems came back{data.stats.costUsd != null ? ` · $${data.stats.costUsd.toFixed(3)}` : ''}</Text>
+          <Text color={MUTED} wrap="wrap">{weekLine(data.week)}</Text>
           <Button key="open-ui" plain onPress={() => act($, ['ui', '--detach'], 'Opened muninn in your browser.')}>open ↗</Button>
         </Box>
       </Box>

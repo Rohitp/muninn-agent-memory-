@@ -7,6 +7,7 @@ export type PanelData = {
   branch: string | null
   dial: 'quiet' | 'start' | 'anytime'
   stats: { told: number; sessions: number; cameBack: number; costUsd: number | null }
+  week: { sessions: number; mostTold: { label: string; sessions: number } | null; problems: { kept: number; cameBack: number }; handoffs: number; costUsd: number | null }
   receipt: ReceiptLine[]
   waiting: { count: number; top: Waiting[] }
   cameBack: { id: string; text: string; verdict: string; fix: string | null }[]

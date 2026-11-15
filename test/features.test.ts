@@ -346,3 +346,25 @@ describe("the dial, feedback and home", () => {
     expect(label("First sentence here. Second one.")).toBe("First sentence here");
   });
 });
+
+describe("this week, in plain terms", () => {
+  beforeEach(useHome);
+  it("cuts labels at a word", async () => {
+    const { label } = await import("../src/commands/home.js");
+    const l = label("The shell is zsh, which reads an unquoted word starting with = as a command lookup");
+    expect(l.endsWith("…")).toBe(true);
+    expect(l).not.toMatch(/\bwit…$/);
+    expect(l.length).toBeLessThanOrEqual(61);
+  });
+  it("counts sessions told, the lesson told most, and kept problems that came back", async () => {
+    const { homeData } = await import("../src/commands/home.js");
+    const cwd = join(tmp(), "repo"); mkdirSync(cwd); execFileSync("git", ["init", "-q", cwd]);
+    const db = await openDb(); const repo = repoIdentity(cwd)!; await ensureRepo(db, repo, cwd);
+    const id = await createLesson(db, { repo_id: repo, text: "Quote === in zsh.", source: "inferred", status: "proposed", by: "learn" });
+    await addEvidence(db, id, [{ tool: "claude-code", session: "old", ts: "2026-01-01T00:00:00Z", quote: "=== not found" }]);
+    await decide(db, id, { status: "live", alwaysOn: true });
+    for (const s of ["a", "b"]) await deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "startup", session_id: s, cwd });
+    const w = (await homeData(db, repo)).week;
+    expect(w).toMatchObject({ sessions: 2, mostTold: { label: "Quote === in zsh", sessions: 2 }, problems: { kept: 1, cameBack: 0 } });
+  });
+});

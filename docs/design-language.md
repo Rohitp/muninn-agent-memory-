@@ -47,7 +47,7 @@ Plain, short, about what happened. **Literal beats clever:** every label should 
 | signal | #E8550F (text #B23E06) | #FF7A3D | "came back" only, and the dial pointer |
 | paper | #FFFFFF | #F3F2EE | the receipt stays paper in dark mode |
 
-Type: IBM Plex Sans for reading, IBM Plex Mono for the receipt, times, numbers and labels. Neither is loaded from the web: the page makes no requests off the machine, so it uses Plex if installed, else the system fonts. Numbers in counters are zero-padded (034).
+Type: IBM Plex Sans for reading, IBM Plex Mono for the receipt, times, numbers and labels. Neither is loaded from the web: the page makes no requests off the machine, so it uses Plex if installed, else the system fonts. Numbers are written plainly inside sentences that say what they mean ("None of the 3 problems you kept a lesson for came back"), never as bare counters. Zero-padding was tried and read like an error.
 
 Dots: ● lit (told every session), ○ armed (told when its word comes up), grey (fading).
 
