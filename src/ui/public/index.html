@@ -200,6 +200,11 @@ function draw() {
     <p class="lead">Switch a lesson on and Claude, Codex and Cursor are told it. Switch it off and they aren't.</p>
     <p class="scan">${scanLine()}</p>
 
+    ${(() => {
+      // Suggestions waiting in other repos are easy to miss, since the page opens on the repo it was started from.
+      const others = repo ? repos.filter((r) => r.id !== repo && r.waiting) : [];
+      return others.length ? `<p class="scan" style="margin-top:14px">Also waiting in other repos: ${others.map((r) => `<button class="linkbtn" data-repo="${esc(r.id)}">${esc(short(r.id))} (${r.waiting})</button>`).join(", ")}</p>` : "";
+    })()}
     ${suggested.length ? `<section aria-labelledby="sg">
       <h2 id="sg">Suggested from your sessions · ${suggested.length}</h2>
       <ul class="group">${shown.map(suggestionRow).join("")}
@@ -234,6 +239,7 @@ document.addEventListener("click", async (e) => {
     if (el.dataset.open) { open = open === el.dataset.open ? null : el.dataset.open; draw(); return; }
     if (el.dataset.more !== undefined) { showAll = !showAll; draw(); return; }
     if (el.dataset.scan !== undefined) { await startScan(el); return; }
+    if (el.dataset.repo) { repo = el.dataset.repo; open = null; showAll = false; await refresh(); window.scrollTo(0, 0); return; }
     if (el.dataset.route) {
       const box = el.closest(".detail"); box.querySelectorAll("[data-route]").forEach((b) => b.setAttribute("aria-checked", String(b === el)));
       const kw = box.querySelector("[data-f=kw]"); kw.hidden = el.dataset.route !== "keyword"; if (!kw.hidden) kw.focus(); return;
