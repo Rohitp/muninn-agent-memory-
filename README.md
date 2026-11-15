@@ -47,10 +47,11 @@ In Claude Code, an optional side panel (`mods/muninn-panel`) shows what muninn t
 
 ## Install
 
-muninn isn't on npm yet. From source, with Node 22 or later and pnpm:
+muninn isn't on npm yet. From source, with **Node 22 or later** (check with `node --version`). The repo pins its pnpm version, and `corepack enable` sets it up:
 
 ```sh
 git clone <this repo> && cd muninn
+corepack enable
 pnpm install && pnpm build
 npm link            # puts `muninn` on your PATH
 muninn setup        # installs the hooks, scans your past sessions, opens the page
