@@ -314,3 +314,5 @@ Entry template:
 - `homeData` gives the web Home and the panel one source: counters, the receipt (deliveries with reasons, one line per lesson), the top waiting lesson, came back, and what agents carry with lit, armed or fading (14 days without being told).
 - The web UI is rebuilt in the console style: Home, Review one at a time with K/L/R, Memory, Ask. It no longer loads web fonts, so the page makes no requests off the machine.
 - The Claude Code panel is rebuilt to match: dashed receipt box, dial words, dots, feedback buttons.
+
+**Follow-up (author):** "quiet, at start, anytime" weren't clear: they named settings without saying what they were about. The dial now answers "when should muninn speak up to your agents?" with *only when asked*, *at session start* and *whenever relevant*, and shows the current setting's one-line meaning on Home, in the header tooltip, in the panel and in `muninn dial`. The CLI also accepts `asked`, `session-start` and `relevant`.

@@ -56,6 +56,10 @@ select.repo { min-height: 40px; border: 1px solid var(--line); border-radius: 10
 .dial-labels { display: flex; flex-direction: column; align-items: flex-end; font-family: var(--mono); font-size: 11px; line-height: 1.45; }
 .dial-labels button { border: 0; background: none; padding: 0; cursor: pointer; color: var(--faint); font: inherit; }
 .dial-labels button[aria-checked="true"] { color: var(--ink); font-weight: 600; }
+.dial-labels button[aria-checked="true"]::after { content: " ●"; color: var(--signal); }
+.dial-q { font-family: var(--sans); font-size: 11px; color: var(--muted); }
+.dial-now { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 18px; font-size: 14px; }
+.dial-now b { font-weight: 600; }
 .knob { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--line-strong); padding: 0; cursor: pointer; position: relative; background: radial-gradient(circle at 38% 30%, var(--key-1) 0%, var(--key-2) 50%, var(--line-strong) 100%); box-shadow: inset 0 1px 1px rgba(255,255,255,.7), inset 0 -2px 4px rgba(0,0,0,.12), 0 3px 6px rgba(20,22,30,.18); }
 .knob i { position: absolute; left: 50%; top: 5px; width: 3px; height: 12px; margin-left: -1.5px; border-radius: 2px; background: var(--signal); transform-origin: 50% 19px; transition: transform .25s cubic-bezier(.3,1.5,.6,1); }
 
@@ -165,10 +169,11 @@ input[type=text], input[type=search] { min-height: 44px; border: 1px solid var(-
       </nav>
       <div class="light" id="light"><span class="dot off"></span><span>quiet so far</span></div>
       <div class="dial">
-        <div class="dial-labels" role="radiogroup" aria-label="How much muninn speaks unprompted here">
-          <button role="radio" data-dial="quiet" aria-checked="false">quiet</button>
-          <button role="radio" data-dial="start" aria-checked="false">at start</button>
-          <button role="radio" data-dial="anytime" aria-checked="true">anytime</button>
+        <div class="dial-labels" role="radiogroup" aria-label="When should muninn speak up to your agents?">
+          <span class="dial-q">muninn speaks up</span>
+          <button role="radio" data-dial="quiet" aria-checked="false" title="Never on its own. Agents can still run muninn ask.">only when asked</button>
+          <button role="radio" data-dial="start" aria-checked="false" title="Your every-session lessons and where you left off, then silence.">at session start</button>
+          <button role="radio" data-dial="anytime" aria-checked="true" title="Also mid-task, when a word you chose comes up or a command fails the way it has before.">whenever relevant</button>
         </div>
         <button class="knob" id="knob" type="button" aria-label="Turn the dial"><i></i></button>
       </div>
@@ -185,7 +190,9 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const TOOL = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor" };
 const DIALS = ["quiet", "start", "anytime"];
-const DIAL_WORDS = { quiet: "muninn won't speak unprompted here. Agents can still run muninn ask.", start: "muninn speaks only when a session starts: always-on lessons and the handoff.", anytime: "muninn speaks at the start, and mid-task when a keyword or a failed command matches." };
+// The dial answers one question: when should muninn speak up to your agents?
+const DIAL_LABEL = { quiet: "only when asked", start: "at session start", anytime: "whenever relevant" };
+const DIAL_WORDS = { quiet: "It never speaks up on its own. Agents can still look things up with muninn ask.", start: "It tells agents your every-session lessons and where you left off when a session starts, then stays silent.", anytime: "It speaks up at the start of a session, and mid-task when a word you chose comes up or a command fails the way it has before." };
 const short = (r) => (r ? String(r).split("/").filter(Boolean).pop() : "every repo");
 const q = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString();
 const time = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
@@ -211,14 +218,18 @@ async function loadRepos() {
 function setDialUI(d) {
   document.querySelectorAll("[data-dial]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.dial === d)));
   $("#knob i").style.transform = `rotate(${({ quiet: -50, start: 0, anytime: 50 })[d]}deg)`;
-  $("#knob").setAttribute("aria-label", `Dial: ${d}. ${DIAL_WORDS[d]} Press to turn.`);
+  $("#knob").setAttribute("aria-label", `muninn speaks up ${DIAL_LABEL[d]}. ${DIAL_WORDS[d]} Press to turn.`);
+  const now = $("#dialNow"); if (now) now.innerHTML = dialNowHTML(d);
 }
 async function setDial(d) {
   if (!repo) { toast("Pick a repo to set its dial."); return; }
-  try { const r = await api("/api/dial", { repo, dial: d }); setDialUI(r.dial); toast(DIAL_WORDS[r.dial]); } catch (e) { toast(e.message); }
+  try { const r = await api("/api/dial", { repo, dial: d }); setDialUI(r.dial); toast(`muninn now speaks up ${DIAL_LABEL[r.dial]} in ${short(repo)}.`); } catch (e) { toast(e.message); }
 }
 
 /* ---------- Home ---------- */
+function dialNowHTML(d) {
+  return `<span class="dot ${d === "quiet" ? "off" : "on"}" aria-hidden="true"></span><span>${repo ? `In ${esc(short(repo))}, muninn` : "muninn"} speaks up <b>${DIAL_LABEL[d]}</b>. ${DIAL_WORDS[d]}</span>${repo ? "" : `<span class="muted">Pick a repo to change it.</span>`}`;
+}
 function receiptHTML(h) {
   if (!h.receipt.length) return `<div class="receipt"><div class="head">MUNINN</div><hr><div class="empty">Nothing told in the last day${repo ? " here" : ""}.</div><hr><div class="foot">${h.dial === "quiet" ? "THE DIAL IS AT QUIET" : "LISTENING"}</div></div>`;
   const lines = h.receipt.map((x) => `
@@ -238,6 +249,7 @@ async function showHome() {
   const top = h.waiting.top[0];
   const fmt3 = (n) => String(n).padStart(3, "0");
   $("#main").innerHTML = `
+    <div class="dial-now" id="dialNow">${dialNowHTML(h.dial)}</div>
     <div class="counters">
       <div class="counter"><b>${fmt3(h.stats.told)}</b><span>told agents this week</span></div>
       <div class="counter"><b>${fmt3(h.stats.sessions)}</b><span>sessions</span></div>

@@ -71,14 +71,18 @@ export async function dial(args: string[]) {
   const { getDial, setDial, DIALS } = await import("../store/dial.js");
   const db = await openDb();
   const repo = repoIdentity(process.cwd());
-  const words = { quiet: "never speaks unprompted. Agents can still run muninn ask.", start: "speaks only when a session starts: always-on lessons and the handoff.", anytime: "also speaks mid-task, when a keyword or a failed command matches." };
+  const label = { quiet: "only when asked", start: "at session start", anytime: "whenever relevant" };
+  const words = { quiet: "It never speaks up on its own. Agents can still look things up with muninn ask.", start: "It tells agents your every-session lessons and where you left off when a session starts, then stays silent.", anytime: "It speaks up at the start of a session, and mid-task when a word you chose comes up or a command fails the way it has before." };
+  // Friendlier names work too.
+  const alias: Record<string, string> = { asked: "quiet", "only-when-asked": "quiet", "session-start": "start", relevant: "anytime", "whenever-relevant": "anytime" };
+  if (args[0] && alias[args[0]]) args[0] = alias[args[0]]!;
   const want = args[0];
   if (want) {
     if (!DIALS.includes(want as never)) { console.error(`Usage: muninn dial ${DIALS.join("|")}`); process.exitCode = 1; return; }
     await setDial(db, repo, want as never);
   }
   const d = await getDial(db, repo);
-  console.log(`${shortRepo(repo)}: ${d}. muninn ${words[d]}`);
+  console.log(`In ${shortRepo(repo)}, muninn speaks up ${label[d]}. ${words[d]}\nChange it with: muninn dial quiet (only when asked) | start (at session start) | anytime (whenever relevant)`);
 }
 
 /** Records "helped" or "wrong" for something muninn told an agent. */

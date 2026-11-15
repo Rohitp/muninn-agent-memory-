@@ -11,7 +11,7 @@ It's grounded in Bruce Liu's *Beyond Taking Turns in Human-AI Interaction* (UCLA
 ## Rules
 
 1. **Every act says why.** Anything muninn told an agent carries a "↳ because …" line. This is the signature element on every surface.
-2. **The amount is on a dial,** per repo: **quiet** (never unprompted), **at start** (only when a session starts), **anytime** (also mid-task, on a word or a failed command). The words describe what each setting actually does.
+2. **The amount is on a dial,** per repo, answering one question: *when should muninn speak up to your agents?* **Only when asked** (never on its own), **at session start** (every-session lessons and the handoff, then silence), **whenever relevant** (also mid-task, on a word or a failed command). The current setting is always shown with its one-line meaning, never as a bare word. Internally these are `quiet`, `start`, `anytime`.
 3. **Stillness.** Nothing moves unless muninn acted. One light, one short arrival, then still.
 4. **Memory fades visibly.** A lesson agents keep using stays lit; one not told for 14 days fades and is offered back, never deleted on its own.
 5. **Roughly 80% flat, 20% physical.** Everything you read is flat and sharp. Only four things are physical:
@@ -32,6 +32,7 @@ Plain, short, about what happened. muninn reports back.
 | remember / let it go | keep / reject (the CLI keeps these words) |
 | came back | recurrence detected |
 | every session / when a word comes up / only when searched | always-on / keyword / none |
+| speaks up only when asked / at session start / whenever relevant | quiet / start / anytime |
 | fading | stale |
 
 ## Tokens

@@ -9,7 +9,14 @@ const EYE = '#6E7DFF'
 const EYE_TEXT = '#A9B1FF'
 const SIGNAL = '#FF7A3D'
 const MUTED = '#8E919C'
-const DIALS = [['quiet', 'quiet'], ['start', 'at start'], ['anytime', 'anytime']] as const
+// The dial answers one question: when should muninn speak up to your agents?
+const DIAL_ORDER = ['quiet', 'start', 'anytime'] as const
+const DIAL_LABEL = { quiet: 'only when asked', start: 'at session start', anytime: 'whenever relevant' } as const
+const DIAL_WORDS = {
+  quiet: 'Never on its own. Agents can still run muninn ask.',
+  start: 'Every-session lessons and where you left off, then silence.',
+  anytime: 'Also mid-task, when your word comes up or a command fails the way it has before.',
+} as const
 // Change the tag when PanelView's fields change, so a value stored by an older version is dropped.
 const view = atom({ plugin: 'muninn-panel', key: 'view' } as const, { data: null, error: null, marked: [] } as PanelView, { shape: 'view-2' })
 
@@ -85,13 +92,16 @@ export const register: Register = on => {
     const top = data.waiting.top[0]
     return (
       <Box flexDirection="column" gap={1}>
-        <Box flexDirection="row" justifyContent="space-between">
+        <Box flexDirection="column">
           <Text><Text color={EYE}>{data.receipt.length ? '●' : '○'}</Text> <Text bold>muninn</Text> <Text color={MUTED}>{data.repoShort}</Text></Text>
           <Box flexDirection="row" gap={1}>
-            {DIALS.map(([value, word]) => (
-              <Button key={`dial-${value}`} plain dimColor={data.dial !== value} onPress={() => act($, ['dial', value])}>{data.dial === value ? `[${word}]` : word}</Button>
-            ))}
+            <Text color={MUTED}>speaks up</Text>
+            <Button key="dial" plain onPress={() => {
+              const next = DIAL_ORDER[(DIAL_ORDER.indexOf(data.dial) + 1) % DIAL_ORDER.length]!
+              return act($, ['dial', next], `muninn now speaks up ${DIAL_LABEL[next]} here.`)
+            }}>[ {DIAL_LABEL[data.dial]} ▸ ]</Button>
           </Box>
+          <Text color={MUTED} wrap="wrap">{DIAL_WORDS[data.dial]}</Text>
         </Box>
 
         <Box flexDirection="column" borderStyle="dashed" borderColor={MUTED} paddingX={1}>
