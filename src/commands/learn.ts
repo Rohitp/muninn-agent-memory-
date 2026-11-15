@@ -9,6 +9,7 @@ import { scanLogs } from "../logs/discover.js";
 import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
 import { ensureRepo, foldDuplicates, overlappingLive } from "../store/lessons.js";
+import { adoptRepo } from "../repo/adopt.js";
 import { review } from "./review.js";
 
 export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview?: boolean }): Promise<number> {
@@ -42,6 +43,7 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
   const db = await openDb();
   for (const repo of repos) {
     const sessions = scan.byRepo.get(repo)!;
+    await adoptRepo(db, repo, sessions[0]!.cwd);
     await ensureRepo(db, repo, sessions[0]!.cwd);
     if (sessions.length < cfg.minSessions && !opts.auto) console.log(`${repo}: only ${sessions.length} session(s), which may be too few to find repeats.`);
     const folded = await foldDuplicates(db, repo);

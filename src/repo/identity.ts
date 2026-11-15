@@ -5,6 +5,9 @@ import { dirname, resolve } from "node:path";
 const cache = new Map<string, string | null>();
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 
+/** Forgets cached identities, so a remote added since is seen. Hooks are fresh processes; this is for long-lived ones and tests. */
+export const forgetIdentities = () => cache.clear();
+
 export function cleanRemote(url: string): string {
   return url.trim().replace(/^[a-z+]+:\/\//i, "").replace(/^[^@/]+@/, "").replace(/^([^/:]+):/, "$1/").replace(/\.git$/, "").replace(/\/$/, "").toLowerCase();
 }

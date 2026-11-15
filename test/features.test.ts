@@ -472,3 +472,25 @@ describe("handoffs don't expire", () => {
     expect(handoffText(h!, 7, Date.parse("2026-09-03T00:00:00Z"))).not.toContain("git log");
   });
 });
+
+describe("a repo that gets a remote", () => {
+  beforeEach(useHome);
+  it("keeps its lessons, plan and settings when its identity changes from the folder to the remote", async () => {
+    const { adoptRepo } = await import("../src/repo/adopt.js");
+    const { setDial, getDial } = await import("../src/store/dial.js");
+
+    const cwd = join(tmp(), "proj"); mkdirSync(cwd); execFileSync("git", ["init", "-q", cwd]);
+    const db = await openDb(); const pathId = repoIdentity(cwd)!;
+    await ensureRepo(db, pathId, cwd);
+    const id = await createLesson(db, { repo_id: pathId, text: "Tokens expire every 8 hours.", source: "inferred", status: "live", by: "learn" });
+    await setDial(db, pathId, "start");
+    execFileSync("git", ["-C", cwd, "remote", "add", "origin", "git@github.com:someone/proj.git"]);
+    (await import("../src/repo/identity.js")).forgetIdentities();
+    const remoteId = repoIdentity(cwd)!;
+    expect(remoteId).not.toBe(pathId);
+    expect(await adoptRepo(db, remoteId, cwd)).toBe(true);
+    expect((await listLessons(db, { repo: remoteId })).map((l) => l.id)).toEqual([id]);
+    expect(await getDial(db, remoteId)).toBe("start");
+    expect(await adoptRepo(db, remoteId, cwd)).toBe(false);
+  });
+});

@@ -4,6 +4,7 @@ import { isPaused, settings } from "../config.js";
 import { repoIdentity } from "../repo/identity.js";
 import { currentBranch, handoffText, latestHandoff } from "../handoff/handoff.js";
 import { getDial } from "../store/dial.js";
+import { adoptRepo } from "../repo/adopt.js";
 import { getPlan, planText } from "../plan/plan.js";
 
 export type HookInput = { hook_event_name?: string; session_id?: string; cwd?: string; source?: string; prompt?: string; tool_input?: { command?: string }; tool_response?: unknown; error?: string; transcript_path?: string | null; [k: string]: unknown };
@@ -44,6 +45,8 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   if (fromCursor(input)) { await log("unsupported_client"); return null; }
   if (isPaused()) { await log("paused"); return null; }
   const repo = input.cwd ? repoIdentity(input.cwd) : null;
+  // A repo that just got a remote changes identity; carry its lessons over before looking them up.
+  if (event === "SessionStart" && input.cwd) await adoptRepo(db, repo, input.cwd);
   // The dial: quiet holds everything back; "start" speaks only when a session starts, never mid-task.
   const dial = await getDial(db, repo);
   const midTask = event === "UserPromptSubmit" || event.startsWith("PostToolUse");

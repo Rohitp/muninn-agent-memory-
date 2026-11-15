@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { askData, originOf, shortRepo } from "../commands/ask.js";
 import { answerData } from "../commands/answer.js";
 import { homeData } from "../commands/home.js";
+import { adoptRepo } from "../repo/adopt.js";
 import { addItem, editItem, getPlan, planFileOn, setPlanFile, setStatus, writePlanFile } from "../plan/plan.js";
 import { scanRunning, startAutoScan } from "../commands/auto.js";
 import { getDial, recordFeedback, setDial } from "../store/dial.js";
@@ -182,6 +183,7 @@ async function serveNow(args: string[], want: number) {
   const db = await openDb();
   const token = process.env.MUNINN_UI_TOKEN || randomBytes(18).toString("base64url");
   const here = repoIdentity(process.cwd());
+  await adoptRepo(db, here, process.cwd());
   const port = process.env.MUNINN_UI_PORT ? Number(process.env.MUNINN_UI_PORT) : want;
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");

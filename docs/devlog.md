@@ -370,3 +370,9 @@ Entry template:
 - Agents get it at session start after the handoff: goal, up to 6 open items, 3 recent decisions. Cursor gets `muninn-plan.mdc`.
 - The page has a "Project plan" section: tick items done, reopen, edit, remove, add a next step or goal. A setting writes `PLAN.md` at the repo root and keeps it current, for git, teammates and other machines.
 - Real run on a copy: two handoffs gave sensible plans for cb-ai-agents and muninn ($0.0014). One open item was already resolved by a later commit, which shows why items stay editable and link back to their session.
+
+## 2026-11-15 — A repo that gets a remote keeps its lessons
+
+**Found (author):** "I have all repos selected and it asks for a project plan?" The muninn repo had no remote, so its lessons were filed under its folder path. Pushing it to GitHub added a remote, which changed its identity. The page then opened on the new, empty identity while the picker showed "All repos", and the two lessons kept for this repo stopped reaching agents here.
+
+**Did:** `adoptRepo` moves lessons, handoffs, plan items, judged moments, scan counts and per-repo settings (dial, PLAN.md, Cursor) from the path identity to the remote one. It runs at session start in the hook, per repo in learn, and when the page opens. It matches either spelling of a macOS temp path (/var and /private/var). The picker always shows the repo the page is on, even a new one. On the real database the two lessons moved over when the page restarted.
