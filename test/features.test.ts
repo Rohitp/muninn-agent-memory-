@@ -585,7 +585,8 @@ describe("tidying a plan", () => {
     expect(plan.open.find((o) => o.id === c)).toBeUndefined();
     expect(plan.open.find((o) => o.id === mine)).toBeDefined();
     expect(plan.decisions.map((d) => d.text)).toEqual(["Build the API first, so web and MCP share data"]);
-    expect(plan.done.map((d) => d.text).sort()).toEqual(["Merge PR 11", "Merged PR 16"]);
+    // One of the two "Merged PR 16" copies is kept; which one doesn't matter, as they were added at the same moment.
+    expect(plan.done.map((d) => d.text.replace(/\.$/, "")).sort()).toEqual(["Merge PR 11", "Merged PR 16"]);
     expect(t).toMatchObject({ closed: 1, repeats: 1, done: 0 });
     expect(plan.status?.text).toBe("API done; Ledger page next.");
     expect(prompt).toContain('"added_by_engineer": true');

@@ -82,10 +82,17 @@ describe("command signals", () => {
     expect(fixed.filter((x) => x.signal === "failure_then_fix")).toHaveLength(1);
   });
   it("finds a command re-run with different limits, and commands the engineer stopped twice", async () => {
-    const m = await find([withCmds("a", 1, cmd("make test | tail -20", false, 1, "x"), cmd("make test | tail -80", false, 1, "x"), cmd("make test | tail -200", false, 1, "x"))]);
-    expect(m.filter((x) => x.signal === "refetch").map((x) => x.text)).toEqual(["`make test` was run 3 times with different limits, each time re-reading output the previous run had cut off"]);
-    // Only the runs before the last were read twice: 2 runs of 1 token each.
-    expect(m.find((x) => x.signal === "refetch")!.wasted).toBe(2);
+    // Each bigger tail re-prints the lines the smaller one showed.
+    const lines = (n: number) => Array.from({ length: n }, (_, i) => `test ${100 - n + i} passed ok`).join("\n");
+    const m = await find([withCmds("a", 1, cmd("make test | tail -2", false, 1, lines(2)), cmd("make test | tail -4", false, 1, lines(4)), cmd("make test | tail -8", false, 1, lines(8)))]);
+    expect(m.filter((x) => x.signal === "refetch").map((x) => x.text)).toEqual(["`make test` was run 3 times with different limits, and 2 of the runs printed output a later run printed again"]);
+    // Only the runs whose output came back count: the first two (2 and 4 lines).
+    expect(m.find((x) => x.signal === "refetch")!.wasted).toBe(Math.ceil(lines(2).length / 4) + Math.ceil(lines(4).length / 4));
+    // The evidence is the runs themselves.
+    expect(m.find((x) => x.signal === "refetch")!.quotes[0]!.quote).toMatch(/^\$ make test \| tail -2 {2}→ {2}test/);
+    // The same command with different caps, but nothing printed twice: no claim of waste.
+    const fresh = await find([withCmds("d", 1, cmd("make test | tail -2", false, 1, "alpha one\nalpha two"), cmd("make test | tail -4", false, 1, "beta one\nbeta two"), cmd("make test | tail -8", false, 1, "gamma one\ngamma two"))]);
+    expect(fresh.filter((x) => x.signal === "refetch")).toHaveLength(0);
     // Different scripts that share a first line and trim their output aren't one command paged through.
     const scripts = await find([withCmds("b", 1, ...[1, 2, 3, 4].map((i) => cmd(`python3 - <<'EOF'\nprint(${i})\nEOF\ngrep x f | head -${i}`, false, 1, "x")))]);
     expect(scripts.filter((x) => x.signal === "refetch")).toHaveLength(0);

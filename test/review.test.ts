@@ -48,3 +48,22 @@ describe("worthSentence", () => {
     expect(worthSentence({ text: "Keep answers short.", wasted_tokens: 10 })).toBeNull();
   });
 });
+
+describe("when a lesson would have been told", () => {
+  it("tries the words on past prompts and failed commands, and says when a word is too common or never comes up", async () => {
+    const { replay } = await import("../src/learn/replay.js");
+    const s = (id: string, events: any[]) => ({ id, tool: "claude-code" as const, cwd: "/x", clientVersion: "1", unknown: 0, events });
+    const sessions = [
+      s("a", [{ k: "typed", text: "run the ruff checks please", ts: "2026-11-01T10:00:00Z" }]),
+      s("b", [{ k: "cmd", cmd: "uv run ruff check .", failed: true, output: "Found 1 error", ts: "2026-11-02T10:00:00Z" }]),
+      s("c", [{ k: "cmd", cmd: "uv run ruff check .", failed: false, output: "ok", ts: "2026-11-03T10:00:00Z" }, { k: "typed", text: "ship it", ts: "2026-11-03T10:01:00Z" }]),
+    ];
+    const r = replay("repo", "keyword", ["ruff"], sessions);
+    // A successful command isn't something the hooks see, so session c doesn't count.
+    expect(r).toMatchObject({ sessions: 3, told: 2 });
+    expect(r.examples.map((e) => e.where)).toEqual(["your prompt", "a failed command"]);
+    expect(replay("repo", "keyword", ["heredoc"], sessions).sentence).toContain("never came up");
+    expect(replay("repo", "keyword", ["ruff", "ship"], sessions).sentence).toContain("most of them");
+    expect(replay("repo", "always", [], sessions).sentence).toBe("It would have been told at the start of all 3 of your sessions here.");
+  });
+});

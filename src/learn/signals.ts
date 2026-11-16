@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { redact } from "../privacy/redact.js";
 import { cosine, type Embed } from "../embed/model.js";
 import type { Session } from "../logs/types.js";
@@ -25,8 +26,24 @@ export function sentences(text: string): string[] {
 }
 export function normCommand(raw: string): string {
   let c = raw.replace(/^\/bin\/(ba|z)?sh\s+-l?c\s+/, "").replace(/^["']|["']$/g, "");
-  c = (c.split("\n")[0] ?? "").replace(/^\s*cd\s+\S+\s*&&\s*/, "").replace(/^(\w+=\S+\s+)+/, "").trim();
-  return c.replace(/\/[\w.@/-]+/g, "<path>").replace(/\b[0-9a-f]{7,}\b/g, "<id>").replace(/\b\d+\b/g, "<n>").slice(0, 90);
+  const [first = "", ...rest] = c.split("\n");
+  c = first.replace(/^\s*cd\s+\S+\s*(&&|;)\s*/, "").replace(/^(\w+=\S+\s+)+/, "").trim();
+  const key = c.replace(/\/[\w.@/-]+/g, "<path>").replace(/\b[0-9a-f]{7,}\b/g, "<id>").replace(/\b\d+\b/g, "<n>").slice(0, 90);
+  // A heredoc's first line ("python3 - <<'EOF'") says nothing about the script: different scripts must not look alike.
+  if (/<</.test(first) && rest.length) return `${key} #${createHash("sha1").update(rest.join("\n").replace(/\d+/g, "").replace(/\s+/g, " ")).digest("hex").slice(0, 6)}`;
+  return key;
+}
+/** One run as evidence: the command on one line, and the first line it printed. */
+export function shown(cmd: string, output: string): string {
+  const c = cmd.replace(/\s+/g, " ").trim();
+  const said = output.split("\n").map((l) => l.trim()).find(Boolean) ?? "(no output)";
+  return redact(`$ ${c.length > 150 ? c.slice(0, 149) + "…" : c}  →  ${said.slice(0, 80)}`);
+}
+/** Whether a later run's output repeats an earlier one's: most of the earlier lines show up again. */
+export function repeats(earlier: string, later: string): boolean {
+  const lines = [...new Set(earlier.split("\n").map((l) => l.trim()).filter((l) => l.length >= 6))];
+  if (lines.length < 2) return false;
+  return lines.filter((l) => later.includes(l)).length / lines.length >= 0.6;
 }
 export function errorLine(o: string): string {
   const ls = o.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -141,7 +158,9 @@ function commandMoments(sessions: Session[]): Moment[] {
     const loops = new Map<string, { err: string; n: number; tokens: number; ts: string }>();
     // Re-fetches: one command re-run with different limits, each time re-reading output the last run cut off.
     // Keyed on the whole command with its caps taken out: only the very same command, re-run with a bigger cap, counts.
-    const pages = new Map<string, { key: string; raws: Set<string>; outputs: number[]; ts: string }>();
+    const pages = new Map<string, { key: string; raws: Set<string>; runs: { cmd: string; output: string }[]; ts: string }>();
+    // The runs behind each loop and each failure, kept as evidence.
+    const tries = new Map<string, { cmd: string; output: string }[]>();
     for (const e of s.events) {
       if (e.k !== "cmd") continue;
       if (e.stopped) {
@@ -151,13 +170,14 @@ function commandMoments(sessions: Session[]): Moment[] {
       }
       if (!e.failed && new RegExp(PAGE.source, "i").test(e.cmd)) {
         const whole = e.cmd.replace(PAGE, "").replace(/\s+/g, " ").trim();
-        const p = pages.get(whole) ?? { key: normCommand(e.cmd.replace(PAGE, "")), raws: new Set<string>(), outputs: [], ts: e.ts };
-        if (!p.raws.has(e.cmd.trim())) { p.raws.add(e.cmd.trim()); p.outputs.push(tokensIn(e.output)); }
+        const p = pages.get(whole) ?? { key: normCommand(e.cmd.replace(PAGE, "")), raws: new Set<string>(), runs: [], ts: e.ts };
+        if (!p.raws.has(e.cmd.trim())) { p.raws.add(e.cmd.trim()); p.runs.push({ cmd: e.cmd, output: e.output }); }
         p.ts = e.ts; pages.set(whole, p);
       }
       const key = normCommand(e.cmd);
       if (!key || BENIGN.test(key)) continue;
       if (e.failed) {
+        tries.set(key, [...(tries.get(key) ?? []), { cmd: e.cmd, output: e.output }].slice(-6));
         const err = errorLine(e.output);
         const r = run.get(key);
         const next = r && r.err === err ? { err, n: r.n + 1, tokens: r.tokens + tokensIn(e.output), ts: e.ts } : { err, n: 1, tokens: 0, ts: e.ts };
@@ -179,29 +199,29 @@ function commandMoments(sessions: Session[]): Moment[] {
         out.push({
           signal: "failure_then_fix", text: redact(`\`${key}\` failed with "${lastErr.get(key)}"`),
           context: redact(`Commands run between the failures and the success: ${steps.join("; ") || "none"}`),
-          quotes: [{ tool: s.tool, session: s.id, ts: e.ts, quote: redact(`${key} failed ${count.get(key)} times: ${lastErr.get(key)}`).slice(0, 240) }],
+          quotes: [...(tries.get(key) ?? []).slice(-2), { cmd: e.cmd, output: e.output }].map((t) => ({ tool: s.tool, session: s.id, ts: e.ts, quote: shown(t.cmd, t.output) })),
           sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: e.ts, wasted: failTokens.get(key) ?? 0,
         });
-        count.delete(key); between.delete(key); failTokens.delete(key);
+        count.delete(key); between.delete(key); failTokens.delete(key); tries.delete(key);
       }
     }
     for (const [key, l] of loops) out.push({
       signal: "loop", text: redact(`\`${key}\` failed ${l.n} times in a row with "${l.err}", and the session moved on without fixing it`),
       context: `The repeats cost about ${l.tokens} tokens of output.`,
-      quotes: [{ tool: s.tool, session: s.id, ts: l.ts, quote: redact(`${key} failed ${l.n} times in a row: ${l.err}`).slice(0, 240) }],
+      quotes: (tries.get(key) ?? []).slice(-3).map((t) => ({ tool: s.tool, session: s.id, ts: l.ts, quote: shown(t.cmd, t.output) })),
       sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: l.ts, wasted: l.tokens,
     });
     for (const p of pages.values()) {
       const key = p.key;
       if (p.raws.size < LOOP_MIN) continue;
-      const examples = [...p.raws].slice(0, 3).map((r) => r.slice(0, 80));
+      // Checked against what was printed, not guessed from the commands: a run counts as re-read only if a later run showed it again.
+      const reread = p.runs.filter((r, i) => p.runs.slice(i + 1).some((later) => repeats(r.output, later.output)));
+      if (reread.length < LOOP_MIN - 1) continue;
       out.push({
-        signal: "refetch", text: redact(`\`${key}\` was run ${p.raws.size} times with different limits, each time re-reading output the previous run had cut off`),
-        context: redact(`Runs: ${examples.join(" ; ")}. About ${p.outputs.reduce((a, b) => a + b, 0)} tokens of output in all.`),
-        quotes: [{ tool: s.tool, session: s.id, ts: p.ts, quote: redact(`${key} re-run ${p.raws.size} times with different limits`).slice(0, 240) }],
-        // The first run's output was needed; the re-reads were the waste.
-        // Each bigger cap re-showed what the smaller ones had: everything before the last run was read again.
-        sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: p.ts, wasted: p.outputs.slice(0, -1).reduce((a, b) => a + b, 0),
+        signal: "refetch", text: redact(`\`${key}\` was run ${p.raws.size} times with different limits, and ${reread.length} of the runs printed output a later run printed again`),
+        context: `About ${reread.reduce((a, r) => a + tokensIn(r.output), 0)} tokens of output were read twice.`,
+        quotes: p.runs.slice(-3).map((r) => ({ tool: s.tool, session: s.id, ts: p.ts, quote: shown(r.cmd, r.output) })),
+        sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: p.ts, wasted: reread.reduce((a, r) => a + tokensIn(r.output), 0),
       });
     }
   }

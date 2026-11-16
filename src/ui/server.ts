@@ -12,6 +12,7 @@ import { scanRunning, startAutoScan } from "../commands/auto.js";
 import { getDial, recordFeedback, setDial } from "../store/dial.js";
 import { loadEmbedder, modelCached, type Embed } from "../embed/model.js";
 import { fillExplanations } from "../learn/explain.js";
+import { replay } from "../learn/replay.js";
 import { keepLine, openFlags, removeLine, restoreLine, rootOf } from "../memory/stale.js";
 import { pickRunner, saveUsage } from "../learn/writer.js";
 import { reportData } from "../commands/report.js";
@@ -107,6 +108,12 @@ const routes: Record<string, Handler> = {
   "GET /api/report": async (db, q) => reportData(db, q.get("repo") || null),
   "GET /api/home": async (db, q) => homeData(db, q.get("repo") || null),
   // The running plan: read it, change it, and the PLAN.md switch. Changes refresh PLAN.md (if on) and Cursor's rules.
+  // "When would this have been told?": trigger words tried against past sessions in the repo.
+  "POST /api/replay": async (_db, _q, b) => {
+    const repo = String(b.repo ?? ""); if (!repo) throw new Error("This lesson isn't tied to a repo, so there are no sessions to try it on.");
+    const route = b.route === "always" || b.route === "none" ? b.route : "keyword";
+    return replay(repo, route, String(b.words ?? "").split(","));
+  },
   // Lines in CLAUDE.md (and similar files) that may be out of date: remove, put back, or keep.
   "GET /api/memory": async (db, q) => (await openFlags(db, q.get("repo") || null)).map((r) => ({ id: r.id, repo_id: r.repo_id, file: r.file, line: r.line, text: r.text, reason: r.reason, detail: r.detail, status: r.status })),
   "POST /api/memory": async (db, _q, b) => {

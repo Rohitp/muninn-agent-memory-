@@ -24,6 +24,8 @@ Items of kind "explained" are a long message where the engineer explained someth
 
 Items of kind "loop", "refetch" and "stopped" are wasted effort: a command that failed the same way several times in a row, one re-run with different output limits, or one the engineer stopped. Return a lesson only if it would stop this happening next time (what to do instead, or what to check first). For "refetch", the usual lesson is to read the whole output once, or narrow the command, instead of paging.
 
+For command items ("failure_then_fix", "mistake_returned", "loop", "refetch", "stopped"), "quotes" are the actual runs, each as "$ command  →  first line it printed". Check them before writing anything: return null unless they show the same command doing what "seen" says. If the runs are different commands or scripts that only look alike, or the output doesn't show the claimed failure or repeat, return null. Base the lesson on what the runs show, not on "seen" alone.
+
 Do not claim one thing fixed another unless the evidence shows it. Do not add facts that are not in the item.
 
 Also say whether a lesson applies only to this repo ("repo") or to any repo, such as shell behaviour or how to explain things ("global").

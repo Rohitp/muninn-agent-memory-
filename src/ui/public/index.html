@@ -57,12 +57,17 @@ input[type=text] { width: 100%; height: 40px; border: 1px solid var(--line-stron
 .checkline, .detail .checkline { display: flex; gap: 8px; align-items: center; font-size: 14px; font-weight: 400; margin-top: 14px; width: auto; }
 .checkline input { margin: 0; width: 16px; height: 16px; flex: none; }
 .hint { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.replay { margin-top: 10px; }
+.replaylist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.replaylist .mono { font-size: 12px; margin-top: 2px; }
+.replaylist li, .replaylist .sub { font-size: 12px; font-weight: 400; color: var(--muted); padding: 0; }
 .btns { display: flex; gap: 10px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
 .btn { height: 38px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--group); cursor: pointer; font-size: 14px; }
 .btn.primary { background: var(--ink); border-color: var(--ink); color: var(--group); font-weight: 600; }
 .btn.textbtn { border: 0; background: none; padding: 0; height: auto; color: var(--warn); margin-left: auto; }
 .fix { height: 30px; padding: 0 12px; border-radius: 999px; border: 0; background: var(--warn-bg); color: var(--warn); font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 6px; }
 .evidence { font-size: 13px; color: var(--muted); margin-top: 12px; }
+.evidence .run { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; color: var(--ink); white-space: pre-wrap; }
 .empty { padding: 16px 18px; color: var(--muted); }
 .check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line-strong); background: var(--group); cursor: pointer; flex: none; padding: 0; }
 .check:hover { border-color: var(--on); }
@@ -231,13 +236,16 @@ function whenChoices(route, kws) {
   return `<span class="lbl">When to tell agents</span>
     <div class="choices" role="radiogroup" aria-label="When to tell agents">${["always", "keyword", "none"].map((r) => `<button role="radio" data-route="${r}" aria-checked="${r === route}">${WHEN[r]}</button>`).join("")}</div>
     <p class="hint" data-when-hint>${WHEN_HINT[route]}</p>
-    <input type="text" data-f="kw" placeholder="Words that should bring it up, comma-separated" value="${esc(kws)}" ${route === "keyword" ? "" : "hidden"}>`;
+    <input type="text" data-f="kw" placeholder="Words that should bring it up, comma-separated" value="${esc(kws)}" ${route === "keyword" ? "" : "hidden"}>
+    <div class="replay"><button class="linkbtn" data-replay>When would this have been told?</button><div data-replay-out></div></div>`;
 }
 
 function suggestionRow(l) {
   const d = l.defaults;
   const isOpen = open === l.id;
-  const ev = (l.evidence || []).slice(0, 3).map((e) => `<div>"${esc(e.quote)}"</div>`).join("");
+  // From commands, the evidence is the runs themselves, shown as they were; from what you typed, your words.
+  const runs = (l.evidence || []).some((e) => e.quote.startsWith("$ "));
+  const ev = (l.evidence || []).slice(0, 3).map((e) => runs ? `<div class="mono run">${esc(e.quote)}</div>` : `<div>"${esc(e.quote)}"</div>`).join("");
   return `<li data-id="${esc(l.id)}">
     <div class="row">
       <button class="main" data-open="${esc(l.id)}" aria-expanded="${isOpen}"><div class="title">${esc(l.plain || l.text)}</div><div class="sub">${esc(l.origin)}</div>${l.worth ? `<div class="sub">${esc(l.worth)}</div>` : ""}</button>
@@ -249,7 +257,7 @@ function suggestionRow(l) {
       <textarea id="t-${esc(l.id)}" rows="3" data-f="text">${esc(l.text)}</textarea>
       ${whenChoices(d.route, (d.keywords.length ? d.keywords : l.suggested || []).join(", "))}
       ${l.scope !== "global" ? `<label class="checkline"><input type="checkbox" data-f="global" ${d.global ? "checked" : ""}> Tell agents in all my repos, not just this one</label>` : ""}
-      ${ev ? `<div class="evidence">${["repeat", "correction", "explained"].includes(l.signal) ? "You said" : "From your session"}: ${ev}</div>` : ""}
+      ${ev ? `<div class="evidence">${runs ? "What ran in your session:" : ["repeat", "correction", "explained"].includes(l.signal) ? "You said:" : "From your session:"} ${ev}</div>` : ""}
       <div class="btns"><button class="btn primary" data-add="${esc(l.id)}" data-custom="1">Add</button><button class="btn" data-open="${esc(l.id)}">Cancel</button></div>
     </div>` : ""}
   </li>`;
@@ -382,6 +390,18 @@ document.addEventListener("click", async (e) => {
     }
     if (el.dataset.scan !== undefined) { await startScan(el); return; }
     if (el.dataset.repo) { repo = el.dataset.repo; open = null; showAll = false; await refresh(); window.scrollTo(0, 0); return; }
+    if (el.dataset.replay !== undefined) {
+      const box = el.closest(".detail"); const li = el.closest("li[data-id]");
+      const l = [...data.suggested, ...data.kept].find((x) => x.id === li?.dataset.id);
+      const route = box.querySelector("[data-route][aria-checked=true]").dataset.route;
+      const out = box.querySelector("[data-replay-out]");
+      out.innerHTML = `<p class="hint">Reading your past sessions…</p>`;
+      try {
+        const r = await api("/api/replay", { repo: l?.repo_id || repo, route, words: box.querySelector("[data-f=kw]").value });
+        out.innerHTML = `<p class="hint" style="color:var(--ink)">${esc(r.sentence)}</p>` + (r.examples.length ? `<ul class="replaylist">${r.examples.map((x) => `<li><span class="sub">${esc(shortDate(x.at))} · ${esc(x.where)}</span><div class="mono">${esc(x.text)}</div></li>`).join("")}</ul>` : "");
+      } catch (err) { out.innerHTML = `<p class="hint">${esc(err.message)}</p>`; }
+      return;
+    }
     if (el.dataset.route) {
       const box = el.closest(".detail"); box.querySelectorAll("[data-route]").forEach((b) => b.setAttribute("aria-checked", String(b === el)));
       box.querySelector("[data-when-hint]").textContent = WHEN_HINT[el.dataset.route];
