@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeF
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ensureHome } from "../config.js";
 
 export type Client = "claude-code" | "codex";
 const files: Record<Client, () => string> = {
@@ -55,6 +56,8 @@ export function installFor(client: Client, events = Object.keys(EVENTS[client]))
 }
 /** Installs for Claude Code, and for Codex when it is present. */
 export function install(events = ALL_EVENTS) {
+  // The `muninn` command reruns itself on this Node when the PATH offers an older one (the hooks use it directly).
+  writeFileSync(join(ensureHome(), "node"), realpathSync(process.execPath));
   const done = installFor("claude-code", events);
   const codex = codexPresent() ? installFor("codex", events.map((e) => (e === "PostToolUseFailure" ? "PostToolUse" : e))) : [];
   if (!done.length && !codex.length) { console.log("muninn's hooks are already installed."); return; }

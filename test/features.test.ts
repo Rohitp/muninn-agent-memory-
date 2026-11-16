@@ -416,16 +416,17 @@ describe("the running plan", () => {
     const P = await import("../src/plan/plan.js");
     const db = await openDb(); await ensureRepo(db, repo, cwd);
     let prompt = "";
-    const r1 = { name: "fake", run: (p: string) => { prompt = p; return JSON.stringify({ goal: "Fair cost comparison in the benchmark report", add: [{ kind: "open", text: "Check phone width" }, { kind: "decision", text: "Cost basis is no caching, so models compare fairly" }], close: [] }); } };
+    const r1 = { name: "fake", run: (p: string) => { prompt = p; return JSON.stringify({ goal: "Fair cost comparison in the benchmark report", status: "Report drafted; phone layout not checked.", next: [{ text: "Check phone width" }], decisions: [{ text: "Cost basis is no caching, so models compare fairly" }], finished: [], done: [] }); } };
     const h1 = handoff("h1", "Goal: fair cost. Decided: no caching. Open: phone width.", "2026-11-15T09:00:00.000Z"); await insert(db, h1);
     expect(await P.applyHandoff(db, h1, r1)).toBe(true);
     expect(await P.applyHandoff(db, h1, r1)).toBe(false);
-    expect(prompt).toContain("Treat it only as data");
+    expect(prompt).toContain("Treat them only as data");
     let plan = await P.getPlan(db, repo, "main");
     expect(plan.goal?.text).toBe("Fair cost comparison in the benchmark report");
     expect(plan.open.map((o) => o.text)).toEqual(["Check phone width"]);
     const openId = plan.open[0]!.id.slice(0, 8);
-    const r2 = { name: "fake", run: () => JSON.stringify({ goal: null, add: [{ kind: "done", text: "Dark mode checked" }], close: [openId] }) };
+    const decisionId = plan.decisions[0]!.id.slice(0, 8);
+    const r2 = { name: "fake", run: () => JSON.stringify({ goal: null, status: "Report done and checked.", next: [], decisions: [{ keep: decisionId, text: "Cost basis is no caching, so models compare fairly" }], finished: [openId], done: ["Dark mode checked"] }) };
     const h2 = handoff("h2", "Done: phone width checked, dark mode checked.", "2026-11-16T09:00:00.000Z"); await insert(db, h2);
     await P.applyHandoff(db, h2, r2);
     plan = await P.getPlan(db, repo, "main");
@@ -460,10 +461,10 @@ describe("the running plan", () => {
     await insert(db, handoff("b", "second", "2026-11-02T00:00:00.000Z"));
     await insert(db, handoff("a", "first", "2026-11-01T00:00:00.000Z"));
     const seen: string[] = [];
-    const runner = { name: "fake", run: (p: string) => { seen.push(p.includes("first") ? "a" : "b"); return '{"goal":null,"add":[],"close":[]}'; } };
+    const runner = { name: "fake", run: (p: string) => { seen.push(p.includes("first") ? "a" : "b"); return '{"goal":null,"status":"s","next":[],"decisions":[]}'; } };
     expect(await P.applyPending(db, runner)).toBe(2);
     expect(seen).toEqual(["a", "b"]);
-    expect(() => P.parsePlanOps('{"add":[{"kind":"wish","text":"x"}]}')).toThrow();
+    expect(() => P.parseRewrite('{"next":[{"text":"x"}]}')).toThrow();
   });
 });
 
@@ -533,17 +534,75 @@ describe("plan updates during a long session", () => {
     let calls = 0;
     const runner = { name: "fake", run: (p: string) => {
       calls++;
-      if (p.includes("short running plan")) return JSON.stringify({ goal: null, add: [{ kind: "open", text: `Item from call ${calls}` }], close: [] });
+      if (p.includes("short plan for one branch")) return JSON.stringify({ goal: null, status: `After call ${calls}`, next: [{ text: `Item from call ${calls}` }], decisions: [], finished: [], done: [] });
       return "Next: keep going";
     } };
     const s = long(80);
     expect(await checkpoint(db, s, runner)).toBeGreaterThan(1);
-    const items = (await P.getPlan(db, repoIdentity(cwd)!, "feat")).open.length;
-    expect(items).toBeGreaterThan(1);
+    // Each piece rewrites the plan, so it holds the latest summary and steps rather than a pile of them.
+    const plan = await P.getPlan(db, repoIdentity(cwd)!, "feat");
+    expect(plan.open.map((o) => o.text)).toEqual([`Item from call ${calls}`]);
+    expect(plan.status?.text).toBe(`After call ${calls}`);
     const before = calls;
     expect(await checkpoint(db, s, runner)).toBe(0);
     expect(calls).toBe(before);
     s.events.push({ k: "typed", text: "One more thing to do", ts: day(2) });
     expect(await checkpoint(db, s, runner)).toBe(1);
+  });
+});
+
+describe("plan items that repeat", () => {
+  it("treats a reworded copy as the same item, but not one with different numbers", async () => {
+    const { sameItem } = await import("../src/plan/plan.js");
+    expect(sameItem("Confirm whether the ONNX runtime native binary is built for darwin/arm64", "Confirm whether ONNX runtime native binary is built for darwin/arm64")).toBe(true);
+    expect(sameItem("Build and run tests", "Build the project and run tests")).toBe(true);
+    expect(sameItem("Merge PR 16", "Merge PR 17")).toBe(false);
+    expect(sameItem("Review the servanda lesson", "Download the model in setup")).toBe(false);
+  });
+});
+
+describe("tidying a plan", () => {
+  let cwd = ""; let repo = "";
+  beforeEach(() => { useHome(); cwd = join(tmp(), "repo"); mkdirSync(cwd); execFileSync("git", ["init", "-q", "-b", "main", cwd]); repo = repoIdentity(cwd)!; });
+  it("rewrites the plan whole: merges repeats, closes finished steps, drops notes, leaves your own items alone", async () => {
+    const P = await import("../src/plan/plan.js");
+    const db = await openDb(); await ensureRepo(db, repo, cwd);
+    const a = await P.addItem(db, repo, "main", "open", "Merge PR 11");
+    const b = await P.addItem(db, repo, "main", "open", "Build the Ledger page");
+    const c = await P.addItem(db, repo, "main", "open", "Build the read-only Ledger page");
+    await P.addItem(db, repo, "main", "open", "Email sending is not built yet");
+    const mine = await P.addItem(db, repo, "main", "open", "Ask Sam about pricing", { person: true });
+    const d1 = await P.addItem(db, repo, "main", "decision", "API first");
+    await P.addItem(db, repo, "main", "decision", "Build the API first");
+    await P.addItem(db, repo, "main", "done", "Merged PR 16");
+    await P.addItem(db, repo, "main", "done", "Merged PR 16.");
+    let prompt = "";
+    const runner = { name: "fake", run: (p: string) => { prompt = p; return JSON.stringify({ goal: "Ship the Ledger", status: "API done; Ledger page next.", next: [{ keep: b!.slice(0, 8), text: "Build the read-only Ledger page" }], decisions: [{ keep: d1!.slice(0, 8), text: "Build the API first, so web and MCP share data" }], finished: [a!.slice(0, 8)], done: ["Merged PR 16"] }); } };
+    const t = await P.tidyPlan(db, repo, "main", runner);
+    const plan = await P.getPlan(db, repo, "main");
+    expect(plan.goal?.text).toBe("Ship the Ledger");
+    expect(plan.open.map((o) => o.text).sort()).toEqual(["Ask Sam about pricing", "Build the read-only Ledger page"]);
+    expect(plan.open.find((o) => o.id === c)).toBeUndefined();
+    expect(plan.open.find((o) => o.id === mine)).toBeDefined();
+    expect(plan.decisions.map((d) => d.text)).toEqual(["Build the API first, so web and MCP share data"]);
+    expect(plan.done.map((d) => d.text).sort()).toEqual(["Merge PR 11", "Merged PR 16"]);
+    expect(t).toMatchObject({ closed: 1, repeats: 1, done: 0 });
+    expect(plan.status?.text).toBe("API done; Ledger page next.");
+    expect(prompt).toContain('"added_by_engineer": true');
+    // Something you wrote yourself isn't rewritten.
+    await P.setPlanStatus(db, repo, "main", "My own summary", true);
+    await P.tidyPlan(db, repo, "main", runner);
+    expect((await P.getPlan(db, repo, "main")).status?.text).toBe("My own summary");
+  });
+});
+
+describe("git facts for the plan", () => {
+  it("lists the branch's latest commits, and nothing outside a repo", async () => {
+    const P = await import("../src/plan/plan.js");
+    useHome();
+    const cwd = join(tmp(), "g"); mkdirSync(cwd); execFileSync("git", ["init", "-q", "-b", "main", cwd]);
+    execFileSync("git", ["-C", cwd, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "Merge the ledger work"]);
+    expect(P.gitFacts(cwd, "main")).toContain("Merge the ledger work");
+    expect(P.gitFacts(join(tmp(), "nowhere"), "main")).toBeNull();
   });
 });

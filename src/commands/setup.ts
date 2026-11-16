@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { enableCursor } from "../deliver/cursor.js";
+import { loadEmbedder, modelCached, MODEL_SIZE, MODEL_SOURCE } from "../embed/model.js";
 import { logFiles } from "../logs/discover.js";
 import { readCursor } from "../logs/cursor.js";
 import { repoIdentity } from "../repo/identity.js";
@@ -25,7 +26,8 @@ export async function setup(args: string[]) {
   console.log(`muninn learns from your coding sessions and gives your agents what you've taught them.
 
 What it reads: your Claude Code, Codex and Cursor session logs, on this machine.
-What it sends: redacted excerpts to your own Claude Code (or Codex) to write lessons. Nothing else leaves this machine.
+What it sends: redacted excerpts to your own Claude Code (or Codex) to write lessons.
+What it downloads: a small local model (${MODEL_SIZE}, from ${MODEL_SOURCE}), once. Nothing else leaves this machine.
 What it changes: adds hooks to Claude Code${codexPresent() ? " and Codex" : ""}, and rules files in repos you use Cursor in.
 Nothing reaches an agent until you keep it.
 `);
@@ -35,6 +37,13 @@ Nothing reaches an agent until you keep it.
   const heading = (t: string) => console.log(`\n${++step}. ${t}`);
   heading("Hooks");
   install();
+
+  // Downloaded now, not at the first scan: with no sessions yet that scan stops early, and automatic scans can't ask.
+  if (!modelCached()) {
+    heading(`Local model (${MODEL_SIZE}). It runs on this machine and spots instructions that mean the same thing.`);
+    try { await loadEmbedder(); console.log("   Done."); }
+    catch (e) { console.log(`   Couldn't download it: ${e instanceof Error ? e.message : String(e)}. Run "muninn learn --all-repos" later to try again.`); }
+  }
 
   const f = logFiles();
   const cursorRepos = new Map<string, string>();

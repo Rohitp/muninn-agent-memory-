@@ -1,0 +1,23 @@
+import { pickRunner, saveUsage } from "../learn/writer.js";
+import { tidyPlan } from "../plan/plan.js";
+import { repoIdentity } from "../repo/identity.js";
+import { openDb } from "../store/db.js";
+
+/** muninn plan tidy [--all-repos]: rewrites each branch's plan as a short summary, checked against git. */
+export async function planCmd(args: string[]) {
+  if (args[0] !== "tidy") { console.log('Usage: muninn plan tidy [--all-repos]'); return; }
+  const runner = pickRunner();
+  if (!runner) { console.error("No Claude Code or Codex client found to tidy with."); process.exitCode = 1; return; }
+  const db = await openDb();
+  const here = args.includes("--all-repos") ? null : repoIdentity(process.cwd());
+  if (!args.includes("--all-repos") && !here) { console.error("This folder is not in a git repo. Run it inside one, or use --all-repos."); process.exitCode = 1; return; }
+  const rows = (await db.execute({ sql: `SELECT DISTINCT repo_id, branch FROM plan_items WHERE status='active' AND kind IN ('open','decision')${here ? " AND repo_id=?" : ""}`, args: here ? [here] : [] })).rows;
+  for (const r of rows) {
+    const repo = String(r.repo_id), branch = String(r.branch);
+    try {
+      const t = await tidyPlan(db, repo, branch, runner);
+      if (t) console.log(`${repo.split("/").pop()} @ ${branch}: next steps ${t.before.next} → ${t.after.next}, decisions ${t.before.decisions} → ${t.after.decisions}, ${t.closed} closed as finished, ${t.done} added to done, ${t.repeats} repeats removed.`);
+    } catch (e) { console.log(`${repo.split("/").pop()} @ ${branch}: couldn't tidy (${e instanceof Error ? e.message : String(e)}).`); }
+    await saveUsage(db, runner, "plan tidy");
+  }
+}

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { home, isPaused } from "../config.js";
 import { repoIdentity } from "../repo/identity.js";
+import { modelCached } from "../embed/model.js";
 import { openDb } from "../store/db.js";
 import { keywordsInUse } from "../store/lessons.js";
 import { EVENTS, codexPresent, installed } from "./install.js";
@@ -51,7 +52,8 @@ export async function status() {
     console.log(`Codex: ${ch.length ? `${cm.length ? `connected, but not for ${cm.map((e) => HOOK_WORDS[e]).join(", ")}. Run: muninn install, then trust it in Codex's /hooks` : "connected (Codex runs the hooks only after you trust them in /hooks)"}` : "not connected. Run: muninn install"}`);
   }
   const lastLearn = await meta("last_learn");
-  console.log(`Checked your sessions for lessons: ${lastLearn ? ago(lastLearn) : "not yet"} (it does this on its own after you work)`);
+  if (!modelCached()) console.log('Checked your sessions for lessons: never, because the local model isn\'t downloaded yet. Run "muninn learn --all-repos" once to download it (about 33 MB).');
+  else console.log(`Checked your sessions for lessons: ${lastLearn ? ago(lastLearn) : "not yet"} (it does this on its own after you work)`);
   const live = (await db.execute({ sql: "SELECT count(*) n FROM lessons WHERE status='live' AND off=0 AND (repo_id IS ? OR repo_id=? OR scope='global')", args: [repo, repo] })).rows[0]?.n ?? 0;
   const waiting = (await db.execute({ sql: "SELECT count(*) n FROM lessons WHERE status='proposed' AND (repo_id IS ? OR repo_id=?)", args: [repo, repo] })).rows[0]?.n ?? 0;
   console.log(`${repo ? `In this repo (${repo.split("/").pop()})` : "Here (not a git repo)"}: agents are told ${live} lesson${Number(live) === 1 ? "" : "s"}${Number(waiting) ? `, and ${waiting} suggestion${Number(waiting) === 1 ? " is" : "s are"} waiting in muninn ui` : ""}.`);

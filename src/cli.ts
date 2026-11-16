@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensureHome, home } from "./config.js";
@@ -14,6 +15,7 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn edit <id> [--text "..."] [--always-on|--not-always-on] [--trigger word] [--global|--repo-scope]
   muninn retire <id>
   muninn ask "question"         Search kept lessons and notes in every repo
+  muninn plan tidy [--all-repos]  Rewrite branch plans, checked against git
   muninn handoff [--list]       Where the last session on this branch left off
   muninn setup                  Set everything up and take a first look (start here)
   muninn report [--all]         Did kept lessons work: delivered, and seen again since
@@ -51,6 +53,16 @@ async function cursorCmd(sub: string) {
 function nodeTooOld(): boolean {
   const major = Number(process.versions.node.split(".")[0]);
   if (major >= 22) return false;
+  // `muninn` starts on whichever Node is first on the PATH, which for an app like Claude Code may be an older one.
+  // Rerun on the Node that installed the hooks, if muninn recorded one.
+  try {
+    const node = readFileSync(join(home(), "node"), "utf8").trim();
+    if (node && existsSync(node) && node !== process.execPath) {
+      const r = spawnSync(node, [process.argv[1]!, ...process.argv.slice(2)], { stdio: "inherit" });
+      process.exitCode = r.status ?? 1;
+      return true;
+    }
+  } catch { /* nothing recorded: explain below */ }
   console.error(`muninn needs Node 22 or newer. This is Node ${process.versions.node}.
 Install Node 22 (for example "fnm install 22", "nvm install 22" or "brew install node@22"), open a new terminal,
 then in the muninn folder run: pnpm install && pnpm build && npm link`);
@@ -68,7 +80,9 @@ async function main() {
       const { takeLock, releaseLock, stamp, scanDue } = await import("./commands/auto.js");
       // --force is the page's "Check now": run even if a scan isn't due yet.
       if ((!args.includes("--force") && !scanDue()) || !takeLock()) return;
-      try { await learn({ allRepos: true, auto: true }); stamp(); } finally { releaseLock(); }
+      // Without the local model the scan stops before reading anything, so it isn't stamped and is tried again next time.
+      const { modelCached } = await import("./embed/model.js");
+      try { await learn({ allRepos: true, auto: true }); if (modelCached()) stamp(); } finally { releaseLock(); }
       return;
     }
     case "review": {
@@ -87,6 +101,7 @@ async function main() {
     case "ask": return (await import("./commands/ask.js")).ask(args);
     case "cursor": return cursorCmd(args[0] ?? "");
     case "handoff": return (await import("./commands/handoff.js")).handoff(args);
+    case "plan": return (await import("./commands/plan.js")).planCmd(args);
     case "checkpoint": return (await import("./commands/handoff.js")).checkpointCmd(args);
     case "report": return (await import("./commands/report.js")).report(args);
     case "setup": return (await import("./commands/setup.js")).setup(args);

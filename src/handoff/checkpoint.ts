@@ -46,8 +46,11 @@ Write at most 8 short lines, each starting with one of these labels, only for la
 Goal: what the engineer is trying to do.
 Done: what was finished in this part.
 Decided: choices made, with the reason if given.
-Next: what is about to happen next.
-Open: unresolved problems or questions.
+Next: what is still to do, as an action.
+Open: problems or questions still unresolved at the end of this part.
+
+Leave out anything this part both raised and settled, and anything that is only a status report.
+Write so someone who missed the session understands each line.
 
 Use only facts in this part. Keep names, paths, commands and numbers exact. No preamble.
 If this part has nothing worth noting, reply with only NONE.

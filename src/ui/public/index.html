@@ -107,7 +107,7 @@ function planEditor(kind, id, value, placeholder) {
 function planSection() {
   if (!repo || !data.plan) return "";
   const p = data.plan.plan;
-  const empty = !p.goal && !p.open.length && !p.decisions.length && !p.done.length;
+  const empty = !p.goal && !p.status && !p.open.length && !p.decisions.length && !p.done.length;
   const openRow = (o) => planEdit === o.id ? `<li>${planEditor("open", o.id, o.text, "A next step or open question")}</li>` : `<li><div class="row">
       <button class="check" role="checkbox" aria-checked="false" aria-label="Mark done: ${esc(o.text)}" data-plan-close="${esc(o.id)}"></button>
       <button class="main" data-plan-edit="${esc(o.id)}"><div class="title">${esc(o.text)}</div><div class="sub">${o.by_person ? "added by you" : `from a session on ${shortDate(o.created_at)}`}</div></button>
@@ -121,6 +121,9 @@ function planSection() {
     <ul class="group">
       ${planEdit === "goal" ? `<li>${planEditor("goal", "", p.goal?.text ?? "", "What this project is trying to do")}</li>`
         : `<li><div class="row"><button class="main" data-plan-edit="goal"><div class="sub">Goal</div><div class="title">${p.goal ? esc(p.goal.text) : '<span style="color:var(--link)">Add a goal</span>'}</div></button></div></li>`}
+      ${planEdit === "status" ? `<li>${planEditor("status", "", p.status?.text ?? "", "Where things stand, in a few sentences")}</li>`
+        : `<li><div class="row"><button class="main" data-plan-edit="status"><div class="sub">Where it stands${p.status ? ` · ${p.status.by_person ? "written by you" : `updated ${esc(shortDate(p.status.at))}`}` : ""}</div><div class="title" style="font-weight:400">${p.status ? esc(p.status.text) : '<span style="color:var(--link)">Add a summary</span>'}</div></button></div></li>`}
+      ${p.open.length ? `<li><div class="sub" style="padding:10px 14px 0">Next</div></li>` : ""}
       ${p.open.map(openRow).join("")}
       ${planEdit === "new" ? `<li>${planEditor("open", "", "", "A next step or open question")}</li>` : `<li><button class="more" data-plan-new>+ Add a next step</button></li>`}
       ${p.decisions.length ? `<li><button class="more" data-plan-toggle="decisions" style="color:var(--ink)">Decisions · ${p.decisions.length} <span class="sub">${planShow.decisions ? "hide" : "show"}</span></button>
@@ -128,7 +131,7 @@ function planSection() {
       ${p.done.length ? `<li><button class="more" data-plan-toggle="done" style="color:var(--ink)">Done · ${p.done.length} <span class="sub">${planShow.done ? "hide" : "show"}</span></button>
         ${planShow.done ? `<ul class="sublist">${p.done.map((d) => `<li><span class="sub">${shortDate(d.closed_at || d.created_at)}</span> ${esc(d.text)}${d.kind === "open" ? ` <button class="linkbtn" data-plan-reopen="${esc(d.id)}">reopen</button>` : ""}</li>`).join("")}</ul>` : ""}</li>` : ""}
     </ul>
-    <p class="note">${data.plan.branches.find((b) => b.name === data.plan.branch)?.merged ? "This branch is merged, so its work is finished. " : ""}${empty ? "Each branch is its own piece of work. muninn builds its plan from the sessions on it: when one ends, it adds next steps and decisions, and ticks off what got done. You can also add your own." : "Built from the sessions on this branch and kept up to date as they end. Agents working on this branch get its goal, what's open and recent decisions when a session starts."}</p>
+    <p class="note">${data.plan.branches.find((b) => b.name === data.plan.branch)?.merged ? "This branch is merged, so its work is finished. " : ""}${empty ? "Each branch is its own piece of work. muninn builds its plan from the sessions on it: a short summary of where things stand, the next few steps, and the decisions that still hold. You can also write your own." : "Rewritten as your sessions go, and checked against the branch's commits and pull requests. Agents working on this branch get it when a session starts. Anything you write yourself stays as you wrote it."}</p>
   </section>`;
 }
 async function planDo(body) { const r = await api("/api/plan", { repo, branch: data.plan.branch, ...body }); data.plan = r; planEdit = null; draw(); }
@@ -153,6 +156,7 @@ async function load() {
 function scanLine() {
   const s = data.scan;
   if (s.running) return `<span class="spin" aria-hidden="true"></span> Checking your sessions for new lessons. New suggestions appear here when it's done.`;
+  if (s.needsModel) return `muninn can't check your sessions until its local model is downloaded (about 33 MB). Run <code>muninn learn --all-repos</code> once in a terminal.`;
   return `${s.lastLearn ? `muninn checked your sessions ${esc(ago(s.lastLearn))}` : "muninn hasn't checked your sessions yet"}, and checks again on its own after you work. <button class="linkbtn" data-scan>Check now</button>`;
 }
 let scanPoll = null;
@@ -287,7 +291,8 @@ async function savePlanInput() {
   const input = $("[data-plan-input]"); if (!input) return;
   const text = input.value.trim();
   if (!text) { planEdit = null; draw(); return; }
-  if (input.dataset.id) await planDo({ action: "edit", id: input.dataset.id, text });
+  if (input.dataset.kind === "status") await planDo({ action: "status", text });
+  else if (input.dataset.id) await planDo({ action: "edit", id: input.dataset.id, text });
   else await planDo({ action: "add", kind: input.dataset.kind, text });
   toast("Saved to the plan.");
 }
