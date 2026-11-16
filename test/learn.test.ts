@@ -84,6 +84,14 @@ describe("command signals", () => {
   it("finds a command re-run with different limits, and commands the engineer stopped twice", async () => {
     const m = await find([withCmds("a", 1, cmd("make test | tail -20", false, 1, "x"), cmd("make test | tail -80", false, 1, "x"), cmd("make test | tail -200", false, 1, "x"))]);
     expect(m.filter((x) => x.signal === "refetch").map((x) => x.text)).toEqual(["`make test` was run 3 times with different limits, each time re-reading output the previous run had cut off"]);
+    // Only the runs before the last were read twice: 2 runs of 1 token each.
+    expect(m.find((x) => x.signal === "refetch")!.wasted).toBe(2);
+    // Different scripts that share a first line and trim their output aren't one command paged through.
+    const scripts = await find([withCmds("b", 1, ...[1, 2, 3, 4].map((i) => cmd(`python3 - <<'EOF'\nprint(${i})\nEOF\ngrep x f | head -${i}`, false, 1, "x")))]);
+    expect(scripts.filter((x) => x.signal === "refetch")).toHaveLength(0);
+    // Reading a file in separate slices reads each part once.
+    const slices = await find([withCmds("c", 1, cmd("sed -n 1,80p a.ts", false, 1), cmd("sed -n 80,160p a.ts", false, 1), cmd("sed -n 160,240p a.ts", false, 1))]);
+    expect(slices.filter((x) => x.signal === "refetch")).toHaveLength(0);
     const stop = (c: string): LogEvent => ({ ...cmd(c, true, 1), stopped: true });
     const s = await find([withCmds("a", 1, stop("rm -rf build")), withCmds("b", 2, stop("rm -rf build"))]);
     expect(s.filter((x) => x.signal === "stopped")).toHaveLength(1);

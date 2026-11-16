@@ -118,7 +118,12 @@ function explainedMoments(sessions: Session[]): Moment[] {
 }
 
 /** A limit or offset that pages through output: `| head -50`, `-n 20`, `--max-count=5`, `LIMIT 10`. */
-export const PAGE = /\|\s*(?:head|tail)\s+-n?\s*\d+|\s-n\s*\d+|--max-count[= ]\d+|--lines[= ]\d+|\bhead\s+-\d+|\b(?:limit|offset)[= ]\d+|\bLIMIT\s+\d+|\bOFFSET\s+\d+/gi;
+/**
+ * A cap on how much output a command shows, counted from the start (or end): `| head -50`, `| tail -n 20`,
+ * `--max-count=5`, `LIMIT 10`. Raising one re-shows everything the smaller one showed. Windows into the middle
+ * (offsets, `sed -n 80,160p`) aren't here: reading a file in separate slices reads each part once.
+ */
+export const PAGE = /\|\s*(?:head|tail)\s+(?:-n\s*)?-?\d+|--max-count[= ]\d+|--lines[= ]\d+|\blimit[= ]\d+|\bLIMIT\s+\d+/gi;
 /** Rough tokens in some output, about four characters each: what a repeat cost. */
 export const tokensIn = (o: string) => Math.ceil(o.length / 4);
 /** How many times in a row the same command must fail the same way to count as a loop. */
@@ -135,7 +140,8 @@ function commandMoments(sessions: Session[]): Moment[] {
     const run = new Map<string, { err: string; n: number; tokens: number; ts: string }>();
     const loops = new Map<string, { err: string; n: number; tokens: number; ts: string }>();
     // Re-fetches: one command re-run with different limits, each time re-reading output the last run cut off.
-    const pages = new Map<string, { raws: Set<string>; tokens: number; ts: string }>();
+    // Keyed on the whole command with its caps taken out: only the very same command, re-run with a bigger cap, counts.
+    const pages = new Map<string, { key: string; raws: Set<string>; outputs: number[]; ts: string }>();
     for (const e of s.events) {
       if (e.k !== "cmd") continue;
       if (e.stopped) {
@@ -144,9 +150,10 @@ function commandMoments(sessions: Session[]): Moment[] {
         continue;
       }
       if (!e.failed && new RegExp(PAGE.source, "i").test(e.cmd)) {
-        const base = normCommand(e.cmd.replace(PAGE, ""));
-        const p = pages.get(base) ?? { raws: new Set<string>(), tokens: 0, ts: e.ts };
-        p.raws.add(e.cmd.trim()); p.tokens += tokensIn(e.output); p.ts = e.ts; pages.set(base, p);
+        const whole = e.cmd.replace(PAGE, "").replace(/\s+/g, " ").trim();
+        const p = pages.get(whole) ?? { key: normCommand(e.cmd.replace(PAGE, "")), raws: new Set<string>(), outputs: [], ts: e.ts };
+        if (!p.raws.has(e.cmd.trim())) { p.raws.add(e.cmd.trim()); p.outputs.push(tokensIn(e.output)); }
+        p.ts = e.ts; pages.set(whole, p);
       }
       const key = normCommand(e.cmd);
       if (!key || BENIGN.test(key)) continue;
@@ -184,15 +191,17 @@ function commandMoments(sessions: Session[]): Moment[] {
       quotes: [{ tool: s.tool, session: s.id, ts: l.ts, quote: redact(`${key} failed ${l.n} times in a row: ${l.err}`).slice(0, 240) }],
       sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: l.ts, wasted: l.tokens,
     });
-    for (const [key, p] of pages) {
+    for (const p of pages.values()) {
+      const key = p.key;
       if (p.raws.size < LOOP_MIN) continue;
       const examples = [...p.raws].slice(0, 3).map((r) => r.slice(0, 80));
       out.push({
         signal: "refetch", text: redact(`\`${key}\` was run ${p.raws.size} times with different limits, each time re-reading output the previous run had cut off`),
-        context: redact(`Runs: ${examples.join(" ; ")}. About ${p.tokens} tokens of output in all.`),
+        context: redact(`Runs: ${examples.join(" ; ")}. About ${p.outputs.reduce((a, b) => a + b, 0)} tokens of output in all.`),
         quotes: [{ tool: s.tool, session: s.id, ts: p.ts, quote: redact(`${key} re-run ${p.raws.size} times with different limits`).slice(0, 240) }],
         // The first run's output was needed; the re-reads were the waste.
-        sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: p.ts, wasted: Math.round(p.tokens * (p.raws.size - 1) / p.raws.size),
+        // Each bigger cap re-showed what the smaller ones had: everything before the last run was read again.
+        sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: p.ts, wasted: p.outputs.slice(0, -1).reduce((a, b) => a + b, 0),
       });
     }
   }
