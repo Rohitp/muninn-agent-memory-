@@ -14,7 +14,7 @@ import { loadEmbedder, modelCached, type Embed } from "../embed/model.js";
 import { fillExplanations } from "../learn/explain.js";
 import { pickRunner, saveUsage } from "../learn/writer.js";
 import { reportData } from "../commands/report.js";
-import { defaultRoute, isPreference, similar, suggestKeyword } from "../commands/review.js";
+import { defaultRoute, isPreference, similar, suggestKeyword, usefulKeyword } from "../commands/review.js";
 import { settings } from "../config.js";
 import { syncCursor } from "../deliver/cursor.js";
 import { repoIdentity } from "../repo/identity.js";
@@ -41,7 +41,8 @@ async function lessonDetail(db: Client, id: string) {
   const evidence = (await db.execute({ sql: "SELECT tool,session,seen_at,quote FROM evidence WHERE lesson_id=? ORDER BY seen_at DESC LIMIT 20", args: [l.id] })).rows;
   const triggers = (await db.execute({ sql: "SELECT pattern FROM triggers WHERE lesson_id=?", args: [l.id] })).rows.map((r) => String(r.pattern));
   const sim = l.status === "proposed" ? await similar(db, l) : null;
-  const suggested = l.suggested_keywords ? (JSON.parse(l.suggested_keywords) as string[]) : [suggestKeyword(l.text)].filter(Boolean);
+  const fromWriter = l.suggested_keywords ? (JSON.parse(l.suggested_keywords) as string[]).filter(usefulKeyword) : [];
+  const suggested = fromWriter.length ? fromWriter : [suggestKeyword(l.text)].filter(Boolean);
   const origin = await originOf(db, { id: l.id, source: l.source, signal: l.signal });
   return { ...l, preference: isPreference(l), defaults: defaultRoute(l), repo_short: shortRepo(l.repo_id), origin, evidence, triggers, suggested, similar: sim ? { id: sim.lesson.id, text: sim.lesson.text, plain: sim.lesson.plain, status: sim.lesson.status, score: sim.score } : null };
 }

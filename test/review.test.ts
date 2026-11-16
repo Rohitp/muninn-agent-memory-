@@ -7,7 +7,10 @@ import { useHome } from "./helpers.js";
 beforeEach(useHome);
 describe("suggestKeyword", () => {
   it("prefers a command or path, then the most specific word", () => {
-    expect(suggestKeyword("Run `pnpm test:estimate` before pushing")).toBe("pnpm");
+    expect(suggestKeyword("Run `pnpm test:estimate` before pushing")).toBe("estimate");
+    // Command runners and everyday words come up in nearly every prompt, so they're never suggested.
+    expect(suggestKeyword("Run inline Python with `uv run python - <<'EOF'` rather than `python3 - <<'EOF'`, and keep deletions out of heredocs")).toBe("deletions");
+    expect(suggestKeyword("Use `uv run ruff format` before committing")).toBe("ruff");
     expect(suggestKeyword("Use ../../benchmarks from `apps/api`")).toBe("apps");
     expect(suggestKeyword("Set the API key before estimate tests")).toBe("estimate");
   });

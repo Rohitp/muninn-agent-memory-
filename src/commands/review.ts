@@ -7,11 +7,21 @@ import { combine, decide, getLesson, keywordsInUse, lessonsForKeyword, lessonVec
 
 const STOP = new Set(["about", "after", "always", "before", "because", "never", "should", "their", "there", "these", "those", "using", "which", "would", "could", "answer", "answers", "agent", "lesson", "first", "other", "while", "without", "instead", "every", "where"]);
 /** A keyword the engineer would likely type for this lesson: a command or path in backticks, or its most specific word. */
+/**
+ * Words too common to trigger on: they come up in nearly every prompt or command, so a lesson keyed on them
+ * would be sent all the time. Command runners and everyday shell words are the usual culprits ("uv run python" → "run").
+ */
+const COMMON = new Set(["run", "runs", "make", "test", "tests", "build", "check", "fix", "use", "get", "set", "add", "new", "file", "files", "code", "the", "and", "for", "with", "this", "that", "all", "not", "out", "help",
+  "uv", "npx", "npm", "pnpm", "yarn", "bun", "node", "python", "python3", "pip", "bash", "sh", "zsh", "sudo", "exec", "env", "cd", "ls", "cat", "echo", "git", "eof", "true", "false"]);
+/** Whether a word is specific enough to trigger a lesson on. */
+export const usefulKeyword = (w: string) => w.length >= 3 && !COMMON.has(w.toLowerCase()) && !STOP.has(w.toLowerCase()) && !/^\d+$/.test(w);
 export function suggestKeyword(text: string): string {
-  const tick = text.match(/`([^`]+)`/)?.[1]?.split(/[\s/]+/).find((w) => /^[\w.-]{3,}$/.test(w) && !w.startsWith("-"));
-  if (tick) return tick.toLowerCase();
-  const words = text.toLowerCase().match(/[a-z][a-z0-9_-]{4,}/g) ?? [];
-  return words.filter((w) => !STOP.has(w)).sort((a, b) => b.length - a.length)[0] ?? "";
+  for (const m of text.matchAll(/`([^`]+)`/g)) {
+    const tick = m[1]!.split(/[\s/=:]+/).map((w) => w.replace(/^['"(<]+|['")>]+$/g, "")).find((w) => /^[\w.-]{3,}$/.test(w) && !w.startsWith("-") && usefulKeyword(w));
+    if (tick) return tick.toLowerCase();
+  }
+  const words = text.toLowerCase().replace(/`[^`]*`/g, " ").match(/[a-z][a-z0-9_-]{4,}/g) ?? [];
+  return words.filter(usefulKeyword).sort((a, b) => b.length - a.length)[0] ?? "";
 }
 const HOW = `
   How kept lessons reach your agent, once you run "muninn install":
@@ -52,7 +62,7 @@ export type Defaults = { route: "always" | "keyword" | "none"; keywords: string[
  */
 export function defaultRoute(l: Pick<Lesson, "text" | "kind" | "signal" | "suggested_keywords" | "suggested_scope">): Defaults {
   if (isPreference(l)) return { route: "always", keywords: [], global: true };
-  const suggested: string[] = l.suggested_keywords ? JSON.parse(l.suggested_keywords) : [];
+  const suggested: string[] = (l.suggested_keywords ? (JSON.parse(l.suggested_keywords) as string[]) : []).filter(usefulKeyword);
   const guess = suggestKeyword(l.text);
   const global = l.suggested_scope === "global";
   if (l.kind === "note") return { route: "keyword", keywords: suggested.length ? suggested : guess ? [guess] : [], global: false };
