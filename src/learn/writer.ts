@@ -22,6 +22,8 @@ For each item, return either:
 
 Items of kind "explained" are a long message where the engineer explained something. For those, return a note only if it holds lasting knowledge about how this project works (what a system, pipeline, benchmark, dataset or convention is, where things live, how to run or judge it). Write the note in 2 to 6 plain sentences for a future agent, keeping names, paths and numbers exactly. Also return "keywords": 1 to 3 short words or names the engineer would type when the note is relevant. Return null if the message is a task request, a status update, feedback on one answer, or only true today. Also return null when the engineer is describing a different project, repository or system as an example or story (for instance "there's a repository that…", "in another project we…"): those lessons belong to that other project, not this one.
 
+Items of kind "loop", "refetch" and "stopped" are wasted effort: a command that failed the same way several times in a row, one re-run with different output limits, or one the engineer stopped. Return a lesson only if it would stop this happening next time (what to do instead, or what to check first). For "refetch", the usual lesson is to read the whole output once, or narrow the command, instead of paging.
+
 Do not claim one thing fixed another unless the evidence shows it. Do not add facts that are not in the item.
 
 Also say whether a lesson applies only to this repo ("repo") or to any repo, such as shell behaviour or how to explain things ("global").

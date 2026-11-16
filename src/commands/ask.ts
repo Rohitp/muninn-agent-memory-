@@ -16,6 +16,9 @@ const SIGNAL: Record<string, string> = {
   failure_then_fix: "Learned from a command that failed and was then fixed",
   mistake_returned: "Learned from a failing command that kept coming back",
   explained: "From something you explained",
+  loop: "Learned from a command that failed the same way several times in a row",
+  refetch: "Learned from a command re-run with different limits",
+  stopped: "Learned from a command you stopped",
 };
 /** Where a lesson came from, in words: "Learned from a command that failed and was then fixed, in Claude Code, Nov 6". */
 export async function originOf(db: Client, l: { id: string; source: string; signal: string | null; created_at?: string }): Promise<string> {

@@ -53,6 +53,23 @@ describe("command signals", () => {
     expect(m[0]!.text).not.toContain("worked after");
     expect(m[0]!.context).toContain("npm i");
   });
+  it("finds a loop: the same command failing the same way 3 times, never fixed", async () => {
+    const loop = (await find([withCmds("a", 1, cmd("make lint", true, 1), cmd("make lint", true, 1), cmd("make lint", true, 1), cmd("npm i", false, 1))])).filter((x) => x.signal === "loop");
+    expect(loop).toHaveLength(1);
+    expect(loop[0]!.text).toContain("failed 3 times in a row");
+    // Fixed in the end: that's a failure then a fix, not a loop.
+    const fixed = await find([withCmds("b", 1, cmd("make lint", true, 1), cmd("make lint", true, 1), cmd("make lint", true, 1), cmd("make lint", false, 1))]);
+    expect(fixed.filter((x) => x.signal === "loop")).toHaveLength(0);
+    expect(fixed.filter((x) => x.signal === "failure_then_fix")).toHaveLength(1);
+  });
+  it("finds a command re-run with different limits, and commands the engineer stopped twice", async () => {
+    const m = await find([withCmds("a", 1, cmd("make test | tail -20", false, 1, "x"), cmd("make test | tail -80", false, 1, "x"), cmd("make test | tail -200", false, 1, "x"))]);
+    expect(m.filter((x) => x.signal === "refetch").map((x) => x.text)).toEqual(["`make test` was run 3 times with different limits, each time re-reading output the previous run had cut off"]);
+    const stop = (c: string): LogEvent => ({ ...cmd(c, true, 1), stopped: true });
+    const s = await find([withCmds("a", 1, stop("rm -rf build")), withCmds("b", 2, stop("rm -rf build"))]);
+    expect(s.filter((x) => x.signal === "stopped")).toHaveLength(1);
+    expect(s.filter((x) => x.signal === "mistake_returned" || x.signal === "loop")).toHaveLength(0);
+  });
   it("finds a mistake in 3 sessions, and ignores harmless failures", async () => {
     const s = [1, 2, 3].map((d) => withCmds(`s${d}`, d, cmd("make build", true, d), cmd("grep foo bar", true, d)));
     const m = (await find(s)).filter((x) => x.signal === "mistake_returned");

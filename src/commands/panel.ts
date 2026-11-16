@@ -8,6 +8,7 @@ import { decide, getLesson } from "../store/lessons.js";
 import { shortRepo } from "./ask.js";
 export { shortRepo };
 import { defaultRoute } from "./review.js";
+import { shortCommand } from "../deliver/hook.js";
 
 export type PanelData = {
   repo: string | null; repoShort: string; branch: string | null;
@@ -15,6 +16,8 @@ export type PanelData = {
   handoff: { text: string; age: string; tool: string; delivered: boolean } | null;
   waiting: { count: number; top: { id: string; text: string; kind: string; route: string }[] };
   week: { sent: number; sessions: number; kept: number; cameBack: number; muninnCostUsd: number | null; muninnCalls: number };
+  /** Commands that failed the same way 3 or more times in a row this session, newest first. */
+  loops: { name: string; n: number; err: string; tokens: number; at: string; told: boolean }[];
 };
 
 /** Why a lesson was sent, in words, from the delivery row. */
@@ -49,8 +52,10 @@ export async function panelData(db: Client, session: string | null, cwd: string)
   const kept = Number((await db.execute({ sql: "SELECT count(*) n FROM lessons WHERE status='live' AND reviewed_at>=?", args: [since] })).rows[0]?.n ?? 0);
   const back = Number((await db.execute({ sql: "SELECT count(DISTINCT e.lesson_id) n FROM evidence e JOIN lessons l ON l.id=e.lesson_id WHERE l.status='live' AND e.seen_at>=? AND e.seen_at>=coalesce(l.reviewed_at,l.created_at)", args: [since] })).rows[0]?.n ?? 0);
   const c = (await db.execute({ sql: "SELECT count(*) n, sum(cost_usd) cost, count(cost_usd) priced FROM llm_calls WHERE ts>=?", args: [since] })).rows[0]!;
+  const loopRows = session ? (await db.execute({ sql: "SELECT cmd,n,err,tokens,last_ts,hinted FROM live_loops WHERE session=? AND n>=3 ORDER BY last_ts DESC LIMIT 5", args: [session] })).rows : [];
+  const loops = loopRows.map((r) => ({ name: shortCommand(String(r.cmd)), n: Number(r.n), err: String(r.err), tokens: Number(r.tokens), at: String(r.last_ts), told: Number(r.hinted) > 0 }));
   return {
-    repo, repoShort: shortRepo(repo), branch, sent, handoff,
+    repo, repoShort: shortRepo(repo), branch, sent, handoff, loops,
     waiting: { count: waitingRows.length, top },
     week: { sent: Number(w.n), sessions: Number(w.s), kept, cameBack: back, muninnCostUsd: Number(c.priced) ? Number(c.cost) : null, muninnCalls: Number(c.n) },
   };

@@ -74,3 +74,29 @@ describe("deliver", () => {
     expect(JSON.parse(hookOutput("SessionStart", "hi"))).toEqual({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: "hi" } });
   });
 });
+
+describe("loops caught as they happen", () => {
+  it("tells the agent on the 3rd failure in a row with the same error, by a short name, then not again until the 6th", async () => {
+    const db = await openDb(); await ensureRepo(db, repo, cwd);
+    const fail = (error: string) => deliver(db, "claude-code", { hook_event_name: "PostToolUseFailure", session_id: "s1", cwd, tool_input: { command: "uv run ruff format -q . && uv run ruff check . && make test" }, error });
+    expect(await fail("error: 2 files would be reformatted")).toBeNull();
+    expect(await fail("error: 2 files would be reformatted")).toBeNull();
+    const third = await fail("error: 2 files would be reformatted");
+    expect(third).toContain("`ruff format` has failed 3 times in a row");
+    expect(third).not.toContain("&&");
+    expect(await fail("error: 2 files would be reformatted")).toBeNull();
+    // A different error starts the count again.
+    expect(await fail("error: no such file")).toBeNull();
+    const { panelData } = await import("../src/commands/panel.js");
+    const loops = (await panelData(db, "s1", cwd)).loops;
+    expect(loops).toEqual([expect.objectContaining({ name: "ruff format", n: 4, told: true })]);
+  });
+  it("counts loops but doesn't interrupt when muninn only speaks at session start", async () => {
+    const db = await openDb(); await ensureRepo(db, repo, cwd);
+    const { setDial } = await import("../src/store/dial.js");
+    await setDial(db, repo, "start");
+    for (let i = 0; i < 3; i++) expect(await deliver(db, "claude-code", { hook_event_name: "PostToolUseFailure", session_id: "s2", cwd, tool_input: { command: "make lint" }, error: "error: boom" })).toBeNull();
+    const { panelData } = await import("../src/commands/panel.js");
+    expect((await panelData(db, "s2", cwd)).loops[0]).toMatchObject({ name: "make lint", n: 3 });
+  });
+});

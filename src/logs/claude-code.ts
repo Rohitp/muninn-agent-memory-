@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { notTyped, parseLines, textOf, type LogEvent, type Session } from "./types.js";
+import { notTyped, parseLines, STOPPED, textOf, type LogEvent, type Session } from "./types.js";
 
 export function readClaude(file: string): Session {
   const events: LogEvent[] = [];
@@ -22,7 +22,8 @@ export function readClaude(file: string): Session {
         if (x?.type === "tool_result" && pending.has(x.tool_use_id)) {
           const r = o.toolUseResult ?? {};
           const output = [r.stderr, r.stdout, typeof r === "string" ? r : "", textOf(x.content)].filter(Boolean).join("\n");
-          events.push({ k: "cmd", cmd: pending.get(x.tool_use_id)!, failed: x.is_error === true, output: output.slice(-2000), ts });
+          const stopped = x.is_error === true && STOPPED.test(output);
+          events.push({ k: "cmd", cmd: pending.get(x.tool_use_id)!, failed: x.is_error === true, output: output.slice(-2000), ts, ...(stopped ? { stopped } : {}) });
           pending.delete(x.tool_use_id);
         }
       }

@@ -1,5 +1,6 @@
 import type { Client } from "@libsql/client";
 import { randomUUID } from "node:crypto";
+import { errorLine, normCommand } from "../learn/signals.js";
 import { isPaused, settings } from "../config.js";
 import { repoIdentity } from "../repo/identity.js";
 import { currentBranch, handoffText, latestHandoff } from "../handoff/handoff.js";
@@ -52,6 +53,8 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
     if (repo) await db.execute({ sql: "INSERT OR IGNORE INTO repos (id,paths) VALUES (?,?)", args: [repo, JSON.stringify([input.cwd])] });
   }
   // The dial: quiet holds everything back; "start" speaks only when a session starts, never mid-task.
+  // Loops are counted whatever the setting, so the panel can show them; the agent is told only mid-task.
+  const loopHint = failed(event, input) && session ? await trackLoop(db, session, repo, input) : null;
   const dial = await getDial(db, repo);
   const midTask = event === "UserPromptSubmit" || event.startsWith("PostToolUse");
   if (dial === "quiet" || (dial === "start" && midTask)) { await log("paused"); return null; }
@@ -60,7 +63,7 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   let rows: Row[] = [];
   if (event === "SessionStart" || event === "SubagentStart") {
     rows = (await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,NULL pattern FROM lessons l WHERE ${scope} AND l.always_on=1`, args: [repo, repo] })).rows as unknown as Row[];
-  } else if (event === "UserPromptSubmit" || event === "PostToolUseFailure" || (event === "PostToolUse" && codexFailed(input.tool_response))) {
+  } else if (event === "UserPromptSubmit" || failed(event, input)) {
     const hay = event === "UserPromptSubmit" ? input.prompt ?? "" : `${input.tool_input?.command ?? ""}\n${input.error ?? responseText(input.tool_response)}`;
     const all = (await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,t.pattern FROM lessons l JOIN triggers t ON t.lesson_id=l.id WHERE ${scope}`, args: [repo, repo] })).rows as unknown as Row[];
     rows = all.filter((r) => r.pattern && matches(r.pattern, hay));
@@ -99,8 +102,9 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   }
   // This branch's plan, at the start of a fresh session, after where the last session left off.
   const plan = freshStart && repo && branch ? planText(await getPlan(db, repo, branch), repo.split("/").pop() ?? repo, branch) : null;
-  if (!out.length && !waiting && !handoff && !plan) { await log("no_match"); return null; }
+  if (!out.length && !waiting && !handoff && !plan && !loopHint) { await log("no_match"); return null; }
   const lines: string[] = [];
+  if (loopHint) lines.push(loopHint, "");
   if (handoff) lines.push(handoff, "");
   if (plan) lines.push(plan, "");
   if (out.length) lines.push("Lessons the engineer kept in muninn, from earlier sessions:", ...out.map((r) => `- ${r.text}`));
@@ -110,3 +114,38 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
 }
 
 export const hookOutput = (event: string, text: string) => JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: text } });
+
+const failed = (event: string, input: HookInput) => event === "PostToolUseFailure" || (event === "PostToolUse" && codexFailed(input.tool_response));
+/** When the agent is told a loop is happening: on the 3rd, 6th and 10th time in a row. */
+const HINT_AT = [3, 6, 10];
+/** The command's name in a few words, without runners like "uv run" or the rest of a chain: "ruff format". */
+export function shortCommand(cmd: string): string {
+  const first = (cmd.split(/&&|\|\||;|\|/)[0] ?? cmd).replace(/^\s*cd\s+\S+\s*/, "").replace(/^(\w+=\S+\s+)+/, "").trim();
+  const words = first.split(/\s+/).filter((w) => !w.startsWith("-"));
+  while (words.length > 1 && /^(uv|run|npx|pnpm|npm|yarn|bun|exec|poetry|python3?|-m|sudo|env|bash|sh|time)$/.test(words[0]!)) words.shift();
+  return words.slice(0, 2).join(" ").slice(0, 40) || first.slice(0, 40);
+}
+/**
+ * Counts a failed command against the same command's last failures in this session. On the 3rd, 6th and 10th
+ * failure in a row with the same error, returns a note telling the agent to change approach instead of retrying.
+ */
+export async function trackLoop(db: Client, session: string, repo: string | null, input: HookInput): Promise<string | null> {
+  const cmd = String(input.tool_input?.command ?? "");
+  if (!cmd) return null;
+  const text = input.error ?? responseText(input.tool_response);
+  const err = errorLine(text);
+  // One row per command and error, so a loop stays on record when a different error comes up.
+  const key = `${normCommand(cmd)} :: ${err}`;
+  const ts = new Date().toISOString();
+  const prev = (await db.execute({ sql: "SELECT err,n,tokens,hinted,last_ts FROM live_loops WHERE session=? AND key=?", args: [session, key] })).rows[0];
+  // The same error, and not long after the last one; otherwise this is a fresh start.
+  const same = prev && Date.now() - Date.parse(String(prev.last_ts)) < 30 * 60_000;
+  const n = same ? Number(prev.n) + 1 : 1;
+  const spent = (same ? Number(prev.tokens) : 0) + Math.ceil(text.length / 4);
+  const hinted = same ? Number(prev.hinted) : 0;
+  const hint = HINT_AT.includes(n) && n > hinted;
+  await db.execute({ sql: "INSERT OR REPLACE INTO live_loops (session,repo_id,key,err,n,tokens,hinted,first_ts,last_ts,cmd) VALUES (?,?,?,?,?,?,?,coalesce((SELECT first_ts FROM live_loops WHERE session=? AND key=? AND ?),?),?,?)", args: [session, repo, key, err, n, spent, hint ? n : hinted, session, key, same ? 1 : 0, ts, ts, cmd.slice(0, 500)] });
+  if (!hint) return null;
+  const name = shortCommand(cmd);
+  return `muninn: \`${name}\` has failed ${n} times in a row with the same error${err ? ` ("${err}")` : ""}. Running it again as is will fail the same way. Read the error, check what the command needs, or try another approach.`;
+}

@@ -1,7 +1,7 @@
 export type LogEvent =
   | { k: "typed"; text: string; ts: string }
   | { k: "agent"; text: string; ts: string }
-  | { k: "cmd"; cmd: string; failed: boolean; output: string; ts: string };
+  | { k: "cmd"; cmd: string; failed: boolean; output: string; ts: string; stopped?: boolean };
 export type Tool = "claude-code" | "codex" | "cursor";
 export type Session = { id: string; tool: Tool; cwd: string; clientVersion: string; events: LogEvent[]; unknown: number; branch?: string; file?: string };
 /** First text of every LLM run muninn starts, so readers can skip those sessions. */
@@ -15,3 +15,5 @@ export const textOf = (c: unknown): string =>
 const NOT_TYPED = ["<", "Caveat:", "[Request interrupted", "This session is being continued", "Base directory for this skill", "## My request", "# Files pasted by the user", "Pasted text contains", "Briefly inform the user about the task result"];
 export const notTyped = (t: string) => NOT_TYPED.some((s) => t.trimStart().startsWith(s));
 export const isOwnRun = (s: Session) => s.events.some((e) => e.k === "typed" && e.text.includes(OWN_RUN_MARK));
+/** A tool result showing the engineer stopped or rejected the call, rather than the command failing. */
+export const STOPPED = /The user doesn't want to proceed with this tool use|\[Request interrupted by user for tool use\]|The user rejected this|was rejected by the user/;

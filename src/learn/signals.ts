@@ -2,7 +2,7 @@ import { redact } from "../privacy/redact.js";
 import { cosine, type Embed } from "../embed/model.js";
 import type { Session } from "../logs/types.js";
 
-export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned" | "explained";
+export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned" | "explained" | "loop" | "refetch" | "stopped";
 export type Moment = {
   signal: Signal; text: string; quotes: { tool: string; session: string; ts: string; quote: string }[];
   sessions: number; days: number; wordings: number; tools: string[]; last: string; vector?: Float32Array;
@@ -111,15 +111,45 @@ function explainedMoments(sessions: Session[]): Moment[] {
   return out;
 }
 
+/** A limit or offset that pages through output: `| head -50`, `-n 20`, `--max-count=5`, `LIMIT 10`. */
+export const PAGE = /\|\s*(?:head|tail)\s+-n?\s*\d+|\s-n\s*\d+|--max-count[= ]\d+|--lines[= ]\d+|\bhead\s+-\d+|\b(?:limit|offset)[= ]\d+|\bLIMIT\s+\d+|\bOFFSET\s+\d+/gi;
+/** Rough tokens in some output, about four characters each: what a repeat cost. */
+export const tokensIn = (o: string) => Math.ceil(o.length / 4);
+/** How many times in a row the same command must fail the same way to count as a loop. */
+export const LOOP_MIN = 3;
+
 function commandMoments(sessions: Session[]): Moment[] {
   const out: Moment[] = [];
   const returned = new Map<string, { cmd: string; err: string; hits: { session: string; tool: string; ts: string }[] }>();
+  const stopped = new Map<string, { session: string; tool: string; ts: string }[]>();
   for (const s of sessions) {
     const count = new Map<string, number>(); const lastErr = new Map<string, string>(); const between = new Map<string, string[]>();
+    // Loops: the same command failing the same way in a row. Kept if the session moved on without fixing it.
+    const run = new Map<string, { err: string; n: number; tokens: number; ts: string }>();
+    const loops = new Map<string, { err: string; n: number; tokens: number; ts: string }>();
+    // Re-fetches: one command re-run with different limits, each time re-reading output the last run cut off.
+    const pages = new Map<string, { raws: Set<string>; tokens: number; ts: string }>();
     for (const e of s.events) {
       if (e.k !== "cmd") continue;
+      if (e.stopped) {
+        const key = normCommand(e.cmd);
+        if (key) stopped.set(key, [...(stopped.get(key) ?? []), { session: s.id, tool: s.tool, ts: e.ts }]);
+        continue;
+      }
+      if (!e.failed && new RegExp(PAGE.source, "i").test(e.cmd)) {
+        const base = normCommand(e.cmd.replace(PAGE, ""));
+        const p = pages.get(base) ?? { raws: new Set<string>(), tokens: 0, ts: e.ts };
+        p.raws.add(e.cmd.trim()); p.tokens += tokensIn(e.output); p.ts = e.ts; pages.set(base, p);
+      }
       const key = normCommand(e.cmd);
       if (!key || BENIGN.test(key)) continue;
+      if (e.failed) {
+        const err = errorLine(e.output);
+        const r = run.get(key);
+        const next = r && r.err === err ? { err, n: r.n + 1, tokens: r.tokens + tokensIn(e.output), ts: e.ts } : { err, n: 1, tokens: 0, ts: e.ts };
+        run.set(key, next);
+        if (next.n >= LOOP_MIN && next.n > (loops.get(key)?.n ?? 0)) loops.set(key, next);
+      } else { run.delete(key); loops.delete(key); }
       for (const [k, list] of between) if (k !== key && list.length < 5) list.push(key);
       if (e.failed) {
         const err = errorLine(e.output);
@@ -139,6 +169,32 @@ function commandMoments(sessions: Session[]): Moment[] {
         count.delete(key); between.delete(key);
       }
     }
+    for (const [key, l] of loops) out.push({
+      signal: "loop", text: redact(`\`${key}\` failed ${l.n} times in a row with "${l.err}", and the session moved on without fixing it`),
+      context: `The repeats cost about ${l.tokens} tokens of output.`,
+      quotes: [{ tool: s.tool, session: s.id, ts: l.ts, quote: redact(`${key} failed ${l.n} times in a row: ${l.err}`).slice(0, 240) }],
+      sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: l.ts,
+    });
+    for (const [key, p] of pages) {
+      if (p.raws.size < LOOP_MIN) continue;
+      const examples = [...p.raws].slice(0, 3).map((r) => r.slice(0, 80));
+      out.push({
+        signal: "refetch", text: redact(`\`${key}\` was run ${p.raws.size} times with different limits, each time re-reading output the previous run had cut off`),
+        context: redact(`Runs: ${examples.join(" ; ")}. About ${p.tokens} tokens of output in all.`),
+        quotes: [{ tool: s.tool, session: s.id, ts: p.ts, quote: redact(`${key} re-run ${p.raws.size} times with different limits`).slice(0, 240) }],
+        sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: p.ts,
+      });
+    }
+  }
+  // Commands the engineer stopped more than once: a sign the agent keeps reaching for something they don't want.
+  for (const [key, hits] of stopped) {
+    if (hits.length < 2) continue;
+    const last = hits.at(-1)!;
+    out.push({
+      signal: "stopped", text: redact(`The engineer stopped \`${key}\` ${hits.length} times before it ran`),
+      quotes: hits.slice(-3).map((h) => ({ ...h, quote: redact(`stopped: ${key}`).slice(0, 240) })),
+      sessions: new Set(hits.map((h) => h.session)).size, days: new Set(hits.map((h) => h.ts.slice(0, 10))).size, wordings: 1, tools: [...new Set(hits.map((h) => h.tool))], last: last.ts,
+    });
   }
   for (const r of returned.values()) {
     const ss = new Set(r.hits.map((h) => h.session));
