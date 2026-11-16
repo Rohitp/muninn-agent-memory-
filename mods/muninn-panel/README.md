@@ -11,3 +11,5 @@ Install it in Claude Code:
 From a local checkout instead: `claude plugin marketplace add <path to muninn>`, then `claude plugin install muninn-panel@muninn`.
 
 Needs the `muninn` command on the PATH Claude Code starts with (`npm link` in the muninn folder). Open the panel with `/muninn`.
+
+Changing the panel: Claude Code runs an installed copy, not this folder. Bump `version` in `.claude-plugin/plugin.json`, then run `claude plugin marketplace update muninn` and `claude plugin update muninn-panel@muninn`, and start a new session.
