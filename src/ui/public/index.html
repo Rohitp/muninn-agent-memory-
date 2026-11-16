@@ -257,7 +257,7 @@ function suggestionRow(l) {
       <textarea id="t-${esc(l.id)}" rows="3" data-f="text">${esc(l.text)}</textarea>
       ${whenChoices(d.route, (d.keywords.length ? d.keywords : l.suggested || []).join(", "))}
       ${l.scope !== "global" ? `<label class="checkline"><input type="checkbox" data-f="global" ${d.global ? "checked" : ""}> Tell agents in all my repos, not just this one</label>` : ""}
-      ${ev ? `<div class="evidence">${runs ? "What ran in your session:" : ["repeat", "correction", "explained"].includes(l.signal) ? "You said:" : "From your session:"} ${ev}</div>` : ""}
+      ${ev ? `<div class="evidence">${runs ? "What ran in your session:" : ["repeat", "correction", "explained", "confused", "friction"].includes(l.signal) ? "You said:" : "From your session:"} ${ev}</div>` : ""}
       <div class="btns"><button class="btn primary" data-add="${esc(l.id)}" data-custom="1">Add</button><button class="btn" data-open="${esc(l.id)}">Cancel</button></div>
     </div>` : ""}
   </li>`;

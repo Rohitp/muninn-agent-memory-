@@ -3,7 +3,7 @@ import { redact } from "../privacy/redact.js";
 import { cosine, type Embed } from "../embed/model.js";
 import type { Session } from "../logs/types.js";
 
-export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned" | "explained" | "loop" | "refetch" | "stopped";
+export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned" | "explained" | "loop" | "refetch" | "stopped" | "confused" | "friction";
 export type Moment = {
   signal: Signal; text: string; quotes: { tool: string; session: string; ts: string; quote: string }[];
   sessions: number; days: number; wordings: number; tools: string[]; last: string; vector?: Float32Array;
@@ -80,7 +80,9 @@ function toMoment(signal: Signal, c: Cluster): Moment {
   };
 }
 
-export async function findMoments(sessions: Session[], embed: Embed, opts: { cutoff: number; minSessions: number }): Promise<Moment[]> {
+/** One group of similar things you typed, as detection saw it: for tuning the thresholds against real logs. */
+export type Considered = { signal: "repeat" | "correction"; texts: string[]; times: number; sessions: number; wordings: number; days: number; hours: number; kept: boolean };
+export async function findMoments(sessions: Session[], embed: Embed, opts: { cutoff: number; minSessions: number; trace?: (c: Considered) => void }): Promise<Moment[]> {
   const agent = new Set<string>();
   for (const s of sessions) for (const e of s.events) if (e.k === "agent") for (const x of sentences(e.text)) agent.add(norm(x));
   const repeats: Item[] = []; const corrections: Item[] = [];
@@ -104,14 +106,18 @@ export async function findMoments(sessions: Session[], embed: Embed, opts: { cut
     const m = toMoment("repeat", c);
     // Across sessions, or within one long session: said 3 times, in more than one wording, hours apart.
     const inOneLong = c.items.length >= 3 && m.wordings >= 2 && spanHours(c) >= 2;
-    if (m.days >= 3 || (m.sessions >= opts.minSessions && m.wordings >= 2) || inOneLong) moments.push(m);
+    const kept = m.days >= 3 || (m.sessions >= opts.minSessions && m.wordings >= 2) || inOneLong;
+    if (kept) moments.push(m);
+    if (c.items.length >= 2) opts.trace?.({ signal: "repeat", texts: c.items.map((i) => i.text), times: c.items.length, sessions: m.sessions, wordings: m.wordings, days: m.days, hours: spanHours(c), kept });
   }
   for (const c of cluster(corrections, vectors, opts.cutoff)) {
     const m = toMoment("correction", c);
     m.context = c.items.at(-1)?.before ? redact(c.items.at(-1)!.before!) : undefined;
-    if (m.sessions >= 2 || (c.items.length >= 2 && spanHours(c) >= 1)) moments.push(m);
+    const kept = m.sessions >= 2 || (c.items.length >= 2 && spanHours(c) >= 1);
+    if (kept) moments.push(m);
+    opts.trace?.({ signal: "correction", texts: c.items.map((i) => `${i.text}   ⟵ after: ${i.before?.slice(0, 100) ?? ""}`), times: c.items.length, sessions: m.sessions, wordings: m.wordings, days: m.days, hours: spanHours(c), kept });
   }
-  moments.push(...commandMoments(sessions), ...explainedMoments(sessions));
+  moments.push(...commandMoments(sessions), ...explainedMoments(sessions), ...intentMoments(sessions));
   return moments;
 }
 
@@ -124,6 +130,56 @@ export function isExplanation(text: string): boolean {
   const questions = parts.filter((p) => p.endsWith("?")).length;
   return questions / parts.length < 0.5;
 }
+/**
+ * Messages grouped by what they're doing rather than how they're worded. In a long session you mostly approve,
+ * ask and report; the lessons are in the asking ("what is harder-data?", "I don't understand this") and the
+ * friction ("why are we asking for simple API calls?", "stuck in loading"). Wording differs every time, so
+ * similarity misses them; the pattern of the message doesn't. Each comes with what the agent said just before,
+ * since that's usually what caused it.
+ */
+// "what" as people type it in a hurry: wht, wat, waht, whast.
+const W = "(?:what|wht|wat|waht|whta|whast|whats|what's|wats)";
+export const CONFUSED = new RegExp(`\\b(${W} (is|are|does|do|was|were) (a |an |the )?[\\w.-]*[-_][\\w.-]*|${W} (is |are )?(a|an|the|this|that|these) |${W} is |${W} does .{1,40} (do|mean)|${W} do (i|you) (need to|have to|mean)|${W} am i (testing|looking at|supposed to)|how do i |where do i |i (don'?t|dont|do not) (understand|get it|follow|know what)|n[oi]t sure what|(is|it'?s|its|this is) (unclear|confusing)|unclear|confus(ed|ing)|hard to (parse|follow|understand|read|explain)|makes? no sense|easier explanation|explain (this|that|it|again|more)|${W} do you mean)`, "i");
+/** Asking for what's next, or what else, isn't confusion. */
+const NOT_CONFUSED = /\bwhat'?s? (next|else|left)\b|\bwhats next\b|\bwhat else\b|\bwhat (should|shall|can) we (do|build) next\b/i;
+export const FRICTION = /\b(why (are|is|did|does|do|was|were) (we|you|it|this|that|there)\b|(doesn'?t|does not|didn'?t|isn'?t|is not|won'?t|can'?t|couldn'?t|wasn'?t) (work|render|load|show|start|open|run|see|find|connect)\w*|not (working|loading|rendering|showing)|stuck|broken|still (not|doesn|isn|fail|see|show|load|ask)|i thought (i|we|you|it|this)|all over the place|lines .{0,20}all over|nothing happen|again\?|keeps? (asking|failing|happening|breaking))/i;
+/** How many such messages, in this repo's sessions, before it's a pattern rather than a moment. */
+export const INTENT_MIN = 3;
+
+function intentMoments(sessions: Session[]): Moment[] {
+  const groups: Record<"confused" | "friction", { text: string; before: string; session: string; tool: string; ts: string }[]> = { confused: [], friction: [] };
+  for (const s of sessions) {
+    let prev = "";
+    for (const e of s.events) {
+      if (e.k === "agent") { prev = e.text; continue; }
+      if (e.k !== "typed") continue;
+      const t = e.text.trim();
+      if (t.length > 600 || t.length < 8) { prev = ""; continue; }
+      const kind = CONFUSED.test(t) && !NOT_CONFUSED.test(t) ? "confused" : FRICTION.test(t) ? "friction" : null;
+      if (kind) groups[kind].push({ text: t, before: prev.replace(/\s+/g, " ").trim(), session: s.id, tool: s.tool, ts: e.ts });
+      prev = "";
+    }
+  }
+  const out: Moment[] = [];
+  for (const kind of ["confused", "friction"] as const) {
+    const items = groups[kind];
+    if (items.length < INTENT_MIN) continue;
+    const last = items.at(-1)!;
+    out.push({
+      signal: kind,
+      text: redact(kind === "confused"
+        ? `The engineer asked what something meant, or said they didn't follow, ${items.length} times`
+        : `The engineer reported something not working or not as expected, ${items.length} times`),
+      // What the agent said before each: the writer looks for what they have in common.
+      context: redact(items.slice(-8).map((i) => `Agent said: "${i.before.slice(0, 220)}" → engineer: "${i.text.slice(0, 200)}"`).join("\n")),
+      quotes: items.slice(-3).map((i) => ({ tool: i.tool, session: i.session, ts: i.ts, quote: redact(i.text).slice(0, 240) })),
+      sessions: new Set(items.map((i) => i.session)).size, days: new Set(items.map((i) => i.ts.slice(0, 10))).size,
+      wordings: new Set(items.map((i) => norm(i.text))).size, tools: [...new Set(items.map((i) => i.tool))], last: last.ts,
+    });
+  }
+  return out;
+}
+
 function explainedMoments(sessions: Session[]): Moment[] {
   const out: Moment[] = [];
   for (const s of sessions) for (const e of s.events) {

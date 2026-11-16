@@ -69,6 +69,41 @@ const CASES: Case[] = [
     events: [{ ...ran("rm -rf build", "The user doesn't want to proceed with this tool use.", true), stopped: true }, { ...ran("rm -rf build", "The user doesn't want to proceed with this tool use.", true), stopped: true }],
     expect: { stopped: 1 },
   },
+
+  {
+    name: "asking what new names mean, in one long session",
+    why: "Nov 15-16: across 40 messages the engineer asked what 6 things meant (names the agent introduced without saying what they were), with typos.",
+    events: [
+      { k: "agent", text: "Both tasks are merged. Next up is harder-data.", ts: ts() }, { k: "typed", text: "what is harder-data?", ts: ts() },
+      { k: "agent", text: "Run make try-ledger to see it.", ts: ts() }, { k: "typed", text: "what is try-ledger? what does it do?", ts: ts() },
+      { k: "agent", text: "The first check screen is next.", ts: ts() }, { k: "typed", text: "whast the flow we're taling about?", ts: ts() },
+      { k: "agent", text: "Stamps: matched or in order.", ts: ts() }, { k: "typed", text: "testeed. wht is matched vs in order?", ts: ts() },
+      { k: "typed", text: "Yes, keep going", ts: ts() },
+    ],
+    expect: { confused: 1, friction: 0 },
+  },
+  {
+    name: "reporting that things didn't work as expected",
+    why: "Nov 16: the page didn't render, the app got stuck, a permission prompt surprised the engineer.",
+    events: [
+      { k: "typed", text: "the UI doesnt render well. the lines in the page are all over", ts: ts() },
+      { k: "typed", text: "we have bypass permission enabled why are we asking for simple api calls?", ts: ts() },
+      { k: "typed", text: "stuck in loading", ts: ts() },
+    ],
+    expect: { friction: 1, confused: 0 },
+  },
+  {
+    name: "asking what's next, and approvals",
+    why: "Asking for the next step isn't confusion, and approving isn't friction.",
+    events: ["whats next?", "what's next for this?", "what else is missing?", "Yes, build both", "Push them", "okay. start again"].map((text) => ({ k: "typed" as const, text, ts: ts() })),
+    expect: { confused: 0, friction: 0 },
+  },
+  {
+    name: "two questions are not a pattern",
+    why: "Fewer than 3 such messages could be any session.",
+    events: [{ k: "typed", text: "what is the lab page?", ts: ts() }, { k: "typed", text: "i dont understand this", ts: ts() }],
+    expect: { confused: 0 },
+  },
 ];
 
 const session = (events: LogEvent[]): Session => ({ id: "s", tool: "claude-code", cwd: "/work/app", clientVersion: "1", unknown: 0, events: [{ k: "typed", text: "go", ts: "2026-11-16T09:00:00.000Z" }, ...events] });
