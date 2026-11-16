@@ -1,0 +1,6 @@
+# None of these needs its install script here: the build and tests pass without them,
+# and onnxruntime-node ships its native library prebuilt.
+allowBuilds:
+  esbuild: false
+  onnxruntime-node: false
+  protobufjs: false
