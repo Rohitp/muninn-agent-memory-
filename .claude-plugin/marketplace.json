@@ -1,0 +1,14 @@
+{
+  "name": "muninn",
+  "description": "muninn: lessons that carry across coding sessions, and a Claude Code panel that shows them.",
+  "owner": {
+    "name": "Rohit"
+  },
+  "plugins": [
+    {
+      "name": "muninn-panel",
+      "source": "./mods/muninn-panel",
+      "description": "A side panel showing what muninn told this session and why, the last session's handoff, and lessons waiting for review."
+    }
+  ]
+}
