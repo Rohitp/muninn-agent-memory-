@@ -12,6 +12,7 @@ import { scanRunning, startAutoScan } from "../commands/auto.js";
 import { getDial, recordFeedback, setDial } from "../store/dial.js";
 import { loadEmbedder, modelCached, type Embed } from "../embed/model.js";
 import { fillExplanations } from "../learn/explain.js";
+import { keepLine, openFlags, removeLine, restoreLine, rootOf } from "../memory/stale.js";
 import { pickRunner, saveUsage } from "../learn/writer.js";
 import { reportData } from "../commands/report.js";
 import { defaultRoute, isPreference, similar, suggestKeyword, usefulKeyword, worthSentence } from "../commands/review.js";
@@ -106,6 +107,18 @@ const routes: Record<string, Handler> = {
   "GET /api/report": async (db, q) => reportData(db, q.get("repo") || null),
   "GET /api/home": async (db, q) => homeData(db, q.get("repo") || null),
   // The running plan: read it, change it, and the PLAN.md switch. Changes refresh PLAN.md (if on) and Cursor's rules.
+  // Lines in CLAUDE.md (and similar files) that may be out of date: remove, put back, or keep.
+  "GET /api/memory": async (db, q) => (await openFlags(db, q.get("repo") || null)).map((r) => ({ id: r.id, repo_id: r.repo_id, file: r.file, line: r.line, text: r.text, reason: r.reason, detail: r.detail, status: r.status })),
+  "POST /api/memory": async (db, _q, b) => {
+    const id = String(b.id ?? ""); const row = (await openFlags(db, null)).find((r) => r.id === id);
+    if (!row) throw new Error("That line isn't flagged any more.");
+    if (b.action === "keep") { await keepLine(db, id); return { ok: true }; }
+    const root = await rootOf(db, row.repo_id);
+    if (!root) throw new Error("Couldn't find this repo's folder.");
+    const ok = b.action === "remove" ? await removeLine(db, id, root) : b.action === "restore" ? await restoreLine(db, id, root) : (() => { throw new Error("Unknown action."); })();
+    if (!ok) throw new Error(b.action === "remove" ? `The line changed in ${row.file} since muninn checked it, so it was left alone.` : "Couldn't put the line back.");
+    return { ok: true };
+  },
   "GET /api/plan": async (db, q) => {
     const repo = q.get("repo"); if (!repo) throw new Error("Pick a repo to see its plan.");
     return planView(db, repo, q.get("branch"));

@@ -48,6 +48,12 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
     // Marks the repo as scanned, so a session ending in a brand-new repo can trigger its first scan straight away.
     await db.execute({ sql: "INSERT OR REPLACE INTO meta (key,value) VALUES (?,?)", args: [`scanned:${repo}`, new Date().toISOString()] });
     if (sessions.length < cfg.minSessions && !opts.auto) console.log(`${repo}: only ${sessions.length} session(s), which may be too few to find repeats.`);
+    // Lines in the repo's CLAUDE.md that may be out of date. Cheap: no model calls.
+    try {
+      const { checkAndSave } = await import("../memory/stale.js");
+      const n = await checkAndSave(db, repo, sessions);
+      if (n && !opts.auto) console.log(`${repo}: ${n} line(s) in CLAUDE.md may be out of date. See them in muninn ui, or run "muninn memory".`);
+    } catch { /* a repo muninn can't read shouldn't stop the scan */ }
     const folded = await foldDuplicates(db, repo);
     const r = await learnRepo(db, repo, sessions, { embed, writer, cutoff: cfg.similarityCutoff, minSessions: cfg.minSessions, notesPerRun: cfg.notesPerRun });
     await saveUsage(db, writer?.runner ?? null, "lesson writing");

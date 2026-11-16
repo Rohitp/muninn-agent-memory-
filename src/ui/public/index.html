@@ -66,6 +66,7 @@ input[type=text] { width: 100%; height: 40px; border: 1px solid var(--line-stron
 .check:hover { border-color: var(--on); }
 .check[aria-checked="true"] { background: var(--on); border-color: var(--on); }
 .sublist { list-style: none; margin: 0; padding: 0 18px 12px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
 .donebox input[type=search] { margin: 0 18px 10px; width: calc(100% - 36px); box-sizing: border-box; }
 .doneday { padding: 6px 18px 0; font-size: 13px; color: var(--muted); font-weight: 600; }
 .sublist li { padding: 6px 0; font-size: 15px; display: flex; gap: 8px; align-items: baseline; }
@@ -122,6 +123,22 @@ const shortDate = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "num
 function planEditor(kind, id, value, placeholder) {
   return `<div class="row" style="gap:8px"><label class="vh" for="pe">${esc(placeholder)}</label><input id="pe" type="text" data-plan-input data-kind="${kind}" data-id="${esc(id || "")}" value="${esc(value)}" placeholder="${esc(placeholder)}" style="margin:0;flex:1"><button class="btn primary" data-plan-save>Save</button><button class="btn" data-plan-cancel>Cancel</button></div>`;
 }
+/* Lines in CLAUDE.md that may be out of date. Agents read the file every session, so a stale line costs each time. */
+const MEMORY_WHY = { missing_path: "Names something that isn't in the repo", missing_command: "Names a command that no longer exists", unused: "Never comes up" };
+function memorySection() {
+  const rows = data.memory || [];
+  if (!rows.length) return "";
+  const open = rows.filter((r) => r.status === "open").length;
+  return `<section aria-labelledby="mm">
+    <h2 id="mm">In your CLAUDE.md${open ? ` · ${open} may be out of date` : ""}</h2>
+    <ul class="group">${rows.map((r) => r.status === "removed"
+      ? `<li><div class="row"><div class="main" style="cursor:default"><div class="title" style="color:var(--muted)">Removed from ${esc(r.file)}</div><div class="sub mono">${esc(r.text)}</div></div><button class="btn" data-mem-restore="${esc(r.id)}">Put it back</button></div></li>`
+      : `<li><div class="row"><div class="main" style="cursor:default"><div class="title mono">${esc(r.text)}</div><div class="sub">${esc(MEMORY_WHY[r.reason] || "")}: ${esc(r.detail.replace(/\`/g, ""))}. ${esc(r.file)}${!repo ? ` in ${esc(short(r.repo_id))}` : ""}, line ${r.line}.</div></div>
+          <button class="x" data-mem-keep="${esc(r.id)}" aria-label="Keep this line" title="Keep this line">×</button>
+          <button class="add" data-mem-remove="${esc(r.id)}">Remove</button></div></li>`).join("")}</ul>
+    <p class="note">Agents read these files at the start of every session, so an out-of-date line costs tokens each time and can send them the wrong way. Remove edits the file; × keeps the line and stops muninn asking.</p>
+  </section>`;
+}
 function planSection() {
   if (!repo || !data.plan) return "";
   const p = data.plan.plan;
@@ -166,8 +183,8 @@ async function load() {
   const [repos, suggested, kept, home, scan] = await Promise.all([
     api("/api/repos"), api("/api/lessons?" + q({ repo, status: "proposed" })), api("/api/lessons?" + q({ repo, status: "live" })), api("/api/home?" + q({ repo })), api("/api/scan"),
   ]);
-  const plan = repo ? await api("/api/plan?" + q({ repo, branch: planBranch })) : null;
-  data = { repos, suggested, kept, home, scan, plan };
+  const [plan, memory] = await Promise.all([repo ? api("/api/plan?" + q({ repo, branch: planBranch })) : null, api("/api/memory?" + q({ repo }))]);
+  data = { repos, suggested, kept, home, scan, plan, memory };
 }
 
 /* muninn checks your sessions on its own after they end. This line shows when it last did, and lets you ask now. */
@@ -283,6 +300,8 @@ function draw() {
       <p class="note">Tap a suggestion to change its wording or when it's told before adding it.</p>
     </section>` : ""}
 
+    ${memorySection()}
+
     ${planSection()}
 
     <section aria-labelledby="ls">
@@ -339,6 +358,13 @@ document.addEventListener("click", async (e) => {
     if (el.dataset.planReopen) { await planDo({ action: "reopen", id: el.dataset.planReopen }); toast("Reopened."); return; }
     if (el.dataset.planRemove) { await planDo({ action: "remove", id: el.dataset.planRemove }); toast("Removed from the plan."); return; }
     if (el.dataset.doneMore !== undefined) { doneLimit += 15; $("#doneList").innerHTML = doneList(data.plan.plan.done); return; }
+    if (el.dataset.memRemove || el.dataset.memRestore || el.dataset.memKeep) {
+      const action = el.dataset.memRemove ? "remove" : el.dataset.memRestore ? "restore" : "keep";
+      await api("/api/memory", { action, id: el.dataset.memRemove || el.dataset.memRestore || el.dataset.memKeep });
+      data.memory = await api("/api/memory?" + q({ repo })); draw();
+      toast(action === "remove" ? "Removed the line. Put it back from here today if you need it." : action === "restore" ? "Put the line back." : "Kept. muninn won't ask about this line again.");
+      return;
+    }
     if (el.dataset.planToggle) { planShow[el.dataset.planToggle] = !planShow[el.dataset.planToggle]; draw(); return; }
     if (el.dataset.planFile !== undefined) {
       const on = el.getAttribute("aria-checked") !== "true";

@@ -15,6 +15,7 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn edit <id> [--text "..."] [--always-on|--not-always-on] [--trigger word] [--global|--repo-scope]
   muninn retire <id>
   muninn ask "question"         Search kept lessons and notes in every repo
+  muninn memory [--all-repos]   Lines in CLAUDE.md that may be out of date
   muninn plan tidy [--all-repos]  Rewrite branch plans, checked against git
   muninn handoff [--list]       Where the last session on this branch left off
   muninn setup                  Set everything up and take a first look (start here)
@@ -105,6 +106,16 @@ async function main() {
       // Starts a lesson scan in the background and returns at once: the panel's "Check my sessions now".
       const { startAutoScan, scanRunning } = await import("./commands/auto.js");
       console.log(startAutoScan({ force: true }) ? "Checking your sessions for lessons. New ones show here when it's done." : scanRunning() ? "Already checking your sessions." : "Couldn't start a check: muninn may be paused.");
+      return;
+    }
+    case "memory": {
+      // Lines in CLAUDE.md that may be out of date, for this repo or all of them.
+      const [{ openDb }, { openFlags }, { repoIdentity }] = await Promise.all([import("./store/db.js"), import("./memory/stale.js"), import("./repo/identity.js")]);
+      const db = await openDb();
+      const rows = (await openFlags(db, args.includes("--all-repos") ? null : repoIdentity(process.cwd()))).filter((r) => r.status === "open");
+      if (!rows.length) { console.log("No lines in CLAUDE.md look out of date. muninn checks them on each scan."); return; }
+      for (const r of rows) console.log(`${r.repo_id.split("/").pop()} ${r.file}:${r.line}  ${r.text}\n    ${r.detail}\n`);
+      console.log('Remove or keep them in muninn ui.');
       return;
     }
     case "plan": return (await import("./commands/plan.js")).planCmd(args);
