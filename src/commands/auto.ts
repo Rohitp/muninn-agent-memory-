@@ -19,6 +19,14 @@ export function scanDue(now = Date.now()): boolean {
   const { at, logs } = JSON.parse(readFileSync(stampFile(), "utf8"));
   return now - at >= cfg.autoMinHours * 3_600_000 || countLogs() - logs >= cfg.autoMinNewSessions;
 }
+/** Whether a long, still-running session should start a scan: lessons shouldn't wait for a session that may last days. */
+export function longScanDue(transcriptBytes: number, now = Date.now()): boolean {
+  const cfg = settings();
+  if (!cfg.autoLearn || isPaused() || process.env.MUNINN_INTERNAL || transcriptBytes < cfg.longSessionBytes) return false;
+  if (!existsSync(stampFile())) return true;
+  const { at } = JSON.parse(readFileSync(stampFile(), "utf8"));
+  return now - at >= cfg.autoLongSessionHours * 3_600_000;
+}
 export function takeLock(now = Date.now()): boolean {
   const f = lockFile();
   if (existsSync(f) && now - statSync(f).mtimeMs < 3_600_000) return false;

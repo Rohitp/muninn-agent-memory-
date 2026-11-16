@@ -44,6 +44,23 @@ describe("corrections", () => {
     expect(await texts([ev("a", 1), ev("b", 2)], "correction")).toHaveLength(1);
   });
 });
+describe("one long session", () => {
+  it("counts something said 3 times in different words hours apart, and a correction made twice", async () => {
+    const at = (h: number) => `2026-10-01T${String(h).padStart(2, "0")}:00:00.000Z`;
+    const typed = (text: string, h: number): LogEvent => ({ k: "typed", text, ts: at(h) });
+    const agent = (text: string, h: number): LogEvent => ({ k: "agent", text, ts: at(h) });
+    const long: Session = { ...session("long", 1, []), events: [
+      typed("keep the answers short please", 1), typed("keep answers short please", 4), typed("please keep the answers short", 8),
+      agent("I ran the full suite.", 2), typed("no, don't run the full suite", 2), agent("Running the full suite now.", 6), typed("no, don't run the full suite again", 6),
+    ] };
+    const m = await find([long]);
+    expect(m.filter((x) => x.signal === "repeat")).toHaveLength(1);
+    expect(m.filter((x) => x.signal === "correction")).toHaveLength(1);
+    // The same thing said 3 times within a few minutes is one conversation, not a habit.
+    const quick: Session = { ...long, id: "quick", events: long.events.slice(0, 3).map((e) => ({ ...e, ts: at(1) })) };
+    expect((await find([quick])).filter((x) => x.signal === "repeat")).toHaveLength(0);
+  });
+});
 describe("command signals", () => {
   const cmd = (cmd: string, failed: boolean, d: number, output = "error: boom"): LogEvent => ({ k: "cmd", cmd, failed, output, ts: day(d) });
   const withCmds = (id: string, d: number, ...c: LogEvent[]): Session => ({ ...session(id, d, []), events: c });

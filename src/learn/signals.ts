@@ -44,6 +44,8 @@ function cluster(items: Item[], vectors: Map<string, Float32Array>, cutoff: numb
   }
   return out;
 }
+/** Hours between the first and last time something was said: work in one long session can span days. */
+const spanHours = (c: Cluster) => { const t = c.items.map((i) => Date.parse(i.ts)).filter((x) => !Number.isNaN(x)); return t.length ? (Math.max(...t) - Math.min(...t)) / 3_600_000 : 0; };
 function toMoment(signal: Signal, c: Cluster): Moment {
   const seen = new Set<string>(); const quotes: Moment["quotes"] = [];
   for (const i of [...c.items].reverse()) {
@@ -81,12 +83,14 @@ export async function findMoments(sessions: Session[], embed: Embed, opts: { cut
   const moments: Moment[] = [];
   for (const c of cluster(repeats, vectors, opts.cutoff)) {
     const m = toMoment("repeat", c);
-    if (m.days >= 3 || (m.sessions >= opts.minSessions && m.wordings >= 2)) moments.push(m);
+    // Across sessions, or within one long session: said 3 times, in more than one wording, hours apart.
+    const inOneLong = c.items.length >= 3 && m.wordings >= 2 && spanHours(c) >= 2;
+    if (m.days >= 3 || (m.sessions >= opts.minSessions && m.wordings >= 2) || inOneLong) moments.push(m);
   }
   for (const c of cluster(corrections, vectors, opts.cutoff)) {
     const m = toMoment("correction", c);
     m.context = c.items.at(-1)?.before ? redact(c.items.at(-1)!.before!) : undefined;
-    if (m.sessions >= 2) moments.push(m);
+    if (m.sessions >= 2 || (c.items.length >= 2 && spanHours(c) >= 1)) moments.push(m);
   }
   moments.push(...commandMoments(sessions), ...explainedMoments(sessions));
   return moments;

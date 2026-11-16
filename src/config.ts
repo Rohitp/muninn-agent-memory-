@@ -16,6 +16,10 @@ export const DEFAULTS = {
   autoLearn: true,
   autoMinNewSessions: 5,
   autoMinHours: 24,
+  /** During a long session (one that never ends), scan for lessons at most this often. */
+  autoLongSessionHours: 6,
+  /** How big a session's log must be to count as long, in bytes. */
+  longSessionBytes: 1_000_000,
   maxPerDelivery: 3,
   tokensPerDelivery: 300,
   tokensPerSession: 1000,

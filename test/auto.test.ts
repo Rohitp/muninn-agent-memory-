@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { releaseLock, scanDue, stamp, takeLock } from "../src/commands/auto.js";
+import { longScanDue, releaseLock, scanDue, stamp, takeLock } from "../src/commands/auto.js";
 import { install, installLearnHook, installed, removeLearnHook } from "../src/commands/install.js";
 import { tmp, useHome, write } from "./helpers.js";
 
@@ -16,6 +16,13 @@ describe("automatic scans", () => {
     expect(scanDue(now + 25 * H)).toBe(true);
     for (let i = 0; i < 5; i++) write(join(process.env.MUNINN_LOG_ROOT!, `claude/projects/p/${i}.jsonl`), [{}]);
     expect(scanDue(now + H)).toBe(true);
+  });
+  it("scans a long session every 6 hours while it runs, but not a short one", () => {
+    const now = Date.now();
+    stamp(now);
+    expect(longScanDue(2_000_000, now + H)).toBe(false);
+    expect(longScanDue(2_000_000, now + 7 * H)).toBe(true);
+    expect(longScanDue(50_000, now + 7 * H)).toBe(false);
   });
   it("muninn's own runs and pause do not trigger a scan", () => {
     process.env.MUNINN_INTERNAL = "1";

@@ -157,6 +157,8 @@ async function runHook(client: string) {
       const db = await openDb({ lockWaitMs: 100 });
       const grown = statSync(t).size - (await cp.lastCheckpointSize(db, input.session_id));
       if (grown >= (event === "PreCompact" ? cp.GROWTH.compact : cp.GROWTH.working)) auto.startCheckpoint(t, client);
+      // A long session may never end, so it gets a lesson scan every few hours instead of waiting for its end.
+      if (event === "Stop" && auto.longScanDue(statSync(t).size)) auto.startAutoScan({ force: true });
       return;
     }
     const [{ openDb }, { deliver, hookOutput }] = await Promise.all([import("./store/db.js"), import("./deliver/hook.js")]);
