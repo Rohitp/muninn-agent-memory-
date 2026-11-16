@@ -607,3 +607,30 @@ describe("git facts for the plan", () => {
     expect(P.gitFacts(join(tmp(), "nowhere"), "main")).toBeNull();
   });
 });
+
+describe("the problem came back", () => {
+  it("counts only where the lesson had its chance, and never for lessons grouped from your questions or reports", async () => {
+    useHome();
+    const db = await openDb();
+    const { createLesson, addEvidence } = await import("../src/store/lessons.js");
+    const { reportData } = await import("../src/commands/report.js");
+    await db.execute("INSERT INTO repos (id,paths) VALUES ('r','[]')");
+    const mk = async (signal: string) => {
+      const id = await createLesson(db, { repo_id: "r", text: `Lesson from ${signal}`, source: "inferred", signal, status: "live", by: "t", reviewed: true });
+      await db.execute({ sql: "UPDATE lessons SET always_on=1, reviewed_at='2026-11-16T19:00:00.000Z' WHERE id=?", args: [id] });
+      return id;
+    };
+    const loop = await mk("loop"); const friction = await mk("friction");
+    // A session already running when the lesson was kept: it started (and was told nothing) at 10:00.
+    await db.execute("INSERT INTO deliveries (id,ts,tool,session,event,outcome) VALUES ('d1','2026-11-16T10:00:00.000Z','claude-code','old','SessionStart','no_match')");
+    // A session started after keeping, where the lesson was told.
+    await db.execute({ sql: "INSERT INTO deliveries (id,ts,tool,session,event,lesson_id,outcome) VALUES ('d2','2026-11-16T20:00:00.000Z','claude-code','new','SessionStart',?,'sent')", args: [loop] });
+    for (const id of [loop, friction]) {
+      await addEvidence(db, id, [{ tool: "claude-code", session: "old", ts: "2026-11-16T19:30:00.000Z", quote: "again in the old session" }]);
+      await addEvidence(db, id, [{ tool: "claude-code", session: "new", ts: "2026-11-16T20:30:00.000Z", quote: "again in the new session" }]);
+    }
+    const r = await reportData(db, "r");
+    expect(r.lessons.find((l) => l.id === loop)!.after).toBe(1);
+    expect(r.lessons.find((l) => l.id === friction)!.after).toBe(0);
+  });
+});

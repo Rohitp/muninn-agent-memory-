@@ -10,7 +10,7 @@ export type PanelData = {
   week: { sessions: number; mostTold: { label: string; sessions: number } | null; problems: { kept: number; cameBack: number }; handoffs: number; costUsd: number | null }
   receipt: ReceiptLine[]
   waiting: { count: number; top: Waiting[] }
-  cameBack: { id: string; text: string; verdict: string; fix: string | null }[]
+  cameBack: { id: string; text: string; full?: string; verdict: string; fix: string | null }[]
   carry: Carried[]
   /** Commands that failed the same way 3 or more times in a row this session, newest first. */
   loops: { name: string; n: number; err: string; tokens: number; at: string; told: boolean }[]

@@ -1,1 +1,1 @@
-{"name": "muninn-panel", "version": "0.2.0", "description": "A side panel showing what muninn told this session and why, with one-click fixes", "types": "./types/index.d.ts", "author": {"name": "Rohit"}}
+{"name": "muninn-panel", "version": "0.3.0", "description": "A side panel showing what muninn told this session and why, with one-click fixes", "types": "./types/index.d.ts", "author": {"name": "Rohit"}}

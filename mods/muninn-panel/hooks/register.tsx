@@ -117,14 +117,15 @@ export const register: Register = on => {
 
     const header = (
       <Box key="header" flexDirection="column" gap="xs">
-        <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap="sm">
-          <Box flexDirection="row" gap="xs" alignItems="center" flexShrink={1}>
-            <Text weight="semibold">muninn</Text>
-            <Text dimColor wrap="truncate-end">{data.repoShort}{data.branch ? ` · ${data.branch}` : ''}</Text>
-          </Box>
+        <Box flexDirection="row" gap="xs" alignItems="center">
+          <Text weight="semibold">muninn</Text>
+          <Text dimColor wrap="truncate-end">{data.repoShort}{data.branch ? ` · ${data.branch}` : ''}</Text>
+        </Box>
+        {/* The setting on a row of its own: beside the name it doesn't fit a narrow pane. */}
+        <Box flexDirection="row" gap="sm" alignItems="center">
+          <Text dimColor size="footnote">Speaks up</Text>
           <Select
             key="dial"
-            label="Speaks up"
             value={data.dial}
             options={(Object.keys(DIAL_LABEL) as (keyof typeof DIAL_LABEL)[]).map(k => ({ value: k, label: DIAL_LABEL[k] }))}
             onSelect={v => act($, ['dial', v], `muninn now speaks up ${DIAL_LABEL[v as keyof typeof DIAL_LABEL]} here.`)}
@@ -153,7 +154,7 @@ export const register: Register = on => {
     } else if (back) {
       todo = card(SIGNAL, [
         caption('The problem came back', SIGNAL),
-        <Text key="t" weight="semibold" wrap="wrap">{back.text}</Text>,
+        <Text key="t" weight="semibold" wrap="wrap">{back.full ?? back.text}</Text>,
         <Text key="v" dimColor size="footnote" wrap="wrap">{back.verdict}</Text>,
         <Box key="b" flexDirection="row" gap="sm">
           {back.fix === 'always-on' && <Button key={`fix-${back.id}`} variant="primary" label="Tell it every session" onPress={() => act($, ['edit', back.id, '--always-on'], 'Told every session now.')} />}

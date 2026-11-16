@@ -18,7 +18,7 @@ export type Report = { lessons: LessonReport[]; lastLearn: string; handoffs: { w
  */
 export async function reportData(db: Client, repo: string | null): Promise<Report> {
   const where = repo ? "AND (l.repo_id=? OR l.scope='global')" : "";
-  const lessons = (await db.execute({ sql: `SELECT l.id,l.text,l.kind,l.repo_id,coalesce(l.reviewed_at,l.created_at) kept,l.always_on,(SELECT group_concat(pattern, ', ') FROM triggers t WHERE t.lesson_id=l.id) kw FROM lessons l WHERE l.status='live' ${where} ORDER BY kept DESC`, args: repo ? [repo] : [] })).rows;
+  const lessons = (await db.execute({ sql: `SELECT l.id,l.text,l.kind,l.signal,l.repo_id,coalesce(l.reviewed_at,l.created_at) kept,l.always_on,(SELECT group_concat(pattern, ', ') FROM triggers t WHERE t.lesson_id=l.id) kw FROM lessons l WHERE l.status='live' ${where} ORDER BY kept DESC`, args: repo ? [repo] : [] })).rows;
   // A tool gets lessons if muninn's hook runs there, whether or not anything matched.
   const toolsWithDelivery = new Set((await db.execute("SELECT DISTINCT tool FROM deliveries WHERE outcome NOT IN ('unsupported_client')")).rows.map((r) => String(r.tool)));
   const cursorOn = String((await db.execute("SELECT value FROM meta WHERE key='cursor_repos'")).rows[0]?.value ?? "[]");
@@ -26,7 +26,16 @@ export async function reportData(db: Client, repo: string | null): Promise<Repor
   for (const l of lessons) {
     const id = String(l.id); const kept = String(l.kept);
     const d = (await db.execute({ sql: "SELECT count(*) n, count(DISTINCT session) s FROM deliveries WHERE lesson_id=? AND outcome='sent'", args: [id] })).rows[0]!;
-    const ev = (await db.execute({ sql: "SELECT count(DISTINCT CASE WHEN seen_at<? THEN session END) b, count(DISTINCT CASE WHEN seen_at>=? THEN session END) a, group_concat(DISTINCT CASE WHEN seen_at>=? THEN tool END) t FROM evidence WHERE lesson_id=?", args: [kept, kept, kept, id] })).rows[0]!;
+    // "Came back" only counts in a session where the lesson had its chance: it was told there first, or the session
+    // started after you kept it, or the session's tool gets no lessons at all (said separately below). A session
+    // already running when you kept an every-session lesson never got it, so a repeat there isn't the lesson failing.
+    // Lessons gathered from your questions or reports group different messages by their kind, so a new one in the
+    // group isn't the same problem coming back: those aren't counted.
+    const grouped = ["confused", "friction"].includes(String(l.signal ?? ""));
+    const chance = `(EXISTS (SELECT 1 FROM deliveries d WHERE d.lesson_id=e.lesson_id AND d.session=e.session AND d.outcome='sent' AND d.ts<=e.seen_at)
+      OR coalesce((SELECT min(d.ts) FROM deliveries d WHERE d.session=e.session), '9999') >= ?
+      OR NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.session=e.session))`;
+    const ev = (await db.execute({ sql: `SELECT count(DISTINCT CASE WHEN seen_at<? THEN session END) b, count(DISTINCT CASE WHEN seen_at>=? AND ${grouped ? "0" : chance} THEN session END) a, group_concat(DISTINCT CASE WHEN seen_at>=? AND ${grouped ? "0" : chance} THEN tool END) t FROM evidence e WHERE lesson_id=?`, args: grouped ? [kept, kept, kept, id] : [kept, kept, kept, kept, kept, id] })).rows[0]!;
     const afterTools = String(ev.t ?? "").split(",").filter(Boolean);
     const route = l.always_on ? "always-on" : l.kw ? `keyword: ${l.kw}` : "search only";
     const after = Number(ev.a), sent = Number(d.n);
@@ -38,17 +47,18 @@ export async function reportData(db: Client, repo: string | null): Promise<Repor
       if (tool && toolsWithDelivery.has(String(tool))) missedInDeliveredTools.push(String(r.at).slice(0, 10));
     }
     let verdict: string; let fix: LessonReport["fix"] = null;
-    if (after === 0) verdict = sent ? "Not seen again since you kept it." : route === "search only" ? "Not seen again. It isn't sent automatically, only found by search." : "Not seen again, and not sent yet.";
+    if (after === 0 && grouped) verdict = sent ? "Told to agents. muninn can't tell from your messages alone whether this exact problem came back." : "Not told yet: it goes out from your next session.";
+    else if (after === 0) verdict = sent ? "Not seen again since you kept it." : route === "search only" ? "Not seen again. It isn't sent automatically, only found by search." : "Not seen again, and not sent yet.";
     else if (missedInDeliveredTools.length && !l.always_on) {
       const dates = [...new Set(missedInDeliveredTools)].map((d) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" })).join(", ");
       verdict = `Came back on ${dates} in a session where it wasn't sent: ${l.kw ? `its keyword "${l.kw}" didn't match what you typed` : "it isn't sent automatically"}. Make it always-on?`;
       fix = "always-on";
     } else {
       const missing = afterTools.filter((t) => !toolsWithDelivery.has(t) && !(t === "cursor" && l.repo_id && cursorOn.includes(String(l.repo_id))));
-      verdict = `Seen again in ${after} session(s) since you kept it (${afterTools.map((t) => TOOL[t] ?? t).join(", ")}).`;
+      verdict = `Seen again in ${after === 1 ? "a session" : `${after} sessions`} since you kept it (${afterTools.map((t) => TOOL[t] ?? t).join(", ")}).`;
       if (missing.length) verdict += ` ${missing.map((t) => TOOL[t] ?? t).join(" and ")} wasn't getting lessons.`;
       else if (route === "search only") verdict += " It isn't sent automatically. Consider always-on or a keyword.";
-      else if (!sent) verdict += " It was never sent: check its keyword.";
+      else if (!sent) verdict += l.always_on ? " It goes out at the start of each session, and none has started since you kept it." : " It was never sent: check its keyword.";
       else verdict += " It was sent, so the wording may need to be clearer.";
     }
     out.push({ id, text: String(l.text), kind: String(l.kind ?? "rule"), repo: l.repo_id ? String(l.repo_id) : null, keptAt: kept, route, sent, sentSessions: Number(d.s), before: Number(ev.b), after, afterTools, verdict, fix });

@@ -55,7 +55,7 @@ export async function homeData(db: Client, repo: string | null, session?: string
   const w = (await db.execute({ sql: "SELECT count(*) n, count(DISTINCT session) s, max(ts) last FROM deliveries WHERE outcome='sent' AND ts>=?", args: [since7] })).rows[0]!;
   const c = (await db.execute({ sql: "SELECT sum(cost_usd) cost, count(cost_usd) priced FROM llm_calls WHERE ts>=?", args: [since7] })).rows[0]!;
   const report = await reportData(db, repo);
-  const cameBack = report.lessons.filter((l) => l.after > 0).map((l) => ({ id: l.id, text: label(l.text), verdict: l.verdict, fix: l.fix }));
+  const cameBack = report.lessons.filter((l) => l.after > 0).map((l) => ({ id: l.id, text: label(l.text), full: l.text, verdict: l.verdict, fix: l.fix }));
 
   const waitingRows = (await db.execute({ sql: `SELECT id,text,plain,kind,signal,source,suggested_keywords,suggested_scope,wasted_tokens FROM lessons l WHERE status='proposed' ${repo ? "AND repo_id=?" : ""} ORDER BY sessions DESC, last_seen DESC`, args: rargs })).rows;
   const { originOf } = await import("./ask.js");
