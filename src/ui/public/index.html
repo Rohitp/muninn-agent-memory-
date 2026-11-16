@@ -66,6 +66,8 @@ input[type=text] { width: 100%; height: 40px; border: 1px solid var(--line-stron
 .check:hover { border-color: var(--on); }
 .check[aria-checked="true"] { background: var(--on); border-color: var(--on); }
 .sublist { list-style: none; margin: 0; padding: 0 18px 12px; }
+.donebox input[type=search] { margin: 0 18px 10px; width: calc(100% - 36px); box-sizing: border-box; }
+.doneday { padding: 6px 18px 0; font-size: 13px; color: var(--muted); font-weight: 600; }
 .sublist li { padding: 6px 0; font-size: 15px; display: flex; gap: 8px; align-items: baseline; }
 .sublist .x { width: 26px; height: 26px; font-size: 15px; margin-left: auto; }
 .scan { margin: 10px 0 0; font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -100,6 +102,22 @@ let planBranch = null; // the branch whose plan is shown; null means the one che
 const planShow = { decisions: false, done: false };
 
 /* The running plan: built from your sessions' handoffs, and yours to edit. */
+let doneFilter = ""; // text typed in the Done filter
+let doneLimit = 15; // how many done items show before "Show more"
+/** What's done, newest first, grouped by day and narrowed by the filter, so a long history stays easy to scan. */
+function doneList(items) {
+  const words = doneFilter.toLowerCase().split(/\s+/).filter(Boolean);
+  const hits = items.filter((d) => words.every((w) => d.text.toLowerCase().includes(w)));
+  if (!hits.length) return `<p class="note" style="margin:0 0 8px">Nothing done matches "${esc(doneFilter)}".</p>`;
+  const dayOf = (d) => (d.closed_at || d.created_at).slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10), yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  const label = (day) => (day === today ? "Today" : day === yesterday ? "Yesterday" : new Date(day + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }));
+  const shown = words.length ? hits : hits.slice(0, doneLimit);
+  const groups = [];
+  for (const d of shown) { const day = dayOf(d); if (groups.at(-1)?.day !== day) groups.push({ day, items: [] }); groups.at(-1).items.push(d); }
+  return groups.map((g) => `<div class="doneday">${label(g.day)} · ${g.items.length}</div><ul class="sublist">${g.items.map((d) => `<li><span>${esc(d.text)}</span>${d.kind === "open" ? ` <button class="linkbtn" data-plan-reopen="${esc(d.id)}">reopen</button>` : ""}</li>`).join("")}</ul>`).join("")
+    + (shown.length < hits.length ? `<button class="more" data-done-more>Show ${Math.min(15, hits.length - shown.length)} more of ${hits.length - shown.length}</button>` : "");
+}
 const shortDate = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 function planEditor(kind, id, value, placeholder) {
   return `<div class="row" style="gap:8px"><label class="vh" for="pe">${esc(placeholder)}</label><input id="pe" type="text" data-plan-input data-kind="${kind}" data-id="${esc(id || "")}" value="${esc(value)}" placeholder="${esc(placeholder)}" style="margin:0;flex:1"><button class="btn primary" data-plan-save>Save</button><button class="btn" data-plan-cancel>Cancel</button></div>`;
@@ -129,7 +147,7 @@ function planSection() {
       ${p.decisions.length ? `<li><button class="more" data-plan-toggle="decisions" style="color:var(--ink)">Decisions · ${p.decisions.length} <span class="sub">${planShow.decisions ? "hide" : "show"}</span></button>
         ${planShow.decisions ? `<ul class="sublist">${p.decisions.map((d) => `<li><span class="sub">${shortDate(d.created_at)}</span> ${esc(d.text)} <button class="x" data-plan-remove="${esc(d.id)}" aria-label="Remove">×</button></li>`).join("")}</ul>` : ""}</li>` : ""}
       ${p.done.length ? `<li><button class="more" data-plan-toggle="done" style="color:var(--ink)">Done · ${p.done.length} <span class="sub">${planShow.done ? "hide" : "show"}</span></button>
-        ${planShow.done ? `<ul class="sublist">${p.done.map((d) => `<li><span class="sub">${shortDate(d.closed_at || d.created_at)}</span> ${esc(d.text)}${d.kind === "open" ? ` <button class="linkbtn" data-plan-reopen="${esc(d.id)}">reopen</button>` : ""}</li>`).join("")}</ul>` : ""}</li>` : ""}
+        ${planShow.done ? `<div class="donebox">${p.done.length > 8 ? `<label class="vh" for="doneFilter">Filter what's done</label><input id="doneFilter" type="search" placeholder="Filter what's done" value="${esc(doneFilter)}" autocomplete="off">` : ""}<div id="doneList">${doneList(p.done)}</div></div>` : ""}</li>` : ""}
     </ul>
     <p class="note">${data.plan.branches.find((b) => b.name === data.plan.branch)?.merged ? "This branch is merged, so its work is finished. " : ""}${empty ? "Each branch is its own piece of work. muninn builds its plan from the sessions on it: a short summary of where things stand, the next few steps, and the decisions that still hold. You can also write your own." : "Rewritten as your sessions go, and checked against the branch's commits and pull requests. Agents working on this branch get it when a session starts. Anything you write yourself stays as you wrote it."}</p>
   </section>`;
@@ -296,6 +314,10 @@ async function savePlanInput() {
   else await planDo({ action: "add", kind: input.dataset.kind, text });
   toast("Saved to the plan.");
 }
+document.addEventListener("input", (e) => {
+  if (e.target.id !== "doneFilter") return;
+  doneFilter = e.target.value; $("#doneList").innerHTML = doneList(data.plan.plan.done);
+});
 document.addEventListener("keydown", (e) => {
   if (!e.target.matches?.("[data-plan-input]")) return;
   if (e.key === "Enter") { e.preventDefault(); savePlanInput().catch((err) => toast(err.message)); }
@@ -316,6 +338,7 @@ document.addEventListener("click", async (e) => {
     if (el.dataset.planClose) { el.setAttribute("aria-checked", "true"); await planDo({ action: "close", id: el.dataset.planClose }); toast("Marked done."); return; }
     if (el.dataset.planReopen) { await planDo({ action: "reopen", id: el.dataset.planReopen }); toast("Reopened."); return; }
     if (el.dataset.planRemove) { await planDo({ action: "remove", id: el.dataset.planRemove }); toast("Removed from the plan."); return; }
+    if (el.dataset.doneMore !== undefined) { doneLimit += 15; $("#doneList").innerHTML = doneList(data.plan.plan.done); return; }
     if (el.dataset.planToggle) { planShow[el.dataset.planToggle] = !planShow[el.dataset.planToggle]; draw(); return; }
     if (el.dataset.planFile !== undefined) {
       const on = el.getAttribute("aria-checked") !== "true";
@@ -371,7 +394,7 @@ document.addEventListener("click", async (e) => {
 });
 document.addEventListener("change", (e) => {
   if (e.target.id === "repo") { repo = e.target.value; open = null; showAll = false; planBranch = null; refresh(); }
-  if (e.target.id === "planBranch") { planBranch = e.target.value; planEdit = null; planShow.decisions = planShow.done = false; refresh(); }
+  if (e.target.id === "planBranch") { planBranch = e.target.value; planEdit = null; planShow.decisions = planShow.done = false; doneFilter = ""; doneLimit = 15; refresh(); }
 });
 refresh().catch((e) => { $("#main").innerHTML = `<p class="lead">${esc(e.message)}</p>`; });
 
