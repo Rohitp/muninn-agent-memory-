@@ -54,7 +54,9 @@ input[type=text] { width: 100%; height: 40px; border: 1px solid var(--line-stron
 .choices { display: flex; flex-wrap: wrap; gap: 8px; }
 .choices button { height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--group); cursor: pointer; font-size: 14px; }
 .choices button[aria-checked="true"] { border-color: var(--ink); background: var(--ink); color: var(--group); }
-.check { display: flex; gap: 8px; align-items: center; font-size: 14px; margin-top: 12px; }
+.checkline, .detail .checkline { display: flex; gap: 8px; align-items: center; font-size: 14px; font-weight: 400; margin-top: 14px; width: auto; }
+.checkline input { margin: 0; width: 16px; height: 16px; flex: none; }
+.hint { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
 .btns { display: flex; gap: 10px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
 .btn { height: 38px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--group); cursor: pointer; font-size: 14px; }
 .btn.primary { background: var(--ink); border-color: var(--ink); color: var(--group); font-weight: 600; }
@@ -93,7 +95,13 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const short = (r) => (r ? String(r).split("/").filter(Boolean).pop() : "all repos");
 const q = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString();
 const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 60 ? "just now" : m < 2880 ? `${Math.round(m / 60)} hours ago` : `${Math.round(m / 1440)} days ago`; };
-const WHEN = { always: "Every session", keyword: "When a word comes up", none: "Only when searched" };
+const WHEN = { always: "Every session", keyword: "When a word comes up", none: "Only if an agent looks it up" };
+/* What each choice means, in a sentence under the choices. */
+const WHEN_HINT = {
+  always: "Told to agents at the start of every session in this repo.",
+  keyword: "Told when one of these words is in your prompt, or in a command that failed.",
+  none: "Never sent on its own. At the start of each session agents are told they can run muninn ask \"…\" to look things up, and this is one of the things they'd find.",
+};
 let repo = HERE || "";
 let showAll = false;
 let open = null; // the id of the row opened for editing
@@ -222,6 +230,7 @@ function whenText(l) {
 function whenChoices(route, kws) {
   return `<span class="lbl">When to tell agents</span>
     <div class="choices" role="radiogroup" aria-label="When to tell agents">${["always", "keyword", "none"].map((r) => `<button role="radio" data-route="${r}" aria-checked="${r === route}">${WHEN[r]}</button>`).join("")}</div>
+    <p class="hint" data-when-hint>${WHEN_HINT[route]}</p>
     <input type="text" data-f="kw" placeholder="Words that should bring it up, comma-separated" value="${esc(kws)}" ${route === "keyword" ? "" : "hidden"}>`;
 }
 
@@ -239,8 +248,8 @@ function suggestionRow(l) {
       <label for="t-${esc(l.id)}">What agents are told</label>
       <textarea id="t-${esc(l.id)}" rows="3" data-f="text">${esc(l.text)}</textarea>
       ${whenChoices(d.route, (d.keywords.length ? d.keywords : l.suggested || []).join(", "))}
-      ${l.scope !== "global" ? `<label class="check" style="font-weight:400"><input type="checkbox" data-f="global" ${d.global ? "checked" : ""}> In all repos</label>` : ""}
-      ${ev ? `<div class="evidence">You said: ${ev}</div>` : ""}
+      ${l.scope !== "global" ? `<label class="checkline"><input type="checkbox" data-f="global" ${d.global ? "checked" : ""}> Tell agents in all my repos, not just this one</label>` : ""}
+      ${ev ? `<div class="evidence">${["repeat", "correction", "explained"].includes(l.signal) ? "You said" : "From your session"}: ${ev}</div>` : ""}
       <div class="btns"><button class="btn primary" data-add="${esc(l.id)}" data-custom="1">Add</button><button class="btn" data-open="${esc(l.id)}">Cancel</button></div>
     </div>` : ""}
   </li>`;
@@ -375,6 +384,7 @@ document.addEventListener("click", async (e) => {
     if (el.dataset.repo) { repo = el.dataset.repo; open = null; showAll = false; await refresh(); window.scrollTo(0, 0); return; }
     if (el.dataset.route) {
       const box = el.closest(".detail"); box.querySelectorAll("[data-route]").forEach((b) => b.setAttribute("aria-checked", String(b === el)));
+      box.querySelector("[data-when-hint]").textContent = WHEN_HINT[el.dataset.route];
       const kw = box.querySelector("[data-f=kw]"); kw.hidden = el.dataset.route !== "keyword"; if (!kw.hidden) kw.focus(); return;
     }
     if (el.dataset.add) {

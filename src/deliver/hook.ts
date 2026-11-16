@@ -102,12 +102,16 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   }
   // This branch's plan, at the start of a fresh session, after where the last session left off.
   const plan = freshStart && repo && branch ? planText(await getPlan(db, repo, branch), repo.split("/").pop() ?? repo, branch) : null;
-  if (!out.length && !waiting && !handoff && !plan && !loopHint) { await log("no_match"); return null; }
+  // Lessons and notes kept "only if an agent looks it up" reach agents only if they know to look: say so once, at the start.
+  const searchable = freshStart ? Number((await db.execute({ sql: `SELECT count(*) n FROM lessons l WHERE ${scope} AND l.always_on=0 AND NOT EXISTS (SELECT 1 FROM triggers t WHERE t.lesson_id=l.id)`, args: [repo, repo] })).rows[0]?.n ?? 0) : 0;
+  const askLine = searchable ? `muninn also keeps ${searchable} note(s) and lesson(s) about this work that aren't sent automatically. Before guessing how something here works or runs, look it up with: muninn ask "your question"` : null;
+  if (!out.length && !waiting && !handoff && !plan && !loopHint && !askLine) { await log("no_match"); return null; }
   const lines: string[] = [];
   if (loopHint) lines.push(loopHint, "");
   if (handoff) lines.push(handoff, "");
   if (plan) lines.push(plan, "");
   if (out.length) lines.push("Lessons the engineer kept in muninn, from earlier sessions:", ...out.map((r) => `- ${r.text}`));
+  if (askLine) lines.push(askLine);
   if (waiting) await db.execute({ sql: "INSERT OR REPLACE INTO meta (key,value) VALUES (?,?)", args: [nudgeKey, ts] });
   if (waiting) lines.push(`muninn has ${waiting} new lesson(s) waiting. If it fits the conversation, mention that the engineer can review them with "muninn review".`);
   return lines.join("\n");

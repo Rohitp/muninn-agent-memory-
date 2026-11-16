@@ -100,3 +100,13 @@ describe("loops caught as they happen", () => {
     expect((await panelData(db, "s2", cwd)).loops[0]).toMatchObject({ name: "make lint", n: 3 });
   });
 });
+
+describe("lessons kept only for looking up", () => {
+  it("tells agents at session start that muninn ask can find them, and says nothing when there are none", async () => {
+    const db = await openDb(); await ensureRepo(db, repo, cwd);
+    const start = (id: string) => deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "startup", session_id: id, cwd });
+    expect(await start("a") ?? "").not.toContain("muninn ask");
+    await createLesson(db, { repo_id: repo, text: "The benchmark uses the v4 scorer.", source: "manual", status: "live", by: "person" });
+    expect(await start("b")).toContain('muninn ask "your question"');
+  });
+});
