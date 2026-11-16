@@ -13,12 +13,12 @@ async function version(db: Client, id: string, by: string) {
   const triggers = (await db.execute({ sql: "SELECT pattern FROM triggers WHERE lesson_id=?", args: [id] })).rows.map((r) => r.pattern);
   await db.execute({ sql: "INSERT INTO lesson_versions (id,lesson_id,snapshot,changed_by,changed_at) VALUES (?,?,?,?,?)", args: [randomUUID(), id, JSON.stringify({ ...l, triggers }), by, now()] });
 }
-export async function createLesson(db: Client, l: { repo_id: string | null; scope?: string; text: string; source: string; signal?: string | null; suggestedScope?: string; kind?: "rule" | "note"; suggestedKeywords?: string[]; status: string; sessions?: number; last_seen?: string | null; vector?: Float32Array; by: string; reviewed?: boolean }) {
+export async function createLesson(db: Client, l: { repo_id: string | null; scope?: string; text: string; source: string; signal?: string | null; suggestedScope?: string; kind?: "rule" | "note"; suggestedKeywords?: string[]; status: string; sessions?: number; last_seen?: string | null; vector?: Float32Array; by: string; reviewed?: boolean; wasted?: number }) {
   const id = randomUUID(); const t = now();
   const vec = l.vector ? `[${[...l.vector].join(",")}]` : null;
   await db.execute({
-    sql: `INSERT INTO lessons (id,repo_id,scope,text,source,signal,suggested_scope,kind,suggested_keywords,status,sessions,last_seen,reviewed_at,embedding,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,${vec ? "vector32(?)" : "NULL"},?,?)`,
-    args: [id, l.repo_id, l.scope ?? (l.repo_id ? "repo" : "global"), l.text, l.source, l.signal ?? null, l.suggestedScope ?? null, l.kind ?? "rule", l.suggestedKeywords?.length ? JSON.stringify(l.suggestedKeywords) : null, l.status, l.sessions ?? 0, l.last_seen ?? null, l.reviewed ? t : null, ...(vec ? [vec] : []), t, t],
+    sql: `INSERT INTO lessons (id,repo_id,scope,text,source,signal,suggested_scope,kind,suggested_keywords,status,sessions,last_seen,reviewed_at,embedding,created_at,updated_at,wasted_tokens) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,${vec ? "vector32(?)" : "NULL"},?,?,?)`,
+    args: [id, l.repo_id, l.scope ?? (l.repo_id ? "repo" : "global"), l.text, l.source, l.signal ?? null, l.suggestedScope ?? null, l.kind ?? "rule", l.suggestedKeywords?.length ? JSON.stringify(l.suggestedKeywords) : null, l.status, l.sessions ?? 0, l.last_seen ?? null, l.reviewed ? t : null, ...(vec ? [vec] : []), t, t, l.wasted ?? null],
   });
   await db.execute({ sql: "INSERT INTO lessons_fts (lesson_id,text) VALUES (?,?)", args: [id, l.text] });
   await version(db, id, l.by);

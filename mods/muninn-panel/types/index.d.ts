@@ -1,6 +1,6 @@
 export type ReceiptLine = { at: string; tool: string; kind: 'lesson' | 'handoff'; id: string; text: string; why: string; session: string | null }
 export type Carried = { id: string; label: string; route: string; state: 'lit' | 'armed' | 'fading'; lastTold: string | null; global: boolean }
-export type Waiting = { id: string; text: string; plain: string | null; origin: string; route: string }
+export type Waiting = { id: string; text: string; plain: string | null; origin: string; route: string; worth?: string | null }
 export type PanelData = {
   repo: string | null
   repoShort: string

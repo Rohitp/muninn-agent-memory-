@@ -3,7 +3,7 @@ import { getDial, type Dial } from "../store/dial.js";
 import { shortRepo } from "./ask.js";
 import { whySent } from "./panel.js";
 import { reportData } from "./report.js";
-import { defaultRoute } from "./review.js";
+import { defaultRoute, worthSentence } from "./review.js";
 
 export type ReceiptLine = { at: string; tool: string; kind: "lesson" | "handoff"; id: string; text: string; why: string; session: string | null };
 export type Carried = { id: string; label: string; route: string; state: "lit" | "armed" | "fading"; lastTold: string | null; global: boolean };
@@ -57,12 +57,12 @@ export async function homeData(db: Client, repo: string | null, session?: string
   const report = await reportData(db, repo);
   const cameBack = report.lessons.filter((l) => l.after > 0).map((l) => ({ id: l.id, text: label(l.text), verdict: l.verdict, fix: l.fix }));
 
-  const waitingRows = (await db.execute({ sql: `SELECT id,text,plain,kind,signal,source,suggested_keywords,suggested_scope FROM lessons l WHERE status='proposed' ${repo ? "AND repo_id=?" : ""} ORDER BY sessions DESC, last_seen DESC`, args: rargs })).rows;
+  const waitingRows = (await db.execute({ sql: `SELECT id,text,plain,kind,signal,source,suggested_keywords,suggested_scope,wasted_tokens FROM lessons l WHERE status='proposed' ${repo ? "AND repo_id=?" : ""} ORDER BY sessions DESC, last_seen DESC`, args: rargs })).rows;
   const { originOf } = await import("./ask.js");
   const top = [];
   for (const r of waitingRows.slice(0, 3)) {
     const d = defaultRoute({ text: String(r.text), kind: String(r.kind ?? "rule"), signal: r.signal ? String(r.signal) : null, suggested_keywords: r.suggested_keywords ? String(r.suggested_keywords) : null, suggested_scope: r.suggested_scope ? String(r.suggested_scope) : null });
-    top.push({ id: String(r.id), text: String(r.text), plain: r.plain ? String(r.plain) : null, origin: await originOf(db, { id: String(r.id), source: String(r.source), signal: r.signal ? String(r.signal) : null }), route: d.route === "always" ? `every session${d.global ? ", every repo" : ", this repo"}` : d.route === "keyword" ? `when "${d.keywords.join('", "')}" comes up` : "only when searched" });
+    top.push({ id: String(r.id), text: String(r.text), plain: r.plain ? String(r.plain) : null, origin: await originOf(db, { id: String(r.id), source: String(r.source), signal: r.signal ? String(r.signal) : null }), worth: worthSentence({ text: String(r.text), wasted_tokens: r.wasted_tokens == null ? null : Number(r.wasted_tokens) }, d.route), route: d.route === "always" ? `every session${d.global ? ", every repo" : ", this repo"}` : d.route === "keyword" ? `when "${d.keywords.join('", "')}" comes up` : "only when searched" });
   }
 
   const carryRows = (await db.execute({ sql: `SELECT l.id, l.text, l.plain, l.always_on, l.scope, coalesce(l.reviewed_at,l.created_at) kept, (SELECT group_concat(pattern, '", "') FROM triggers t WHERE t.lesson_id=l.id) kw, (SELECT max(ts) FROM deliveries d WHERE d.lesson_id=l.id AND d.outcome='sent') last FROM lessons l WHERE l.status='live' AND l.off=0 AND ${inRepo} ORDER BY l.always_on DESC, last DESC`, args: rargs })).rows;

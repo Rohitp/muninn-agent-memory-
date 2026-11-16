@@ -7,6 +7,8 @@ export type Moment = {
   signal: Signal; text: string; quotes: { tool: string; session: string; ts: string; quote: string }[];
   sessions: number; days: number; wordings: number; tools: string[]; last: string; vector?: Float32Array;
   context?: string;
+  /** Tokens of output the problem wasted: failed repeats and re-reads, not the first try. */
+  wasted?: number;
 };
 const norm = (s: string) => s.toLowerCase().replace(/\W+/g, " ").trim();
 const NEG = /\b(not|never|don'?t|no|avoid|stop|cannot|won'?t|shouldn'?t|without)\b/i;
@@ -124,10 +126,11 @@ export const LOOP_MIN = 3;
 
 function commandMoments(sessions: Session[]): Moment[] {
   const out: Moment[] = [];
-  const returned = new Map<string, { cmd: string; err: string; hits: { session: string; tool: string; ts: string }[] }>();
+  const returned = new Map<string, { cmd: string; err: string; hits: { session: string; tool: string; ts: string }[]; tokens: number }>();
   const stopped = new Map<string, { session: string; tool: string; ts: string }[]>();
   for (const s of sessions) {
     const count = new Map<string, number>(); const lastErr = new Map<string, string>(); const between = new Map<string, string[]>();
+    const failTokens = new Map<string, number>();
     // Loops: the same command failing the same way in a row. Kept if the session moved on without fixing it.
     const run = new Map<string, { err: string; n: number; tokens: number; ts: string }>();
     const loops = new Map<string, { err: string; n: number; tokens: number; ts: string }>();
@@ -158,8 +161,10 @@ function commandMoments(sessions: Session[]): Moment[] {
       if (e.failed) {
         const err = errorLine(e.output);
         const k = `${key} :: ${err}`;
-        const r = returned.get(k) ?? { cmd: key, err, hits: [] };
+        const r = returned.get(k) ?? { cmd: key, err, hits: [], tokens: 0 };
+        if (r.hits.length) r.tokens += tokensIn(e.output);
         r.hits.push({ session: s.id, tool: s.tool, ts: e.ts }); returned.set(k, r);
+        if (count.get(key)) failTokens.set(key, (failTokens.get(key) ?? 0) + tokensIn(e.output));
         count.set(key, (count.get(key) ?? 0) + 1); lastErr.set(key, err);
         if (!between.has(key)) between.set(key, []);
       } else if ((count.get(key) ?? 0) >= 2) {
@@ -168,16 +173,16 @@ function commandMoments(sessions: Session[]): Moment[] {
           signal: "failure_then_fix", text: redact(`\`${key}\` failed with "${lastErr.get(key)}"`),
           context: redact(`Commands run between the failures and the success: ${steps.join("; ") || "none"}`),
           quotes: [{ tool: s.tool, session: s.id, ts: e.ts, quote: redact(`${key} failed ${count.get(key)} times: ${lastErr.get(key)}`).slice(0, 240) }],
-          sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: e.ts,
+          sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: e.ts, wasted: failTokens.get(key) ?? 0,
         });
-        count.delete(key); between.delete(key);
+        count.delete(key); between.delete(key); failTokens.delete(key);
       }
     }
     for (const [key, l] of loops) out.push({
       signal: "loop", text: redact(`\`${key}\` failed ${l.n} times in a row with "${l.err}", and the session moved on without fixing it`),
       context: `The repeats cost about ${l.tokens} tokens of output.`,
       quotes: [{ tool: s.tool, session: s.id, ts: l.ts, quote: redact(`${key} failed ${l.n} times in a row: ${l.err}`).slice(0, 240) }],
-      sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: l.ts,
+      sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: l.ts, wasted: l.tokens,
     });
     for (const [key, p] of pages) {
       if (p.raws.size < LOOP_MIN) continue;
@@ -186,7 +191,8 @@ function commandMoments(sessions: Session[]): Moment[] {
         signal: "refetch", text: redact(`\`${key}\` was run ${p.raws.size} times with different limits, each time re-reading output the previous run had cut off`),
         context: redact(`Runs: ${examples.join(" ; ")}. About ${p.tokens} tokens of output in all.`),
         quotes: [{ tool: s.tool, session: s.id, ts: p.ts, quote: redact(`${key} re-run ${p.raws.size} times with different limits`).slice(0, 240) }],
-        sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: p.ts,
+        // The first run's output was needed; the re-reads were the waste.
+        sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: p.ts, wasted: Math.round(p.tokens * (p.raws.size - 1) / p.raws.size),
       });
     }
   }
@@ -207,7 +213,7 @@ function commandMoments(sessions: Session[]): Moment[] {
     out.push({
       signal: "mistake_returned", text: redact(`\`${r.cmd}\` keeps failing with "${r.err}"`),
       quotes: [{ tool: last.tool, session: last.session, ts: last.ts, quote: redact(`${r.cmd}: ${r.err}`).slice(0, 240) }],
-      sessions: ss.size, days: new Set(r.hits.map((h) => h.ts.slice(0, 10))).size, wordings: 1, tools: [...new Set(r.hits.map((h) => h.tool))], last: last.ts,
+      sessions: ss.size, days: new Set(r.hits.map((h) => h.ts.slice(0, 10))).size, wordings: 1, tools: [...new Set(r.hits.map((h) => h.tool))], last: last.ts, wasted: r.tokens,
     });
   }
   return out;

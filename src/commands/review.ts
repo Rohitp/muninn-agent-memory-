@@ -138,3 +138,18 @@ export async function review(db: Client, repo: string | null, lessons?: Lesson[]
   }
   rl.close();
 }
+
+/** Rough tokens in some text, about four characters each. */
+const tokensOf = (t: string) => Math.max(1, Math.ceil(t.length / 4));
+const fmt = (n: number) => n.toLocaleString("en-GB");
+/**
+ * What a lesson is worth, in a sentence: the output the problem wasted, against what telling agents costs.
+ * Null when nothing was measured (lessons from what you said, rather than from failing commands).
+ */
+export function worthSentence(l: { text: string; wasted_tokens?: number | null }, route?: "always" | "keyword" | "none"): string | null {
+  const w = Number(l.wasted_tokens ?? 0);
+  if (w < 50) return null;
+  const cost = tokensOf(l.text);
+  const when = route === "always" ? "each session" : "each time it comes up";
+  return `The problem wasted about ${fmt(w)} tokens. Telling agents costs about ${fmt(cost)} tokens ${when}.`;
+}

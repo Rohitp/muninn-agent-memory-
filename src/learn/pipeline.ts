@@ -64,10 +64,12 @@ export async function learnRepo(db: Client, repo: string, sessions: Session[], d
     const same = existing.find((e) => e.vector && ["proposed", "live"].includes(e.status) && cosine(e.vector, k.vector) >= deps.cutoff && NEG.test(e.text) === neg);
     if (same) {
       await addEvidence(db, same.id, k.m.quotes); await touchSeen(db, same.id, k.m.sessions, k.m.last);
+      // Seen again: keep the larger measure (a session still running is read again as it grows, so adding would count twice).
+      if (k.m.wasted) await db.execute({ sql: "UPDATE lessons SET wasted_tokens=max(coalesce(wasted_tokens,0),?) WHERE id=?", args: [k.m.wasted, same.id] });
       res.addedEvidence++; continue;
     }
     const source = k.m.signal === "repeat" && !deps.writer ? "own_words" : "inferred";
-    const id = await createLesson(db, { repo_id: repo, text: k.text, source, signal: k.m.signal, suggestedScope: k.scope, kind: k.m.signal === "explained" ? "note" : "rule", suggestedKeywords: k.keywords, status: "proposed", sessions: k.m.sessions, last_seen: k.m.last, vector: k.vector, by: deps.writer ? `learn:${deps.writer.name}` : "learn" });
+    const id = await createLesson(db, { repo_id: repo, text: k.text, source, signal: k.m.signal, suggestedScope: k.scope, kind: k.m.signal === "explained" ? "note" : "rule", suggestedKeywords: k.keywords, status: "proposed", sessions: k.m.sessions, last_seen: k.m.last, vector: k.vector, by: deps.writer ? `learn:${deps.writer.name}` : "learn", wasted: k.m.wasted });
     await addEvidence(db, id, k.m.quotes);
     existing.push({ id, status: "proposed", text: k.text, vector: k.vector });
     res.newLessons++;

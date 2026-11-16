@@ -166,6 +166,7 @@ export const register: Register = on => {
         <Text key="h" weight="semibold">A new lesson to review</Text>,
         <Text key="t" wrap="wrap">{lesson.plain ?? lesson.text}</Text>,
         <Text key="why" dimColor size="footnote" wrap="wrap">{lesson.origin}. Agents aren't told until you keep it.</Text>,
+        lesson.worth ? <Text key="worth" dimColor size="footnote" wrap="wrap">{lesson.worth}</Text> : null,
         <Text key="route" dimColor size="footnote">If kept: told {lesson.route}.</Text>,
         <Box key="b" flexDirection="row" gap="sm" alignItems="center">
           <Button key={`keep-${lesson.id}`} variant="primary" hotkey="1" label="Keep" onPress={() => act($, ['keep', lesson.id], 'Kept. Agents are told from their next session.')} />

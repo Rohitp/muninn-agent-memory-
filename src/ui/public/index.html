@@ -214,7 +214,7 @@ function suggestionRow(l) {
   const ev = (l.evidence || []).slice(0, 3).map((e) => `<div>"${esc(e.quote)}"</div>`).join("");
   return `<li data-id="${esc(l.id)}">
     <div class="row">
-      <button class="main" data-open="${esc(l.id)}" aria-expanded="${isOpen}"><div class="title">${esc(l.plain || l.text)}</div><div class="sub">${esc(l.origin)}</div></button>
+      <button class="main" data-open="${esc(l.id)}" aria-expanded="${isOpen}"><div class="title">${esc(l.plain || l.text)}</div><div class="sub">${esc(l.origin)}</div>${l.worth ? `<div class="sub">${esc(l.worth)}</div>` : ""}</button>
       <button class="x" data-dismiss="${esc(l.id)}" aria-label="Don't suggest this" title="Don't suggest this">×</button>
       <button class="add" data-add="${esc(l.id)}">Add</button>
     </div>

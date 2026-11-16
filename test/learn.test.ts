@@ -74,6 +74,8 @@ describe("command signals", () => {
     const loop = (await find([withCmds("a", 1, cmd("make lint", true, 1), cmd("make lint", true, 1), cmd("make lint", true, 1), cmd("npm i", false, 1))])).filter((x) => x.signal === "loop");
     expect(loop).toHaveLength(1);
     expect(loop[0]!.text).toContain("failed 3 times in a row");
+    // The first try was needed; the two repeats were the waste (12 characters of output each, so 3 tokens).
+    expect(loop[0]!.wasted).toBe(6);
     // Fixed in the end: that's a failure then a fix, not a loop.
     const fixed = await find([withCmds("b", 1, cmd("make lint", true, 1), cmd("make lint", true, 1), cmd("make lint", true, 1), cmd("make lint", false, 1))]);
     expect(fixed.filter((x) => x.signal === "loop")).toHaveLength(0);
