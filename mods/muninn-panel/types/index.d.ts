@@ -12,8 +12,16 @@ export type PanelData = {
   waiting: { count: number; top: Waiting[] }
   cameBack: { id: string; text: string; verdict: string; fix: string | null }[]
   carry: Carried[]
+  /** Commands that failed the same way 3 or more times in a row this session, newest first. */
+  loops: { name: string; n: number; err: string; tokens: number; at: string; told: boolean }[]
+  /** The branch's plan in short. */
+  plan: { goal: string | null; status: string | null; next: string[] } | null
+  handoff: { text: string; age: string; tool: string; delivered: boolean } | null
+  kept: number
+  scanning: boolean
+  sessionsHere: number
 }
-export type PanelView = { data: PanelData | null; error: string | null; marked: string[] }
+export type PanelView = { data: PanelData | null; error: string | null; marked: string[]; dismissed: string[] }
 
 declare module 'claude-code' {
   interface PluginState {

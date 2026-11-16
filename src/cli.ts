@@ -101,6 +101,12 @@ async function main() {
     case "ask": return (await import("./commands/ask.js")).ask(args);
     case "cursor": return cursorCmd(args[0] ?? "");
     case "handoff": return (await import("./commands/handoff.js")).handoff(args);
+    case "scan": {
+      // Starts a lesson scan in the background and returns at once: the panel's "Check my sessions now".
+      const { startAutoScan, scanRunning } = await import("./commands/auto.js");
+      console.log(startAutoScan({ force: true }) ? "Checking your sessions for lessons. New ones show here when it's done." : scanRunning() ? "Already checking your sessions." : "Couldn't start a check: muninn may be paused.");
+      return;
+    }
     case "plan": return (await import("./commands/plan.js")).planCmd(args);
     case "checkpoint": return (await import("./commands/handoff.js")).checkpointCmd(args);
     case "report": return (await import("./commands/report.js")).report(args);

@@ -68,7 +68,16 @@ export async function panel(args: string[]) {
   const data = await panelData(db, session, cwd);
   const { homeData } = await import("./home.js");
   // The panel's newer fields (dial, receipt, came back, what agents carry) come from the same source as the web Home.
-  console.log(JSON.stringify({ ...data, ...(await homeData(db, data.repo, session)), branch: data.branch, handoff: data.handoff }));
+  const home = await homeData(db, data.repo, session);
+  // The branch's plan in short, for "where you left off": the goal, where it stands, the next few steps.
+  const { getPlan } = await import("../plan/plan.js");
+  const p = data.repo && data.branch ? await getPlan(db, data.repo, data.branch) : null;
+  const plan = p && (p.goal || p.status || p.open.length) ? { goal: p.goal?.text ?? null, status: p.status?.text ?? null, next: p.open.slice(0, 3).map((o) => o.text) } : null;
+  // For the first-run note: how many sessions muninn has seen here, and whether a scan is running.
+  const sessionsHere = data.repo ? Number((await db.execute({ sql: "SELECT count(*) n FROM (SELECT session FROM handoffs WHERE repo_id=? UNION SELECT session FROM checkpoints WHERE repo_id=?)", args: [data.repo, data.repo] })).rows[0]?.n ?? 0) : 0;
+  const { scanRunning } = await import("./auto.js");
+  const kept = data.repo ? Number((await db.execute({ sql: "SELECT count(*) n FROM lessons WHERE status='live' AND (repo_id=? OR scope='global')", args: [data.repo] })).rows[0]?.n ?? 0) : 0;
+  console.log(JSON.stringify({ ...data, ...home, branch: data.branch, handoff: data.handoff, loops: data.loops, plan, kept, scanning: scanRunning(), sessionsHere }));
 }
 
 /** `muninn dial` shows how much muninn speaks unprompted in this repo; `muninn dial quiet|start|anytime` sets it. */
