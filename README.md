@@ -100,3 +100,7 @@ Early, and built for one person's daily use first. It works day to day with Clau
 pnpm test        # 148 tests
 pnpm typecheck
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
