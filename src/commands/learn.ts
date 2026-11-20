@@ -28,7 +28,7 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
   if (!count) { if (!opts.auto) console.log(opts.allRepos ? "Nothing to learn from yet. Work with Claude Code, Codex or Cursor as usual; muninn checks your sessions on its own and suggestions appear in muninn ui." : "No sessions found for this repo yet. muninn checks on its own as you work."); return 0; }
 
   const writer = pickWriter();
-  if (!opts.auto) console.log(writer ? `Redacted excerpts will go to your ${writer.name} client to write lessons.` : "No Claude Code or Codex client found, so only repeated instructions can become lessons.");
+  if (!opts.auto) console.log(writer ? `Redacted excerpts will go to your ${writer.name === "claude" ? "Claude Code" : "Codex"} to write lessons.` : "No Claude Code or Codex client found, so only repeated instructions can become lessons.");
 
   if (!modelCached()) {
     if (opts.auto) return 0;

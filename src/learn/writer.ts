@@ -1,4 +1,7 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 import { OWN_RUN_MARK } from "../logs/types.js";
 import type { Moment } from "./signals.js";
@@ -49,7 +52,15 @@ export function parseReply(reply: string, n: number): Written[] {
   return out;
 }
 
-const available = (cmd: string) => spawnSync(cmd, ["--version"], { stdio: "ignore" }).status === 0;
+const works = (cmd: string) => spawnSync(cmd, ["--version"], { stdio: "ignore", timeout: 10_000 }).status === 0;
+/** Where Claude Code and Codex are usually installed, for when they aren't on the PATH (an app or a hook's PATH can be short). */
+const PLACES = () => [join(homedir(), ".local", "bin"), join(homedir(), ".claude", "local"), "/opt/homebrew/bin", "/usr/local/bin", join(homedir(), ".npm-global", "bin"), join(homedir(), ".bun", "bin"), join(homedir(), ".volta", "bin")];
+const found = new Map<string, string | null>();
+/** The command to run a client by: its name if it's on the PATH, else its full path where it's installed, else null. */
+export function findClient(name: "claude" | "codex"): string | null {
+  if (!found.has(name)) found.set(name, works(name) ? name : PLACES().map((d) => join(d, name)).find((f) => existsSync(f) && works(f)) ?? null);
+  return found.get(name)!;
+}
 const internalEnv = { ...process.env, MUNINN_INTERNAL: "1" };
 
 import { settings } from "../config.js";
@@ -95,9 +106,10 @@ export type Runner = { name: string; job?: Job; calls?: Usage[]; run: (prompt: s
 export function pickRunner(job: Job = "background"): Runner | null {
   const name = process.env.MUNINN_WRITER;
   if (name === "none") return null;
-  const choice = name ?? (available("claude") ? "claude" : available("codex") ? "codex" : null);
+  const choice = name ?? (findClient("claude") ? "claude" : findClient("codex") ? "codex" : null);
   if (choice !== "claude" && choice !== "codex") return null;
   const cmd = command(choice, job);
+  cmd[0] = findClient(choice) ?? choice;
   const calls: Usage[] = [];
   const done = (raw: string) => { const r = readReply(choice, job, raw); calls.push(r.usage); return r.text; };
   return { name: choice, job, calls, run: (p) => done(runSync(cmd, p)), runAsync: async (p) => done(await runAsync(cmd, p)) };

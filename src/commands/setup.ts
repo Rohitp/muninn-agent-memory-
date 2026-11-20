@@ -9,6 +9,7 @@ import { ensureRepo } from "../store/lessons.js";
 import { uiDetached } from "../ui/detach.js";
 import { codexPresent, install } from "./install.js";
 import { learn } from "./learn.js";
+import { pickRunner } from "../learn/writer.js";
 
 const ask = async (q: string, def = true) => {
   if (!process.stdin.isTTY) return def;
@@ -57,11 +58,19 @@ Nothing reaches an agent until you keep it.
     }
   }
 
+  // Without a client, only instructions you repeated word for word can become lessons; say so before the scan, not after.
+  const noClient = !pickRunner("judge");
+  if (noClient) {
+    heading("muninn couldn't find the claude command (or codex). It uses your own Claude Code to write lessons from what it finds.");
+    console.log(`   Without it, only instructions you repeated can become lessons. To fix it: install Claude Code's command line tool
+   (https://claude.com/claude-code), check that "claude --version" works in a new terminal, then run "muninn learn --all-repos".`);
+  }
+
   heading("First scan of every repo. This reads your logs and asks your Claude to write lessons, so it takes a few minutes.");
   const waiting = await learn({ allRepos: true, noReview: true });
-  if (!waiting) { console.log("\nNothing to review yet. muninn scans again on its own as you work."); return; }
+  if (!waiting) { console.log(noClient ? "\nNothing to review yet. Once the claude command works, run \"muninn learn --all-repos\" to look again." : "\nNothing to review yet. muninn scans again on its own as you work."); return; }
 
-  if (args.includes("--no-open")) return;
+  if (args.includes("--no-open")) { console.log(`\n${waiting} lesson(s) to look at. Run "muninn ui" to review them.`); return; }
   heading(`Opening the review page: ${waiting} lesson(s) to look at. Keep what's useful, usually one click each.`);
   try { console.log(`   ${await uiDetached({ open: true })}`); }
   catch (e) { console.log(`   Couldn't open it: ${e instanceof Error ? e.message : String(e)}. Run "muninn ui".`); }

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ensureHome, home } from "./config.js";
 
 const [cmd, ...args] = process.argv.slice(2);
@@ -79,9 +80,14 @@ function nodeTooOld(): boolean {
       return true;
     }
   } catch { /* nothing recorded: explain below */ }
+  // A copy built from the source folder is reinstalled from there; one installed from npm, with npm.
+  const pkg = join(dirname(fileURLToPath(import.meta.url)), "..");
+  let again = "then run muninn again.";
+  if (existsSync(join(pkg, "src"))) again = `then in ${pkg} run: pnpm install && pnpm build && npm link`;
+  else { try { again = `then reinstall muninn with it: npm install -g ${JSON.parse(readFileSync(join(pkg, "package.json"), "utf8")).name}`; } catch { /* keep the plain line */ } }
   console.error(`muninn needs Node 22 or newer. This is Node ${process.versions.node}.
 Install Node 22 (for example "fnm install 22", "nvm install 22" or "brew install node@22"), open a new terminal,
-then in the muninn folder run: pnpm install && pnpm build && npm link`);
+${again}`);
   process.exitCode = 1;
   return true;
 }
