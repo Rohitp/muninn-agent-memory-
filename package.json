@@ -1,12 +1,31 @@
 {
-  "name": "muninn-preview",
-  "version": "0.0.0",
-  "description": "Lessons that carry across coding sessions",
+  "name": "secondnature",
+  "version": "0.1.0",
+  "description": "Teach your coding agents something once and it becomes second nature: lessons from your past Claude Code, Codex and Cursor sessions, told to agents when they matter.",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "cursor",
+    "coding-agent",
+    "ai-agent",
+    "memory",
+    "lessons",
+    "hooks"
+  ],
+  "homepage": "https://github.com/Rohitp/muninn-agent-memory-#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rohitp/muninn-agent-memory-.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rohitp/muninn-agent-memory-/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "bin": {
+    "secondnature": "dist/cli.js",
     "muninn": "dist/cli.js"
   },
   "files": [

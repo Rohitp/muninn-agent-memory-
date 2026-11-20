@@ -1,8 +1,10 @@
-# muninn
+# secondnature
 
-**Your coding agents forget everything between sessions. muninn remembers for them.**
+**Your coding agents forget everything between sessions. Teach them once, and it becomes second nature.**
 
-muninn reads your past Claude Code, Codex and Cursor sessions, notices what you keep teaching your agents, and tells them at the right moment, so you stop repeating yourself.
+secondnature reads your past Claude Code, Codex and Cursor sessions, notices what you keep teaching your agents, and tells them at the right moment, so you stop repeating yourself.
+
+Inside, it goes by its code name, **muninn**, and so does its command: `muninn` is short to type, and `secondnature` works too.
 
 > In Norse myth, Muninn ("memory") is one of Odin's two ravens. Each day it flies out over the world and comes back to tell him what it saw.
 
@@ -50,14 +52,21 @@ In Claude Code, an optional side panel (`mods/muninn-panel`) shows what muninn t
 
 ## Install
 
-muninn isn't on npm yet. From source, with **Node 22 or later** (check with `node --version`). The repo pins its pnpm version, and `corepack enable` sets it up:
+You need **Node 22 or later** (check with `node --version`).
 
 ```sh
-git clone <this repo> && cd muninn
+npm install -g secondnature
+muninn setup        # installs the hooks, scans your past sessions, opens the page
+```
+
+From source instead: the repo pins its pnpm version, and `corepack enable` sets it up.
+
+```sh
+git clone https://github.com/Rohitp/muninn-agent-memory-.git && cd muninn-agent-memory-
 corepack enable
 pnpm install && pnpm build
-npm link            # puts `muninn` on your PATH
-muninn setup        # installs the hooks, scans your past sessions, opens the page
+npm link            # puts `muninn` and `secondnature` on your PATH
+muninn setup
 ```
 
 After that you don't need any commands. muninn checks for new lessons on its own after your sessions end, and the page has a **Check now** button.
@@ -88,6 +97,6 @@ Early, and built for one person's daily use first. It works day to day with Clau
 - `docs/devlog.md`: decisions and findings along the way
 
 ```sh
-pnpm test        # 95 tests
+pnpm test        # 148 tests
 pnpm typecheck
 ```
