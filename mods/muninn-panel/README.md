@@ -5,7 +5,7 @@ A side panel that shows what muninn told this Claude Code session, and why: each
 Install it in Claude Code:
 
 ```
-/plugin install muninn-panel --marketplace Rohitp/muninn-agent-memory-
+/plugin install muninn-panel --marketplace Rohitp/secondnature
 ```
 
 From a local checkout instead: `claude plugin marketplace add <path to muninn>`, then `claude plugin install muninn-panel@muninn`.

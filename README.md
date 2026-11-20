@@ -62,7 +62,7 @@ muninn setup        # installs the hooks, scans your past sessions, opens the pa
 From source instead: the repo pins its pnpm version, and `corepack enable` sets it up.
 
 ```sh
-git clone https://github.com/Rohitp/muninn-agent-memory-.git && cd muninn-agent-memory-
+git clone https://github.com/Rohitp/secondnature.git && cd secondnature
 corepack enable
 pnpm install && pnpm build
 npm link            # puts `muninn` and `secondnature` on your PATH

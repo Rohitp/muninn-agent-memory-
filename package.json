@@ -14,13 +14,13 @@
     "lessons",
     "hooks"
   ],
-  "homepage": "https://github.com/Rohitp/muninn-agent-memory-#readme",
+  "homepage": "https://github.com/Rohitp/secondnature#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Rohitp/muninn-agent-memory-.git"
+    "url": "git+https://github.com/Rohitp/secondnature.git"
   },
   "bugs": {
-    "url": "https://github.com/Rohitp/muninn-agent-memory-/issues"
+    "url": "https://github.com/Rohitp/secondnature/issues"
   },
   "type": "module",
   "engines": {
