@@ -21,6 +21,9 @@ const SIGNAL: Record<string, string> = {
   stopped: "Learned from a command you stopped",
   confused: "Learned from times you asked what something meant",
   friction: "Learned from times something didn't work as you expected",
+  wrong_path: "Learned from paths agents looked for in the wrong place",
+  big_file: "Learned from a file too big to read in one go",
+  skimmed: "Learned from long answers you skimmed or stopped",
 };
 /** Where a lesson came from, in words: "Learned from a command that failed and was then fixed, in Claude Code, Nov 6". */
 export async function originOf(db: Client, l: { id: string; source: string; signal: string | null; created_at?: string }): Promise<string> {

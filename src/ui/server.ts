@@ -19,6 +19,7 @@ import { reportData } from "../commands/report.js";
 import { defaultRoute, isPreference, similar, suggestKeyword, usefulKeyword, worthSentence } from "../commands/review.js";
 import { settings } from "../config.js";
 import { syncCursor } from "../deliver/cursor.js";
+import { lessonFileMode, setLessonFile } from "../deliver/local-file.js";
 import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
 import { combine, decide, ensureRepo, getLesson, keywordsInUse, listLessons } from "../store/lessons.js";
@@ -147,6 +148,12 @@ const routes: Record<string, Handler> = {
     const repo = String(b.repo ?? ""); if (!repo) throw new Error("Pick a repo first.");
     await setPlanFile(db, repo, !!b.on);
     return { fileOn: await planFileOn(db, repo) };
+  },
+  "GET /api/lesson-file": async (db, q) => { const repo = q.get("repo"); if (!repo) throw new Error("Pick a repo first."); return { mode: await lessonFileMode(db, repo) }; },
+  "POST /api/lesson-file": async (db, _q, b) => {
+    const repo = String(b.repo ?? ""); if (!repo) throw new Error("Pick a repo first.");
+    const r = await setLessonFile(db, repo, b.mode === "local" ? "local" : "off");
+    return { mode: await lessonFileMode(db, repo), written: !!r };
   },
   "POST /api/dial": async (db, _q, b) => { await setDial(db, b.repo || null, b.dial); return { dial: await getDial(db, b.repo || null) }; },
   "POST /api/feedback": async (db, _q, b) => {

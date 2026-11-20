@@ -23,7 +23,7 @@ export async function adoptRepo(db: Client, id: string | null, cwd: string): Pro
     try { await db.execute({ sql: `UPDATE OR IGNORE ${table} SET repo_id=? WHERE repo_id=?`, args: [id, top] }); } catch { /* a table this version doesn't have */ }
   }
   // Per-repo settings live in meta under keys ending with the repo id.
-  for (const prefix of ["dial:", "plan_file:", "nudged:"]) {
+  for (const prefix of ["dial:", "plan_file:", "nudged:", "lesson_file:"]) {
     await db.execute({ sql: "UPDATE OR IGNORE meta SET key=? WHERE key=?", args: [prefix + id, prefix + top] });
   }
   const cursor = (await db.execute("SELECT value FROM meta WHERE key='cursor_repos'")).rows[0]?.value;

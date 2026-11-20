@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import { redact } from "../privacy/redact.js";
 import { cosine, type Embed } from "../embed/model.js";
 import type { Session } from "../logs/types.js";
 
-export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned" | "explained" | "loop" | "refetch" | "stopped" | "confused" | "friction";
+export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned" | "explained" | "loop" | "refetch" | "stopped" | "confused" | "friction" | "wrong_path" | "big_file" | "skimmed";
 export type Moment = {
   signal: Signal; text: string; quotes: { tool: string; session: string; ts: string; quote: string }[];
   sessions: number; days: number; wordings: number; tools: string[]; last: string; vector?: Float32Array;
@@ -91,6 +92,8 @@ export async function findMoments(sessions: Session[], embed: Embed, opts: { cut
     for (const e of s.events) {
       if (e.k === "agent") { prev = e.text.slice(0, 160); continue; }
       if (e.k === "cmd") { prev = `ran: ${e.cmd.slice(0, 140)}`; continue; }
+      if (e.k === "file") { prev = `${e.tool}: ${e.path.slice(0, 140)}`; continue; }
+      if (e.k !== "typed") continue;
       for (const x of sentences(e.text)) {
         const n = norm(x);
         if (n.split(" ").length < 2 || STOP.has(n) || agent.has(n) || x.length > 240) continue;
@@ -117,7 +120,7 @@ export async function findMoments(sessions: Session[], embed: Embed, opts: { cut
     if (kept) moments.push(m);
     opts.trace?.({ signal: "correction", texts: c.items.map((i) => `${i.text}   ⟵ after: ${i.before?.slice(0, 100) ?? ""}`), times: c.items.length, sessions: m.sessions, wordings: m.wordings, days: m.days, hours: spanHours(c), kept });
   }
-  moments.push(...commandMoments(sessions), ...explainedMoments(sessions), ...intentMoments(sessions));
+  moments.push(...commandMoments(sessions), ...explainedMoments(sessions), ...intentMoments(sessions), ...pathMoments(sessions), ...skimMoments(sessions));
   return moments;
 }
 
@@ -302,4 +305,151 @@ function commandMoments(sessions: Session[]): Moment[] {
     });
   }
   return out;
+}
+
+/** A tool or shell saying a file or folder isn't there. */
+const MISSING = /does not exist|no such file or directory|ENOENT|cannot find (the )?(file|path)|path not found/i;
+/** Claude Code's Read refusing a file too big to read in one go. */
+const TOO_BIG = /exceeds maximum allowed (tokens|size)|file (content )?is too large|too large to read/i;
+/** The path in one line of a shell's "No such file or directory": `cat: a/b.ts: No such…`, `ls: cannot access 'x': No such…`. */
+const SHELL_MISSING = /^[\w.-]+: (?:cannot (?:access|open|stat) )?['"\u2018]?([^'"\u2019:\s][^'"\u2019:]*?)['"\u2019]?(?:: open)?: No such file or directory/;
+/** Words in a command that look like paths: with a slash, or a name with an extension. */
+const PATHISH = /(?:^|[\s'"=(])((?:~|\.{1,2})?[\w.@-]*\/[\w.@/-]+|[\w@-][\w.@-]*\.[A-Za-z]\w{0,5})(?=$|[\s'":)|;,])/g;
+/** How many events later a found path still counts as the fix for a missing one. */
+const PATH_WINDOW = 12;
+
+/** The folder a shell command ran in: the session's, or the one it `cd`s into first. */
+const cmdBase = (cwd: string, cmd: string) => { const m = cmd.match(/^\s*cd\s+(['"]?)([^'"&;]+)\1\s*(&&|;)/); return m ? resolve(cwd, m[2]!.trim().replace(/^~(?=\/)/, process.env.HOME ?? "~")) : cwd; };
+const abs = (base: string, p: string) => resolve(base, p.replace(/^~(?=\/)/, process.env.HOME ?? "~"));
+/** A path as the repo knows it: relative to the session's folder when inside it. */
+const shortPath = (cwd: string, p: string) => { const r = relative(cwd, p); return r && !r.startsWith("..") && !isAbsolute(r) ? r : p; };
+const stem = (p: string) => basename(p, extname(p));
+/** Whether a found path is plausibly the one that was missing: the same file name, or the same name with another extension. */
+const sameFile = (missing: string, found: string) => missing !== found && (basename(missing) === basename(found) || (stem(missing).length >= 4 && stem(missing) === stem(found) && !!extname(found)));
+
+/**
+ * Wrong paths the agent keeps guessing, matched to where the file really was: a read, edit, search or shell
+ * command that found nothing, then, a few steps later, a success on the same file name somewhere else.
+ * One wrong guess is ordinary; the same wrong guess in another session is what a lesson saves.
+ * Also files too big to read in one go, hit in more than one session.
+ */
+function pathMoments(sessions: Session[]): Moment[] {
+  type Hit = { session: string; tool: string; ts: string; from: string; to: string; err: string };
+  const groups = new Map<string, Hit[]>();
+  const big = new Map<string, { session: string; tool: string; ts: string; err: string }[]>();
+  for (const s of sessions) {
+    const cwd = s.cwd || "/";
+    // Missing paths still waiting for a match, with how many events ago they failed.
+    let open: { path: string; at: number; err: string; pattern?: string; tool?: string }[] = [];
+    s.events.forEach((e, i) => {
+      if (e.k !== "file" && e.k !== "cmd") return;
+      open = open.filter((o) => i - o.at <= PATH_WINDOW);
+      if (e.k === "file" && e.failed && TOO_BIG.test(e.output)) {
+        const key = shortPath(cwd, abs(cwd, e.path));
+        big.set(key, [...(big.get(key) ?? []), { session: s.id, tool: s.tool, ts: e.ts, err: e.output.split("\n")[0]!.slice(0, 120) }]);
+        return;
+      }
+      if (e.failed) {
+        if (e.k === "file" && MISSING.test(e.output)) open.push({ path: abs(cwd, e.path), at: i, err: e.output.split("\n")[0]!.slice(0, 120), pattern: e.pattern, tool: e.tool });
+        if (e.k === "cmd" && !e.stopped) {
+          const base = cmdBase(cwd, e.cmd);
+          for (const line of e.output.split("\n")) {
+            const m = line.trim().match(SHELL_MISSING);
+            if (m && !m[1]!.startsWith("(")) open.push({ path: abs(base, m[1]!), at: i, err: line.trim().slice(0, 120) });
+          }
+        }
+        return;
+      }
+      if (!open.length) return;
+      const found = e.k === "file" ? [abs(cwd, e.path)] : [...e.cmd.matchAll(PATHISH)].map((m) => abs(cmdBase(cwd, e.cmd), m[1]!));
+      for (const f of found) {
+        // A search that failed on a folder counts as found when the same search worked in another folder.
+        const o = open.find((x) => sameFile(x.path, f) || (e.k === "file" && x.pattern !== undefined && x.pattern === e.pattern && x.tool === e.tool && x.path !== f));
+        if (!o) continue;
+        open = open.filter((x) => x !== o);
+        const from = shortPath(cwd, o.path), to = shortPath(cwd, f);
+        // Grouped by folder when the folders differ ("things in a/ are really in b/"), else by the file itself.
+        const key = dirname(from) !== dirname(to) && basename(from) === basename(to) ? `${dirname(from)}/ -> ${dirname(to)}/` : `${from} -> ${to}`;
+        groups.set(key, [...(groups.get(key) ?? []), { session: s.id, tool: s.tool, ts: e.ts, from, to, err: o.err }]);
+      }
+    });
+  }
+  const out: Moment[] = [];
+  for (const [key, hits] of groups) {
+    const sessionsHit = new Set(hits.map((h) => h.session)).size;
+    if (sessionsHit < 2 && hits.length < 3) continue;
+    const pairs = [...new Map(hits.map((h) => [`${h.from} -> ${h.to}`, h])).values()];
+    const byFolder = key.endsWith("/");
+    out.push({
+      signal: "wrong_path",
+      text: redact(byFolder
+        ? `Agents looked in \`${key.split(" -> ")[0]}\` for files that are in \`${key.split(" -> ")[1]}\`, ${hits.length} times (for example \`${pairs[0]!.from}\` is at \`${pairs[0]!.to}\`)`
+        : `Agents looked for \`${pairs[0]!.from}\`, which doesn't exist; it is at \`${pairs[0]!.to}\`. This happened ${hits.length} times`),
+      context: redact(`Seen in ${sessionsHit} session(s). Pairs: ${pairs.slice(0, 5).map((p) => `${p.from} → ${p.to}`).join("; ")}`),
+      quotes: hits.slice(-3).map((h) => ({ tool: h.tool, session: h.session, ts: h.ts, quote: redact(`missing: ${h.from} (${h.err})  →  found: ${h.to}`).slice(0, 240) })),
+      sessions: sessionsHit, days: new Set(hits.map((h) => h.ts.slice(0, 10))).size, wordings: pairs.length, tools: [...new Set(hits.map((h) => h.tool))], last: hits.at(-1)!.ts,
+    });
+  }
+  for (const [path, hits] of big) {
+    const sessionsHit = new Set(hits.map((h) => h.session)).size;
+    if (sessionsHit < 2) continue;
+    out.push({
+      signal: "big_file", text: redact(`\`${path}\` was too big to read in one go, in ${sessionsHit} sessions`),
+      quotes: hits.slice(-3).map((h) => ({ tool: h.tool, session: h.session, ts: h.ts, quote: redact(`read ${path}  →  ${h.err}`).slice(0, 240) })),
+      sessions: sessionsHit, days: new Set(hits.map((h) => h.ts.slice(0, 10))).size, wordings: 1, tools: [...new Set(hits.map((h) => h.tool))], last: hits.at(-1)!.ts,
+    });
+  }
+  return out;
+}
+
+/** Reading speed for technical prose, in words a minute: turns an answer's length into how long it takes to read. */
+export const READ_WPM = 250;
+/** A reply in less than this share of the reading time means the answer wasn't read through. */
+export const SKIP_SHARE = 0.5;
+/** Answers shorter than this have nothing to skip. */
+export const LONG_ANSWER = 150;
+/** How many long answers before the pattern means anything, and what share must be skipped or stopped. */
+export const SKIM_MIN = { answers: 8, share: 0.3 };
+
+/**
+ * People rarely say "shorter, please"; they show it. They reply to a long answer sooner than they could have
+ * read it, or stop it while it's being written. Counted across a repo's sessions, that says answers there run
+ * longer than the engineer reads. The writer turns it into a lesson about shape (what to put first), never
+ * into "explain less": an engineer who asks for plain explanations may still skim the rest.
+ */
+function skimMoments(sessions: Session[]): Moment[] {
+  type Skip = { session: string; tool: string; ts: string; words: number; secs: number | null; opening: string; next: string };
+  const skips: Skip[] = [];
+  let long = 0, stoppedCount = 0;
+  const words = (t: string) => t.replace(/```[\s\S]*?```/g, " ").split(/\s+/).filter(Boolean).length;
+  for (const s of sessions) {
+    let last: { text: string; ts: string } | null = null;
+    for (const e of s.events) {
+      if (e.k === "agent") { if (e.text.trim()) last = { text: e.text, ts: e.ts }; continue; }
+      if (e.k === "cmd" || e.k === "file") { last = null; continue; }
+      if (!last) continue;
+      const n = words(last.text);
+      const opening = last.text.replace(/\s+/g, " ").trim().slice(0, 160);
+      if (e.k === "interrupt") {
+        if (n >= 40) { stoppedCount++; long++; skips.push({ session: s.id, tool: s.tool, ts: e.ts, words: n, secs: null, opening, next: "(stopped the answer)" }); }
+      } else if (n >= LONG_ANSWER) {
+        long++;
+        const secs = (Date.parse(e.ts) - Date.parse(last.ts)) / 1000;
+        const readSecs = (n / READ_WPM) * 60;
+        if (Number.isFinite(secs) && secs >= 0 && secs < readSecs * SKIP_SHARE) skips.push({ session: s.id, tool: s.tool, ts: e.ts, words: n, secs: Math.round(secs), opening, next: e.text.replace(/\s+/g, " ").trim().slice(0, 120) });
+      }
+      last = null;
+    }
+  }
+  if (long < SKIM_MIN.answers || skips.length < INTENT_MIN || skips.length / long < SKIM_MIN.share) return [];
+  const fast = skips.length - stoppedCount;
+  const median = [...skips].map((k) => k.words).sort((a, b) => a - b)[Math.floor(skips.length / 2)]!;
+  return [{
+    signal: "skimmed",
+    text: `Of ${long} long answers, the engineer replied to ${fast} faster than they could have read them and stopped ${stoppedCount} while they were being written (typical length of those: ${median} words)`,
+    context: redact(skips.slice(-8).map((k) => `${k.words} words, ${k.secs === null ? "stopped" : `replied after ${k.secs}s`}. Answer began: "${k.opening}" → engineer: "${k.next}"`).join("\n")),
+    quotes: skips.slice(-3).map((k) => ({ tool: k.tool, session: k.session, ts: k.ts, quote: redact(`${k.words}-word answer, ${k.secs === null ? "stopped while being written" : `replied after ${k.secs}s`}: "${k.opening.slice(0, 120)}"`).slice(0, 240) })),
+    sessions: new Set(skips.map((k) => k.session)).size, days: new Set(skips.map((k) => k.ts.slice(0, 10))).size, wordings: 1,
+    tools: [...new Set(skips.map((k) => k.tool))], last: skips.at(-1)!.ts,
+  }];
 }

@@ -196,8 +196,8 @@ async function load() {
   const [repos, suggested, kept, home, scan] = await Promise.all([
     api("/api/repos"), api("/api/lessons?" + q({ repo, status: "proposed" })), api("/api/lessons?" + q({ repo, status: "live" })), api("/api/home?" + q({ repo })), api("/api/scan"),
   ]);
-  const [plan, memory] = await Promise.all([repo ? api("/api/plan?" + q({ repo, branch: planBranch })) : null, api("/api/memory?" + q({ repo }))]);
-  data = { repos, suggested, kept, home, scan, plan, memory };
+  const [plan, memory, lessonFile] = await Promise.all([repo ? api("/api/plan?" + q({ repo, branch: planBranch })) : null, api("/api/memory?" + q({ repo })), repo ? api("/api/lesson-file?" + q({ repo })) : null]);
+  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile };
 }
 
 /* muninn checks your sessions on its own after they end. This line shows when it last did, and lets you ask now. */
@@ -336,6 +336,8 @@ function draw() {
           <button class="switch" role="switch" aria-checked="${dial === "anytime"}" aria-label="Tell agents mid-task too" data-dial="mid"></button></div></li>
         <li><div class="row"><div class="main" style="cursor:default"><div class="title">Keep a copy of the plan in PLAN.md</div><div class="sub">Written at the root of this repo with the plan of the branch checked out, so each branch carries its own in git.</div></div>
           <button class="switch" role="switch" aria-checked="${!!data.plan?.fileOn}" aria-label="Keep a copy of the plan in PLAN.md" data-plan-file></button></div></li>
+        <li><div class="row"><div class="main" style="cursor:default"><div class="title">Keep always-on lessons in CLAUDE.local.md</div><div class="sub">For this machine only: Claude Code reads that file at the start of every session here, even without muninn's hooks. git is told to ignore it, so it's never committed, and the rest of the file is left as it is.</div></div>
+          <button class="switch" role="switch" aria-checked="${data.lessonFile?.mode === "local"}" aria-label="Keep always-on lessons in CLAUDE.local.md" data-lesson-file></button></div></li>
       </ul>
       ${dial === "quiet" ? `<p class="note">Both off: muninn tells agents nothing unless they ask with muninn ask.</p>` : ""}
     </section>` : ""}`;
@@ -387,6 +389,11 @@ document.addEventListener("click", async (e) => {
       const on = el.getAttribute("aria-checked") !== "true";
       const r = await api("/api/plan-file", { repo, on }); data.plan.fileOn = r.fileOn; draw();
       toast(r.fileOn ? "PLAN.md is written at the root of this repo, and kept up to date." : "PLAN.md is no longer updated. The file stays where it is."); return;
+    }
+    if (el.dataset.lessonFile !== undefined) {
+      const on = el.getAttribute("aria-checked") !== "true";
+      const r = await api("/api/lesson-file", { repo, mode: on ? "local" : "off" }); data.lessonFile = r; draw();
+      toast(r.mode === "local" ? (r.written ? "Always-on lessons are in CLAUDE.local.md at the root of this repo, and kept up to date." : "Turned on, but muninn couldn't find this repo's folder. It writes the file the next time you work here.") : "Took muninn's lessons out of CLAUDE.local.md. Anything else in the file is left as it was."); return;
     }
     if (el.dataset.scan !== undefined) { await startScan(el); return; }
     if (el.dataset.repo) { repo = el.dataset.repo; open = null; showAll = false; await refresh(); window.scrollTo(0, 0); return; }

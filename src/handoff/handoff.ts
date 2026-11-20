@@ -1,7 +1,7 @@
 import type { Client } from "@libsql/client";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { OWN_RUN_MARK, type Session } from "../logs/types.js";
+import { eventLine, OWN_RUN_MARK, type Session } from "../logs/types.js";
 import { redact } from "../privacy/redact.js";
 import { repoIdentity } from "../repo/identity.js";
 import type { Runner } from "../learn/writer.js";
@@ -19,11 +19,7 @@ export function currentBranch(cwd: string): string | null {
 /** The end of a session as plain lines, newest kept, redacted. */
 export function sessionTail(s: Session): string {
   const lines: string[] = [];
-  for (const e of s.events) {
-    if (e.k === "typed") lines.push(`ENGINEER: ${e.text.slice(0, 1500)}`);
-    else if (e.k === "agent") lines.push(`AGENT: ${e.text.slice(0, 600)}`);
-    else lines.push(`COMMAND${e.failed ? " (failed)" : ""}: ${e.cmd.slice(0, 200)}`);
-  }
+  for (const e of s.events) lines.push(eventLine(e));
   let out = "";
   for (const l of lines.reverse()) { if (out.length + l.length > MAX_INPUT) break; out = `${l}\n${out}`; }
   return redact(out);

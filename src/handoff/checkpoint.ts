@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { ensureHome } from "../config.js";
 import type { Runner } from "../learn/writer.js";
 import type { LogEvent, Session } from "../logs/types.js";
-import { OWN_RUN_MARK } from "../logs/types.js";
+import { eventLine, OWN_RUN_MARK } from "../logs/types.js";
 import { applyHandoff } from "../plan/plan.js";
 import { redact } from "../privacy/redact.js";
 import { repoIdentity } from "../repo/identity.js";
@@ -20,8 +20,7 @@ const PIECE = 14_000;
 /** How much a transcript must grow before an update while you work, and before compaction. */
 export const GROWTH = { working: 60_000, compact: 5_000 };
 
-const line = (e: LogEvent) =>
-  e.k === "typed" ? `ENGINEER: ${e.text.slice(0, 1500)}` : e.k === "agent" ? `AGENT: ${e.text.slice(0, 600)}` : `COMMAND${e.failed ? " (failed)" : ""}: ${e.cmd.slice(0, 200)}`;
+const line = eventLine;
 
 /** Splits events into pieces of at most PIECE characters, keeping each event whole. */
 export function pieces(events: LogEvent[], from: number): { from: number; to: number; text: string }[] {

@@ -1,4 +1,5 @@
 import type { Client } from "@libsql/client";
+import { lessonFileMode } from "./local-file.js";
 import { randomUUID } from "node:crypto";
 import { errorLine, normCommand } from "../learn/signals.js";
 import { isPaused, settings } from "../config.js";
@@ -61,7 +62,9 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   // Switched-off lessons stay kept but are never told.
   const scope = "l.status='live' AND l.off=0 AND (l.scope='global' OR l.repo_id IS ? OR l.repo_id=?)";
   let rows: Row[] = [];
-  if (event === "SessionStart" || event === "SubagentStart") {
+  // Where always-on lessons are in CLAUDE.local.md, Claude Code has read them already: sending them again doubles them.
+  const inFile = client === "claude-code" && !!repo && (await lessonFileMode(db, repo)) === "local";
+  if ((event === "SessionStart" || event === "SubagentStart") && !inFile) {
     rows = (await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,NULL pattern FROM lessons l WHERE ${scope} AND l.always_on=1`, args: [repo, repo] })).rows as unknown as Row[];
   } else if (event === "UserPromptSubmit" || failed(event, input)) {
     const hay = event === "UserPromptSubmit" ? input.prompt ?? "" : `${input.tool_input?.command ?? ""}\n${input.error ?? responseText(input.tool_response)}`;

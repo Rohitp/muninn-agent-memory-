@@ -14,6 +14,8 @@ You tell an agent the same things over and over: "explain it step by step", "the
    - things you said more than once
    - corrections you made to an agent
    - commands that failed and were then fixed
+   - paths agents keep looking for in the wrong place, matched to where the file really is
+   - long answers you keep skimming or stopping (measured from how fast you reply, never applied without you)
    - long explanations you gave
 
    Your own Claude (or Codex) turns each one into a short lesson.
@@ -37,6 +39,7 @@ In Claude Code, an optional side panel (`mods/muninn-panel`) shows what muninn t
 | Claude Code (terminal and desktop app) | Hooks: session start, your prompt, failed commands, subagents |
 | Codex | The same hooks, in `~/.codex/hooks.json`. Built from Codex's documentation, not yet tested live |
 | Cursor | Rules files in `.cursor/rules/` in each repo where you switch it on |
+| Claude Code, without hooks | Optional, per repo: always-on lessons in `CLAUDE.local.md`, for this machine only and ignored by git (`muninn local-file on`, or the switch on the page) |
 | Any agent | `muninn ask "how do the benchmarks run?"` searches what you've kept |
 
 ## Privacy

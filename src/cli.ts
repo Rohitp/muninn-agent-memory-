@@ -25,6 +25,7 @@ const USAGE = `muninn: lessons that carry across coding sessions
                                 at session start, or whenever relevant
   muninn ui                     Open muninn in your browser
   muninn cursor on|off|sync     Write kept lessons as Cursor rules in this repo
+  muninn local-file on|off      Keep always-on lessons in this repo's CLAUDE.local.md (this machine only)
   muninn keywords               Keywords in use, and how many lessons each has
   muninn status                 What muninn has learned and sent, and any problems
   muninn install [--learn]      Add Claude Code and Codex hooks (--learn: only automatic scans)
@@ -48,6 +49,20 @@ async function cursorCmd(sub: string) {
   const r = await c.enableCursor(db, repo);
   if (!r) { console.error("Couldn't find this repo's folder."); process.exitCode = 1; return; }
   console.log(`Wrote ${r.files.join(", ")} in ${r.root}/.cursor/rules. They're listed in .git/info/exclude, so git ignores them without changing any shared file. muninn rewrites them when lessons change.`);
+}
+
+async function localFileCmd(sub: string) {
+  if (sub !== "on" && sub !== "off") { console.error("Usage: muninn local-file on|off"); process.exitCode = 1; return; }
+  const [{ openDb }, { repoIdentity }, f, { ensureRepo }] = await Promise.all([import("./store/db.js"), import("./repo/identity.js"), import("./deliver/local-file.js"), import("./store/lessons.js")]);
+  const db = await openDb();
+  const repo = repoIdentity(process.cwd());
+  if (!repo) { console.error("Run this inside a git repo."); process.exitCode = 1; return; }
+  await ensureRepo(db, repo, process.cwd());
+  const r = await f.setLessonFile(db, repo, sub === "on" ? "local" : "off");
+  if (!r) { console.error("Couldn't find this repo's folder."); process.exitCode = 1; return; }
+  console.log(sub === "on"
+    ? `Wrote this repo's always-on lessons into ${r.file}, between muninn's two marker lines. Claude Code reads that file at the start of every session. git ignores it in this clone, and muninn rewrites its part when lessons change.`
+    : `Took muninn's lessons out of ${r.file}. Anything else in the file is left as it was.`);
 }
 
 /** muninn uses Node 22 features (fs.globSync among them). On older Node, say so plainly instead of crashing on an import. */
@@ -101,6 +116,7 @@ async function main() {
     case "uninstall": { (await import("./commands/install.js")).uninstall(); console.log("Removed muninn's hooks. Lessons are kept."); return; }
     case "ask": return (await import("./commands/ask.js")).ask(args);
     case "cursor": return cursorCmd(args[0] ?? "");
+    case "local-file": return localFileCmd(args[0] ?? "");
     case "handoff": return (await import("./commands/handoff.js")).handoff(args);
     case "scan": {
       // Starts a lesson scan in the background and returns at once: the panel's "Check my sessions now".

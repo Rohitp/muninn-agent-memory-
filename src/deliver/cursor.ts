@@ -73,9 +73,11 @@ export async function enableCursor(db: Client, repo: string) {
   await setEnabled(db, [...(await enabled(db)), repo]);
   return writeCursorRules(db, repo);
 }
-/** Rewrites the files for every repo that has Cursor turned on. Called after lessons change. */
+/** Rewrites the files agents read, for every repo that has them on: Cursor rules and CLAUDE.local.md. Called after lessons change. */
 export async function syncCursor(db: Client) {
   for (const repo of await enabled(db)) { try { await writeCursorRules(db, repo); } catch { /* a moved or deleted repo shouldn't stop the rest */ } }
+  const { syncLessonFiles } = await import("./local-file.js");
+  await syncLessonFiles(db);
 }
 export async function disableCursor(db: Client, repo: string | null) {
   const repos = repo ? [repo] : await enabled(db);

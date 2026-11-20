@@ -4,7 +4,7 @@ import { syncCursor } from "../deliver/cursor.js";
 import { age, currentBranch, latestHandoff, makeHandoff } from "../handoff/handoff.js";
 import { pickRunner, saveUsage } from "../learn/writer.js";
 import { readAny } from "../logs/discover.js";
-import { isOwnRun } from "../logs/types.js";
+import { eventLine, isOwnRun } from "../logs/types.js";
 import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
 
@@ -24,7 +24,7 @@ export async function handoff(args: string[]) {
       // so early work isn't lost to a handoff that only reads the end.
       const { checkpoint } = await import("../handoff/checkpoint.js");
       const covered = (await db.execute({ sql: "SELECT 1 FROM checkpoints WHERE session=? LIMIT 1", args: [s.id] })).rows.length > 0;
-      const size = s.events.reduce((n, e) => n + (e.k === "cmd" ? e.cmd.length : e.text.length), 0);
+      const size = s.events.reduce((n, e) => n + eventLine(e).length, 0);
       if (covered || size > 14_000) await checkpoint(db, s, runner, { file }).catch(() => 0);
       const h = await makeHandoff(db, s, runner);
       if (h) {
