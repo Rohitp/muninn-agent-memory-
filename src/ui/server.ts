@@ -20,6 +20,7 @@ import { defaultRoute, isPreference, similar, suggestKeyword, usefulKeyword, wor
 import { settings } from "../config.js";
 import { syncCursor } from "../deliver/cursor.js";
 import { lessonFileMode, setLessonFile } from "../deliver/local-file.js";
+import { apply, dismiss, listProposals, proposeInstructions, undo } from "../propose/index.js";
 import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
 import { combine, decide, ensureRepo, getLesson, keywordsInUse, listLessons } from "../store/lessons.js";
@@ -148,6 +149,27 @@ const routes: Record<string, Handler> = {
     const repo = String(b.repo ?? ""); if (!repo) throw new Error("Pick a repo first.");
     await setPlanFile(db, repo, !!b.on);
     return { fileOn: await planFileOn(db, repo) };
+  },
+  "GET /api/insights": async (db, q) => { const { insightsData, insightsText } = await import("../commands/insights.js"); return { text: insightsText(await insightsData(db, q.get("repo") || null, Number(q.get("days")) || 7)) }; },
+  "GET /api/proposals": async (db, q) => {
+    const repo = q.get("repo") || null;
+    const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
+    return { waiting: await listProposals(db, repo, "proposed"), applied: (await listProposals(db, repo, "applied")).filter((p) => (p.decided_at ?? "") >= since).slice(0, 5) };
+  },
+  "POST /api/proposals": async (db, _q, b) => {
+    const id = String(b.id ?? "");
+    if (b.action === "apply") return apply(db, id);
+    if (b.action === "dismiss") { await dismiss(db, id); return { ok: true }; }
+    if (b.action === "undo") { await undo(db, id); return { ok: true }; }
+    throw new Error("Unknown action.");
+  },
+  "POST /api/propose": async (db, _q, b) => {
+    const repo = String(b.repo ?? ""); if (!repo) throw new Error("Pick a repo first.");
+    const runner = pickRunner("judge");
+    if (!runner) throw new Error("This needs the claude (or codex) command, which muninn couldn't find.");
+    const r = await proposeInstructions(db, repo, runner);
+    await saveUsage(db, runner, "instruction review");
+    return r;
   },
   "GET /api/lesson-file": async (db, q) => { const repo = q.get("repo"); if (!repo) throw new Error("Pick a repo first."); return { mode: await lessonFileMode(db, repo) }; },
   "POST /api/lesson-file": async (db, _q, b) => {

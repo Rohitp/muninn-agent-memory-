@@ -152,6 +152,47 @@ function memorySection() {
     <p class="note">Agents read these files at the start of every session, so an out-of-date line costs tokens each time and can send them the wrong way. Remove edits the file; × keeps the line and stops muninn asking.</p>
   </section>`;
 }
+/* Changes muninn proposes to files agents read: ask-first rules, new skills, edits to CLAUDE.md. Nothing is written until Apply. */
+const PROP_KIND = { guard: "Ask-first rule", skill: "New skill", instruction: "Instruction edit" };
+let proposing = false;
+function propPreview(p) {
+  if (p.kind === "guard") return `Adds <code>${esc(p.payload.rule)}</code> to the "ask" list in <code>.claude/settings.local.json</code>.`;
+  const pre = (t) => `<pre style="white-space:pre-wrap;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--fill,rgba(127,127,127,.08));border-radius:8px;padding:10px;margin:8px 0 0;max-height:220px;overflow:auto">${t}</pre>`;
+  if (p.kind === "skill") return pre(esc(p.payload.markdown));
+  const lines = [];
+  if (p.payload.find) lines.push(...String(p.payload.find).split("\n").map((l) => `<span style="color:#b42318">- ${esc(l)}</span>`));
+  if (p.payload.text) lines.push(...String(p.payload.text).split("\n").map((l) => `<span style="color:#067647">+ ${esc(l)}</span>`));
+  return pre(lines.join("\n"));
+}
+function changesSection() {
+  const { waiting = [], applied = [] } = data.proposals || {};
+  if (!waiting.length && !applied.length && !repo) return "";
+  return `<section aria-labelledby="ch">
+    <h2 id="ch">Proposed changes${waiting.length ? ` · ${waiting.length}` : ""}</h2>
+    <ul class="group">
+      ${waiting.map((p) => `<li><div class="row" style="align-items:flex-start"><div class="main" style="cursor:default">
+          <div class="sub">${esc(PROP_KIND[p.kind] || p.kind)}${!repo && p.repo_id ? ` · ${esc(short(p.repo_id))}` : ""}</div>
+          <div class="title">${esc(p.title).replace(/\`([^\`]+)\`/g, "<code>$1</code>")}</div>
+          <div class="sub">${esc(p.why).replace(/\`([^\`]+)\`/g, "<code>$1</code>")}</div>
+          ${propPreview(p)}
+          ${p.evidence?.length ? `<div class="evidence">From your sessions: ${p.evidence.map((e) => `<span class="mono">${esc(e.quote)}</span>`).join("; ")}</div>` : ""}
+        </div>
+        <button class="x" data-prop-dismiss="${esc(p.id)}" aria-label="Dismiss" title="Dismiss">×</button>
+        <button class="add" data-prop-apply="${esc(p.id)}">Apply</button></div></li>`).join("")}
+      ${applied.map((p) => `<li><div class="row"><div class="main" style="cursor:default"><div class="title" style="color:var(--muted)">Applied: ${esc(p.title)}</div><div class="sub">${esc(shortDate(p.decided_at))}</div></div><button class="btn" data-prop-undo="${esc(p.id)}">Undo</button></div></li>`).join("")}
+      ${!waiting.length && !applied.length ? `<li class="empty">Nothing waiting. muninn proposes "ask first" rules from commands you keep stopping, and skills from steps that repeat, as it reads your sessions.</li>` : ""}
+    </ul>
+    ${repo ? `<p class="note">${proposing ? `<span class="spin" aria-hidden="true"></span> Your Claude is reviewing this repo's CLAUDE.md, AGENTS.md and skills…` : `<button class="linkbtn" data-propose>Review CLAUDE.md, AGENTS.md and skills</button> against your sessions and propose edits. One call to your Claude.`}</p>` : ""}
+  </section>`;
+}
+/* Your week with coding agents, read from all your logs, so only on request. */
+let week = null, weekLoading = false;
+function weekSection() {
+  return `<section aria-labelledby="wk"><h2 id="wk">Your week</h2>
+    ${week ? `<ul class="group"><li><pre style="white-space:pre-wrap;font:13px/1.55 ui-monospace,Menlo,monospace;margin:0;padding:14px">${esc(week)}</pre></li></ul>`
+      : `<p class="note">${weekLoading ? `<span class="spin" aria-hidden="true"></span> Reading the last 7 days of sessions…` : `<button class="linkbtn" data-week>Show your last 7 days</button>: where agents wasted effort, whether lessons helped, and what's waiting. Also <code>muninn insights</code>.`}</p>`}
+  </section>`;
+}
 function planSection() {
   if (!repo || !data.plan) return "";
   const p = data.plan.plan;
@@ -196,8 +237,8 @@ async function load() {
   const [repos, suggested, kept, home, scan] = await Promise.all([
     api("/api/repos"), api("/api/lessons?" + q({ repo, status: "proposed" })), api("/api/lessons?" + q({ repo, status: "live" })), api("/api/home?" + q({ repo })), api("/api/scan"),
   ]);
-  const [plan, memory, lessonFile] = await Promise.all([repo ? api("/api/plan?" + q({ repo, branch: planBranch })) : null, api("/api/memory?" + q({ repo })), repo ? api("/api/lesson-file?" + q({ repo })) : null]);
-  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile };
+  const [plan, memory, lessonFile, proposals] = await Promise.all([repo ? api("/api/plan?" + q({ repo, branch: planBranch })) : null, api("/api/memory?" + q({ repo })), repo ? api("/api/lesson-file?" + q({ repo })) : null, api("/api/proposals?" + q({ repo }))]);
+  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals };
 }
 
 /* muninn checks your sessions on its own after they end. This line shows when it last did, and lets you ask now. */
@@ -317,6 +358,10 @@ function draw() {
       <p class="note">Tap a suggestion to change its wording or when it's told before adding it.</p>
     </section>` : ""}
 
+    ${changesSection()}
+
+    ${weekSection()}
+
     ${memorySection()}
 
     ${planSection()}
@@ -390,13 +435,33 @@ document.addEventListener("click", async (e) => {
       const r = await api("/api/plan-file", { repo, on }); data.plan.fileOn = r.fileOn; draw();
       toast(r.fileOn ? "PLAN.md is written at the root of this repo, and kept up to date." : "PLAN.md is no longer updated. The file stays where it is."); return;
     }
+    if (el.dataset.propApply || el.dataset.propDismiss || el.dataset.propUndo) {
+      const action = el.dataset.propApply ? "apply" : el.dataset.propDismiss ? "dismiss" : "undo";
+      try {
+        const r = await api("/api/proposals", { id: el.dataset.propApply || el.dataset.propDismiss || el.dataset.propUndo, action });
+        data.proposals = await api("/api/proposals?" + q({ repo })); draw();
+        toast(action === "apply" ? `Applied. Changed ${(r.files || []).map((f) => f.split("/").slice(-2).join("/")).join(", ")}. Undo is below.` : action === "dismiss" ? "Dismissed. muninn won't propose it again." : "Undone: the file is back as it was.");
+      } catch (e) { toast(e.message || String(e)); }
+      return;
+    }
+    if (el.dataset.week !== undefined) {
+      weekLoading = true; draw();
+      try { week = (await api("/api/insights?" + q({ repo }))).text; } catch (e) { toast(e.message || String(e)); }
+      weekLoading = false; draw(); return;
+    }
+    if (el.dataset.propose !== undefined) {
+      proposing = true; draw();
+      try { const r = await api("/api/propose", { repo }); data.proposals = await api("/api/proposals?" + q({ repo })); toast(r.proposed ? `${r.proposed} edit(s) proposed.` : "Nothing clearly worth changing right now."); }
+      catch (e) { toast(e.message || String(e)); }
+      proposing = false; draw(); return;
+    }
     if (el.dataset.lessonFile !== undefined) {
       const on = el.getAttribute("aria-checked") !== "true";
       const r = await api("/api/lesson-file", { repo, mode: on ? "local" : "off" }); data.lessonFile = r; draw();
       toast(r.mode === "local" ? (r.written ? "Always-on lessons are in CLAUDE.local.md at the root of this repo, and kept up to date." : "Turned on, but muninn couldn't find this repo's folder. It writes the file the next time you work here.") : "Took muninn's lessons out of CLAUDE.local.md. Anything else in the file is left as it was."); return;
     }
     if (el.dataset.scan !== undefined) { await startScan(el); return; }
-    if (el.dataset.repo) { repo = el.dataset.repo; open = null; showAll = false; await refresh(); window.scrollTo(0, 0); return; }
+    if (el.dataset.repo) { week = null; repo = el.dataset.repo; open = null; showAll = false; await refresh(); window.scrollTo(0, 0); return; }
     if (el.dataset.replay !== undefined) {
       const box = el.closest(".detail"); const li = el.closest("li[data-id]");
       const l = [...data.suggested, ...data.kept].find((x) => x.id === li?.dataset.id);
@@ -456,7 +521,7 @@ document.addEventListener("click", async (e) => {
   } catch (err) { toast(err.message); el.disabled = false; }
 });
 document.addEventListener("change", (e) => {
-  if (e.target.id === "repo") { repo = e.target.value; open = null; showAll = false; planBranch = null; refresh(); }
+  if (e.target.id === "repo") { repo = e.target.value; week = null; open = null; showAll = false; planBranch = null; refresh(); }
   if (e.target.id === "planBranch") { planBranch = e.target.value; planEdit = null; planShow.decisions = planShow.done = false; doneFilter = ""; doneLimit = 15; refresh(); }
 });
 refresh().catch((e) => { $("#main").innerHTML = `<p class="lead">${esc(e.message)}</p>`; });

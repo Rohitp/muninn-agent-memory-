@@ -9,6 +9,8 @@ const files: Record<Client, () => string> = {
   "claude-code": () => process.env.MUNINN_CLAUDE_SETTINGS ?? join(homedir(), ".claude", "settings.json"),
   codex: () => process.env.MUNINN_CODEX_HOOKS ?? join(homedir(), ".codex", "hooks.json"),
 };
+/** Claude Code's user settings file (or the one tests point at). */
+export const claudeSettingsFile = () => files["claude-code"]();
 const NAMES: Record<Client, string> = { "claude-code": "Claude Code", codex: "Codex" };
 const cli = () => { const p = join(dirname(fileURLToPath(import.meta.url)), "..", "cli.js"); return existsSync(p) ? realpathSync(p) : p; };
 const hookCommand = (client: Client) => `"${realpathSync(process.execPath)}" "${cli()}" hook --client ${client}`;

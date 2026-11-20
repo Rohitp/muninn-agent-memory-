@@ -24,6 +24,14 @@ You tell an agent the same things over and over: "explain it step by step", "the
 2. **You decide what's kept.** Lessons arrive as suggestions. Nothing reaches an agent until you add it.
 3. **It tells your agents when it matters.** At the start of a session, when a word you chose comes up, or when a command fails the way it has before. It also hands the next session a short note of where you left off, and keeps a running plan for each branch you work on (goal, what's open, decisions, what's done) that you can edit and, if you like, keep in the repo as `PLAN.md`.
 
+It also proposes changes to what your agents read, each one waiting for you to apply or dismiss, and undoable:
+
+- **Ask-first rules.** A command you keep stopping before it runs (say `git push --force`) becomes a rule that makes Claude Code ask you first, in every mode including auto mode. It's saved in the repo's `.claude/settings.local.json`, on this machine only.
+- **Skills.** The same steps run in the same order across sessions become a drafted Claude Code skill, so the agent follows them in one go.
+- **Edits to CLAUDE.md, AGENTS.md and skills.** On request, your Claude reviews those files against your sessions and proposes a few exact edits.
+
+And two things for you rather than your agents: `muninn pr` writes the "why" for a branch's pull request (what was tried, what was decided, how to test) from your sessions, and `muninn insights` shows your week: where agents wasted effort, and whether lessons helped.
+
 ## What it looks like
 
 `muninn ui` opens one page in your browser, **"What your agents know"**:
@@ -84,6 +92,9 @@ After that you don't need any commands. muninn checks for new lessons on its own
 | `muninn ui` | Open the page |
 | `muninn learn` | Look for new lessons now (also runs on its own) |
 | `muninn ask "question"` | Search what you've kept |
+| `muninn changes` | Proposed rules, skills and instruction edits; `check` reviews CLAUDE.md now |
+| `muninn pr [--apply]` | Write the "why" for this branch's pull request |
+| `muninn insights` | Your week with coding agents |
 | `muninn status` | Check everything is working |
 | `muninn pause` / `resume` | Stop or restart muninn |
 | `muninn uninstall` | Remove muninn's hooks. Your lessons are kept |

@@ -57,6 +57,17 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
     const folded = await foldDuplicates(db, repo);
     const r = await learnRepo(db, repo, sessions, { embed, writer, cutoff: cfg.similarityCutoff, minSessions: cfg.minSessions, notesPerRun: cfg.notesPerRun });
     await saveUsage(db, writer?.runner ?? null, "lesson writing");
+    // Changes to propose: "ask first" rules from commands you keep stopping, and skills from steps that repeat.
+    try {
+      const p = await import("../propose/index.js");
+      const { repoRoot } = await import("../deliver/local-file.js");
+      let guards = 0;
+      for (const g of p.guardProposals(repo, sessions, await repoRoot(db, repo))) if (await p.propose(db, g)) guards++;
+      const skillRunner = writer ? pickRunner("background") : null;
+      const skills = await p.proposeSkills(db, repo, sessions, skillRunner);
+      await saveUsage(db, skillRunner, "skill drafts");
+      if ((guards || skills) && !opts.auto) console.log(`  Proposed ${[guards ? `${guards} "ask first" rule(s)` : "", skills ? `${skills} skill(s)` : ""].filter(Boolean).join(" and ")}. Apply or dismiss them in muninn ui.`);
+    } catch (e) { if (!opts.auto) console.log(`  Couldn't look for changes to propose: ${e instanceof Error ? e.message : String(e)}`); }
     if (!opts.auto) {
       const total = Object.values(r.moments).reduce((a, b) => a + b, 0);
       console.log(`${repo}: ${total} moments. ${r.known} already known (evidence added), ${r.newLessons} new lesson(s), ${r.discarded} discarded as noise.`);

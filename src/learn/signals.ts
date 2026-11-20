@@ -453,3 +453,6 @@ function skimMoments(sessions: Session[]): Moment[] {
     tools: [...new Set(skips.map((k) => k.tool))], last: skips.at(-1)!.ts,
   }];
 }
+
+/** Wasted effort without the embedding model: failing, looping and re-run commands, stops, and wrong paths. For insights. */
+export function effortMoments(sessions: Session[]): Moment[] { return [...commandMoments(sessions), ...pathMoments(sessions)]; }

@@ -3,7 +3,7 @@ import { basename } from "node:path";
 import { notTyped, parseLines, STOPPED, textOf, type LogEvent, type Session } from "./types.js";
 
 /** Claude Code's own tools that name a file or folder. */
-const FILE_TOOLS = new Set(["Read", "Edit", "MultiEdit", "Write", "NotebookEdit", "Grep", "Glob"]);
+const FILE_TOOLS = new Set(["Read", "Edit", "MultiEdit", "Write", "NotebookEdit", "Grep", "Glob", "Skill"]);
 /** The engineer stopped the answer itself. "…for tool use" is a stopped command, which the command result shows. */
 const INTERRUPTED = /^\s*\[Request interrupted by user\]/;
 
@@ -45,7 +45,7 @@ export function readClaude(file: string): Session {
     if (o.type === "assistant") for (const x of Array.isArray(c) ? c : []) {
       if (x?.type === "text") events.push({ k: "agent", text: x.text ?? "", ts });
       if (x?.type === "tool_use" && x.name === "Bash") pending.set(x.id, { cmd: x.input?.command ?? "" });
-      const path = x?.type === "tool_use" && FILE_TOOLS.has(x.name) ? x.input?.file_path ?? x.input?.notebook_path ?? x.input?.path : undefined;
+      const path = x?.type === "tool_use" && FILE_TOOLS.has(x.name) ? x.input?.file_path ?? x.input?.notebook_path ?? x.input?.path ?? x.input?.skill : undefined;
       if (typeof path === "string" && path) pending.set(x.id, { tool: String(x.name).toLowerCase(), path, ...(typeof x.input?.pattern === "string" ? { pattern: x.input.pattern } : {}) });
     }
   }

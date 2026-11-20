@@ -501,6 +501,25 @@ describe("a repo that gets a remote", () => {
     expect(await getDial(db, remoteId)).toBe("start");
     expect(await adoptRepo(db, remoteId, cwd)).toBe(false);
   });
+  it("keeps them when the remote changes, as when the repo is renamed on GitHub", async () => {
+    const { adoptRepo } = await import("../src/repo/adopt.js");
+    const { forgetIdentities } = await import("../src/repo/identity.js");
+    const cwd = join(tmp(), "proj"); mkdirSync(cwd); execFileSync("git", ["init", "-q", cwd]);
+    execFileSync("git", ["-C", cwd, "remote", "add", "origin", "git@github.com:someone/old-name.git"]);
+    forgetIdentities();
+    const db = await openDb(); const oldId = repoIdentity(cwd)!;
+    await ensureRepo(db, oldId, cwd);
+    const id = await createLesson(db, { repo_id: oldId, text: "Tokens expire every 8 hours.", source: "inferred", status: "live", by: "learn" });
+    await db.execute({ sql: "INSERT INTO meta (key,value) VALUES (?,?)", args: [`plan_status:${oldId}@main`, '{"text":"Where it stands"}'] });
+    execFileSync("git", ["-C", cwd, "remote", "set-url", "origin", "git@github.com:someone/new-name.git"]);
+    forgetIdentities();
+    const newId = repoIdentity(cwd)!;
+    expect(newId).toBe("github.com/someone/new-name");
+    expect(await adoptRepo(db, newId, cwd)).toBe(true);
+    expect((await listLessons(db, { repo: newId })).map((l) => l.id)).toEqual([id]);
+    expect((await db.execute({ sql: "SELECT 1 FROM meta WHERE key=?", args: [`plan_status:${newId}@main`] })).rows).toHaveLength(1);
+    expect((await db.execute({ sql: "SELECT 1 FROM repos WHERE id=?", args: [oldId] })).rows).toHaveLength(0);
+  });
 });
 
 describe("a brand-new repo", () => {

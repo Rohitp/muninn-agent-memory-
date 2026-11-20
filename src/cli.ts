@@ -28,6 +28,10 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn cursor on|off|sync     Write kept lessons as Cursor rules in this repo
   muninn local-file on|off      Keep always-on lessons in this repo's CLAUDE.local.md (this machine only)
   muninn keywords               Keywords in use, and how many lessons each has
+  muninn changes [check|apply <id>|dismiss <id>|undo <id>]
+                                Changes muninn proposes: ask-first rules, skills, edits to CLAUDE.md
+  muninn pr [--apply]           Write the "why" for this branch's pull request from your sessions
+  muninn insights [--days 7] [--all-repos]  Your week with coding agents: what went well, what didn't
   muninn status                 What muninn has learned and sent, and any problems
   muninn install [--learn]      Add Claude Code and Codex hooks (--learn: only automatic scans)
   muninn uninstall              Remove muninn's hooks
@@ -123,6 +127,9 @@ async function main() {
     case "ask": return (await import("./commands/ask.js")).ask(args);
     case "cursor": return cursorCmd(args[0] ?? "");
     case "local-file": return localFileCmd(args[0] ?? "");
+    case "changes": return (await import("./commands/changes.js")).changes(args);
+    case "pr": return (await import("./commands/pr.js")).pr(args);
+    case "insights": return (await import("./commands/insights.js")).insights(args);
     case "handoff": return (await import("./commands/handoff.js")).handoff(args);
     case "scan": {
       // Starts a lesson scan in the background and returns at once: the panel's "Check my sessions now".

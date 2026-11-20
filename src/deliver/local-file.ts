@@ -73,16 +73,21 @@ export async function blockFor(db: Client, repo: string): Promise<string> {
   ].join("\n");
 }
 
-function rootOf(paths: string[]): string | null {
+export function rootOf(paths: string[]): string | null {
   for (const p of paths) { try { if (existsSync(p)) return git(p, "rev-parse", "--show-toplevel"); } catch { /* try the next path */ } }
   return null;
 }
-/** Tells git to ignore the file in this clone only (.git/info/exclude), unless something already ignores it. */
-function keepOutOfGit(root: string) {
-  try { git(root, "check-ignore", "-q", FILE); return; } catch { /* not ignored yet */ }
+/** Tells git to ignore a path in this clone only (.git/info/exclude), unless something already ignores it. */
+export function keepOutOfGit(root: string, path = FILE, why = "lessons for this machine only") {
+  try { git(root, "check-ignore", "-q", path); return; } catch { /* not ignored yet */ }
   const info = join(resolve(root, git(root, "rev-parse", "--git-common-dir")), "info");
   mkdirSync(info, { recursive: true });
-  appendFileSync(join(info, "exclude"), `\n# Written by muninn: lessons for this machine only\n${FILE}\n`);
+  appendFileSync(join(info, "exclude"), `\n# Written by muninn: ${why}\n${path}\n`);
+}
+/** A repo's folder on this machine, from the paths muninn has seen it at. */
+export async function repoRoot(db: Client, repo: string): Promise<string | null> {
+  const row = (await db.execute({ sql: "SELECT paths FROM repos WHERE id=?", args: [repo] })).rows[0];
+  return row ? rootOf(JSON.parse(String(row.paths))) : null;
 }
 
 /** Writes or removes muninn's part of CLAUDE.local.md for one repo, to match its setting. */
