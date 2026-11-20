@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { deliver } from "../src/deliver/hook.js";
+import { deliver, fileCall } from "../src/deliver/hook.js";
 import { whySent } from "../src/commands/panel.js";
 import { END, findBlock, START, setLessonFile, syncLessonFiles, withBlock } from "../src/deliver/local-file.js";
 import { findMoments } from "../src/learn/signals.js";
@@ -157,5 +157,23 @@ describe("the lesson file setting", () => {
     const told = (await db.execute("SELECT trigger_id, tokens FROM deliveries WHERE session='s1' AND outcome='sent'")).rows;
     expect(told.map((r) => [r.trigger_id, r.tokens])).toEqual([["CLAUDE.local.md", 0]]);
     expect(whySent("SessionStart", "startup", "CLAUDE.local.md")).toBe("always-on, read from CLAUDE.local.md");
+  });
+});
+
+describe("live loop warning for file tools", () => {
+  beforeEach(() => { useHome(); });
+  it("names a failed read or search the way a person would", () => {
+    expect(fileCall({ tool_name: "Read", cwd: "/r", tool_input: { file_path: "/r/src/a.ts" } })?.cmd).toBe("read src/a.ts");
+    expect(fileCall({ tool_name: "Grep", cwd: "/r", tool_input: { pattern: "parse", path: "/r/lib" } })?.cmd).toBe("grep 'parse' in lib");
+    expect(fileCall({ tool_name: "Bash", tool_input: { command: "ls" } })).toBeNull();
+  });
+  it("tells the agent on the third failed read of the same missing file, and not for different files", async () => {
+    const db = await openDb();
+    const cwd = tmp();
+    const read = (path: string) => deliver(db, "claude-code", { hook_event_name: "PostToolUseFailure", session_id: "s1", cwd, tool_name: "Read", tool_input: { file_path: `${cwd}/${path}` }, error: "File does not exist." });
+    expect(await read("a.ts")).toBeNull();
+    expect(await read("b.ts")).toBeNull();
+    expect(await read("a.ts")).toBeNull();
+    expect(await read("a.ts")).toContain("`read a.ts` has failed 3 times in a row");
   });
 });

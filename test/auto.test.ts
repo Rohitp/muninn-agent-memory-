@@ -67,11 +67,22 @@ describe("install", () => {
     expect(() => installLearnHook()).toThrow(/left it alone/);
     expect(readFileSync(f(), "utf8")).toBe("{ not json");
   });
+  it("widens the failure matcher an older muninn installed, and leaves other people's hooks alone", () => {
+    const f = process.env.MUNINN_CLAUDE_SETTINGS!;
+    install();
+    const c = JSON.parse(readFileSync(f, "utf8"));
+    c.hooks.PostToolUseFailure[0].matcher = "Bash";
+    c.hooks.PostToolUseFailure.push({ matcher: "Read", hooks: [{ type: "command", command: "my-own-hook" }] });
+    writeFileSync(f, JSON.stringify(c));
+    install();
+    const after = JSON.parse(readFileSync(f, "utf8")).hooks.PostToolUseFailure;
+    expect(after.map((g: any) => g.matcher)).toEqual(["Bash|Read|Edit|MultiEdit|Write|NotebookEdit|Grep|Glob", "Read"]);
+  });
   it("installs every hook once, with a Bash matcher on failures, and uninstall removes them all", () => {
     install(); install();
     const c = JSON.parse(readFileSync(f(), "utf8"));
     expect(installed()).toEqual(["SessionStart", "UserPromptSubmit", "PostToolUseFailure", "SubagentStart", "Stop", "PreCompact", "SessionEnd"]);
-    expect(c.hooks.PostToolUseFailure).toEqual([expect.objectContaining({ matcher: "Bash" })]);
+    expect(c.hooks.PostToolUseFailure).toEqual([expect.objectContaining({ matcher: "Bash|Read|Edit|MultiEdit|Write|NotebookEdit|Grep|Glob" })]);
     const codex = JSON.parse(readFileSync(process.env.MUNINN_CODEX_HOOKS!, "utf8"));
     expect(installed("codex")).toEqual(["SessionStart", "UserPromptSubmit", "PostToolUse", "SubagentStart", "Stop", "PreCompact", "SessionEnd"]);
     expect(codex.hooks.PostToolUse).toEqual([expect.objectContaining({ matcher: "Bash" })]);

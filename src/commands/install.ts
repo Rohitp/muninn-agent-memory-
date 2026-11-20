@@ -17,7 +17,8 @@ const isOurs = (h: any) => typeof h?.command === "string" && h.command.includes(
 /** Event and matcher per client. Codex has no failure event, so muninn checks each Bash result itself. */
 export const EVENTS: Record<Client, Record<string, string | undefined>> = {
   // Stop (Claude finished a reply) and PreCompact keep the branch's plan current during long sessions.
-  "claude-code": { SessionStart: undefined, UserPromptSubmit: undefined, PostToolUseFailure: "Bash", SubagentStart: undefined, Stop: undefined, PreCompact: undefined, SessionEnd: undefined },
+  // Failures of file reads, edits and searches too, so a wrong path retried over and over is caught as it happens.
+  "claude-code": { SessionStart: undefined, UserPromptSubmit: undefined, PostToolUseFailure: "Bash|Read|Edit|MultiEdit|Write|NotebookEdit|Grep|Glob", SubagentStart: undefined, Stop: undefined, PreCompact: undefined, SessionEnd: undefined },
   codex: { SessionStart: undefined, UserPromptSubmit: undefined, PostToolUse: "Bash", SubagentStart: undefined, Stop: undefined, PreCompact: undefined, SessionEnd: undefined },
 };
 export const DELIVERY_EVENTS = Object.fromEntries(Object.entries(EVENTS["claude-code"]).filter(([e]) => e !== "SessionEnd"));
@@ -35,24 +36,30 @@ export function installFor(client: Client, events = Object.keys(EVENTS[client]))
   const file = files[client]();
   const cfg = read(file);
   cfg.hooks ??= {};
-  const added: string[] = [];
+  const added: string[] = []; const widened: string[] = [];
   for (const ev of events) {
     if (!(ev in EVENTS[client])) continue;
     const list: any[] = (cfg.hooks[ev] ??= []);
-    if (list.some((g) => g.hooks?.some(isOurs))) continue;
     const matcher = EVENTS[client][ev];
+    const mine = list.find((g) => g.hooks?.some(isOurs));
+    if (mine) {
+      // Installed by an older muninn with a narrower matcher: widen it, if the group holds only muninn's hook.
+      if (matcher && mine.matcher !== matcher && mine.hooks.every(isOurs)) { mine.matcher = matcher; widened.push(ev); }
+      continue;
+    }
     // Codex allows SessionEnd hooks at most 3 seconds.
     const timeout = ev === "SessionEnd" ? 3 : 5;
     list.push({ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command: hookCommand(client), timeout }] });
     added.push(ev);
   }
-  if (!added.length) return [];
+  if (!added.length && !widened.length) return [];
   const had = existsSync(file);
   if (had) copyFileSync(file, `${file}.muninn-backup`);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
-  console.log(`Added muninn hooks to ${file} for ${added.join(", ")}.${had ? " The previous file is saved next to it as .muninn-backup." : ""}`);
-  return added;
+  const what = [added.length ? `added muninn hooks for ${added.join(", ")}` : "", widened.length ? `updated muninn's ${widened.join(", ")} hook to also catch failed file reads, edits and searches` : ""].filter(Boolean).join("; ");
+  console.log(`In ${file}: ${what}.${had ? " The previous file is saved next to it as .muninn-backup." : ""}`);
+  return [...added, ...widened];
 }
 /** Installs for Claude Code, and for Codex when it is present. */
 export function install(events = ALL_EVENTS) {

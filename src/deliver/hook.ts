@@ -9,7 +9,7 @@ import { getDial } from "../store/dial.js";
 import { adoptRepo } from "../repo/adopt.js";
 import { getPlan, planText } from "../plan/plan.js";
 
-export type HookInput = { hook_event_name?: string; session_id?: string; cwd?: string; source?: string; prompt?: string; tool_input?: { command?: string }; tool_response?: unknown; error?: string; transcript_path?: string | null; [k: string]: unknown };
+export type HookInput = { hook_event_name?: string; session_id?: string; cwd?: string; source?: string; prompt?: string; tool_name?: string; tool_input?: { command?: string; file_path?: string; notebook_path?: string; path?: string; pattern?: string }; tool_response?: unknown; error?: string; transcript_path?: string | null; [k: string]: unknown };
 type Row = { id: string; text: string; always_on: number; updated_at: string; pattern: string | null };
 const tokens = (t: string) => Math.ceil(t.length / 4);
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -68,7 +68,7 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   if (event === "SessionStart" || event === "SubagentStart") {
     rows = (await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,NULL pattern FROM lessons l WHERE ${scope} AND l.always_on=1`, args: [repo, repo] })).rows as unknown as Row[];
   } else if (event === "UserPromptSubmit" || failed(event, input)) {
-    const hay = event === "UserPromptSubmit" ? input.prompt ?? "" : `${input.tool_input?.command ?? ""}\n${input.error ?? responseText(input.tool_response)}`;
+    const hay = event === "UserPromptSubmit" ? input.prompt ?? "" : `${input.tool_input?.command ?? fileCall(input)?.cmd ?? ""}\n${input.error ?? responseText(input.tool_response)}`;
     const all = (await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,t.pattern FROM lessons l JOIN triggers t ON t.lesson_id=l.id WHERE ${scope}`, args: [repo, repo] })).rows as unknown as Row[];
     rows = all.filter((r) => r.pattern && matches(r.pattern, hay));
   }
@@ -138,13 +138,29 @@ export function shortCommand(cmd: string): string {
  * Counts a failed command against the same command's last failures in this session. On the 3rd, 6th and 10th
  * failure in a row with the same error, returns a note telling the agent to change approach instead of retrying.
  */
+/**
+ * A failed file read, edit or search, as a command-like line: "read src/app.ts", "grep 'parse' in lib".
+ * Its key keeps the exact path, since a path is the whole point: reading two different missing files isn't a loop.
+ */
+export function fileCall(input: HookInput): { cmd: string; key: string } | null {
+  const tool = String(input.tool_name ?? "");
+  const t = input.tool_input ?? {};
+  const path = t.file_path ?? t.notebook_path ?? t.path ?? "";
+  if (!tool || tool === "Bash" || !(path || t.pattern)) return null;
+  const cwd = String(input.cwd ?? "");
+  const short = cwd && path.startsWith(cwd + "/") ? path.slice(cwd.length + 1) : path;
+  const name = tool.toLowerCase();
+  const cmd = t.pattern ? `${name} '${t.pattern}'${short ? ` in ${short}` : ""}` : `${name} ${short}`;
+  return { cmd, key: `${name}:${path}:${t.pattern ?? ""}` };
+}
 export async function trackLoop(db: Client, session: string, repo: string | null, input: HookInput): Promise<string | null> {
-  const cmd = String(input.tool_input?.command ?? "");
+  const file = fileCall(input);
+  const cmd = file?.cmd ?? String(input.tool_input?.command ?? "");
   if (!cmd) return null;
   const text = input.error ?? responseText(input.tool_response);
   const err = errorLine(text);
   // One row per command and error, so a loop stays on record when a different error comes up.
-  const key = `${normCommand(cmd)} :: ${err}`;
+  const key = `${file?.key ?? normCommand(cmd)} :: ${err}`;
   const ts = new Date().toISOString();
   const prev = (await db.execute({ sql: "SELECT err,n,tokens,hinted,last_ts FROM live_loops WHERE session=? AND key=?", args: [session, key] })).rows[0];
   // The same error, and not long after the last one; otherwise this is a fresh start.
@@ -155,6 +171,6 @@ export async function trackLoop(db: Client, session: string, repo: string | null
   const hint = HINT_AT.includes(n) && n > hinted;
   await db.execute({ sql: "INSERT OR REPLACE INTO live_loops (session,repo_id,key,err,n,tokens,hinted,first_ts,last_ts,cmd) VALUES (?,?,?,?,?,?,?,coalesce((SELECT first_ts FROM live_loops WHERE session=? AND key=? AND ?),?),?,?)", args: [session, repo, key, err, n, spent, hint ? n : hinted, session, key, same ? 1 : 0, ts, ts, cmd.slice(0, 500)] });
   if (!hint) return null;
-  const name = shortCommand(cmd);
+  const name = file ? cmd.slice(0, 60) : shortCommand(cmd);
   return `muninn: \`${name}\` has failed ${n} times in a row with the same error${err ? ` ("${err}")` : ""}. Running it again as is will fail the same way. Read the error, check what the command needs, or try another approach.`;
 }
