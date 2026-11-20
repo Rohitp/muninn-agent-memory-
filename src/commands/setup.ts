@@ -24,7 +24,7 @@ const ask = async (q: string, def = true) => {
  * Cursor is used in, a first scan of every repo, and the review page open in the browser.
  */
 export async function setup(args: string[]) {
-  console.log(`muninn learns from your coding sessions and gives your agents what you've taught them.
+  console.log(`secondnature (muninn for short, which is also its command) learns from your coding sessions and gives your agents what you've taught them.
 
 What it reads: your Claude Code, Codex and Cursor session logs, on this machine.
 What it sends: redacted excerpts to your own Claude Code (or Codex) to write lessons.

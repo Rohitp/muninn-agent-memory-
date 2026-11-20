@@ -32,7 +32,12 @@ You tell an agent the same things over and over: "explain it step by step", "the
 - **Your lessons:** an on/off switch each. Off means agents aren't told it.
 - **Settings:** whether muninn speaks up only when a session starts, or mid-task too.
 
-In Claude Code, an optional side panel (`mods/muninn-panel`) shows what muninn told your agent in this session, and why.
+In Claude Code, an optional side panel shows what muninn told your agent in this session, and why. To add it, run these in a terminal, then open it in a new session with `/muninn`:
+
+```sh
+claude plugin marketplace add Rohitp/secondnature
+claude plugin install muninn-panel@muninn
+```
 
 ## How agents are told
 
