@@ -106,6 +106,14 @@ pnpm test        # 148 tests
 pnpm typecheck
 ```
 
+To publish a new version, run one command in a terminal on `main`:
+
+```sh
+pnpm release patch     # fixes: 0.1.0 → 0.1.1 (minor for new features, or an exact version)
+```
+
+It checks the repo is committed and up to date with GitHub, runs the types and tests, builds, and publishes to npm (which asks for your authenticator code). Only once npm accepts it does it commit the version, tag it, push, and create the GitHub release with what changed. If anything fails, nothing is released and the version is left as it was. Add `--dry-run` to see all of it without publishing.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

@@ -36,7 +36,8 @@
   "scripts": {
     "build": "tsc && node scripts/copy-assets.mjs",
     "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.1",
