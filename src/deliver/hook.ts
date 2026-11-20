@@ -1,5 +1,6 @@
 import type { Client } from "@libsql/client";
 import { FILE, lessonFileMode } from "./local-file.js";
+import { ignoredRepos } from "../store/ignore.js";
 import { randomUUID } from "node:crypto";
 import { errorLine, normCommand } from "../learn/signals.js";
 import { isPaused, settings } from "../config.js";
@@ -47,6 +48,8 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   if (fromCursor(input)) { await log("unsupported_client"); return null; }
   if (isPaused()) { await log("paused"); return null; }
   const repo = input.cwd ? repoIdentity(input.cwd) : null;
+  // A repo you told muninn to leave alone: nothing is registered or told there.
+  if (repo && (await ignoredRepos(db)).has(repo)) { await log("paused"); return null; }
   // A repo that just got a remote changes identity; carry its lessons over before looking them up.
   if (event === "SessionStart" && input.cwd) {
     await adoptRepo(db, repo, input.cwd);

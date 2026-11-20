@@ -149,3 +149,22 @@ describe("insights", () => {
     expect(text).toContain("the same command failing again and again");
   });
 });
+
+describe("ignoring a repo", () => {
+  it("removes what muninn kept for it, keeps it off the list, and tells agents nothing there", async () => {
+    const { ignoreRepo, unignoreRepo } = await import("../src/store/ignore.js");
+    const { createLesson, decide } = await import("../src/store/lessons.js");
+    const { deliver } = await import("../src/deliver/hook.js");
+    const db = await openDb();
+    const id = await createLesson(db, { repo_id: repo, text: "Quote === in zsh", source: "manual", status: "live", by: "person" });
+    await decide(db, id, { alwaysOn: true });
+    expect(await ignoreRepo(db, repo)).toBe(1);
+    expect((await db.execute({ sql: "SELECT 1 FROM repos WHERE id=?", args: [repo] })).rows).toHaveLength(0);
+    await ensureRepo(db, repo, root);
+    expect((await db.execute({ sql: "SELECT 1 FROM repos WHERE id=?", args: [repo] })).rows).toHaveLength(0);
+    expect(await deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "startup", session_id: "s", cwd: root })).toBeNull();
+    await unignoreRepo(db, repo);
+    await ensureRepo(db, repo, root);
+    expect((await db.execute({ sql: "SELECT 1 FROM repos WHERE id=?", args: [repo] })).rows).toHaveLength(1);
+  });
+});

@@ -28,6 +28,7 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn cursor on|off|sync     Write kept lessons as Cursor rules in this repo
   muninn local-file on|off      Keep always-on lessons in this repo's CLAUDE.local.md (this machine only)
   muninn keywords               Keywords in use, and how many lessons each has
+  muninn ignore-repo [name] [--undo]  Leave a repo alone: not listed, scanned or told
   muninn changes [check|apply <id>|dismiss <id>|undo <id>]
                                 Changes muninn proposes: ask-first rules, skills, edits to CLAUDE.md
   muninn pr [--apply]           Write the "why" for this branch's pull request from your sessions
@@ -68,6 +69,19 @@ async function localFileCmd(sub: string) {
   console.log(sub === "on"
     ? `Wrote this repo's always-on lessons into ${r.file}, between muninn's two marker lines. Claude Code reads that file at the start of every session. git ignores it in this clone, and muninn rewrites its part when lessons change.`
     : `Took muninn's lessons out of ${r.file}. Anything else in the file is left as it was.`);
+}
+
+/** muninn ignore-repo [repo] [--undo]: leave a repo alone (this one, or one named as the page lists it). */
+async function ignoreRepoCmd(args: string[]) {
+  const [{ openDb }, { repoIdentity }, ig] = await Promise.all([import("./store/db.js"), import("./repo/identity.js"), import("./store/ignore.js")]);
+  const db = await openDb();
+  const named = args.find((a) => !a.startsWith("--"));
+  const all = (await db.execute("SELECT id FROM repos")).rows.map((r) => String(r.id));
+  const id = named ? all.find((r) => r === named || r.split("/").filter(Boolean).pop() === named) ?? named : repoIdentity(process.cwd());
+  if (!id) { console.error("Run this inside the repo, or name it: muninn ignore-repo <name>"); process.exitCode = 1; return; }
+  if (args.includes("--undo")) { await ig.unignoreRepo(db, id); console.log(`muninn will read ${id} again from its next scan.`); return; }
+  const n = await ig.ignoreRepo(db, id);
+  console.log(`muninn now leaves ${id} alone: it isn't listed or scanned, and agents there aren't told anything. Removed ${n} lesson(s) and its plan. Undo with "muninn ignore-repo ${named ?? ""} --undo".`.replace("  ", " "));
 }
 
 /** muninn uses Node 22 features (fs.globSync among them). On older Node, say so plainly instead of crashing on an import. */
@@ -127,6 +141,7 @@ async function main() {
     case "ask": return (await import("./commands/ask.js")).ask(args);
     case "cursor": return cursorCmd(args[0] ?? "");
     case "local-file": return localFileCmd(args[0] ?? "");
+    case "ignore-repo": return ignoreRepoCmd(args);
     case "changes": return (await import("./commands/changes.js")).changes(args);
     case "pr": return (await import("./commands/pr.js")).pr(args);
     case "insights": return (await import("./commands/insights.js")).insights(args);

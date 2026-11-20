@@ -19,7 +19,9 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
   if (!opts.allRepos && !here) { console.error("This folder is not in a git repo. Run it inside one, or use --all-repos."); process.exitCode = 1; return 0; }
 
   const scan = scanLogs();
-  const repos = here ? (scan.byRepo.has(here) ? [here] : []) : [...scan.byRepo.keys()];
+  const { ignoredRepos } = await import("../store/ignore.js");
+  const ignored = await ignoredRepos(await openDb());
+  const repos = (here ? (scan.byRepo.has(here) ? [here] : []) : [...scan.byRepo.keys()]).filter((r) => !ignored.has(r));
   const count = repos.reduce((n, r) => n + scan.byRepo.get(r)!.length, 0);
   if (!opts.auto) {
     console.log(`Found ${scan.files.claude} Claude Code, ${scan.files.codex} Codex and ${scan.files.cursor} Cursor log files.`);

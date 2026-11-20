@@ -95,6 +95,7 @@ After that you don't need any commands. muninn checks for new lessons on its own
 | `muninn changes` | Proposed rules, skills and instruction edits; `check` reviews CLAUDE.md now |
 | `muninn pr [--apply]` | Write the "why" for this branch's pull request |
 | `muninn insights` | Your week with coding agents |
+| `muninn ignore-repo [name]` | Leave a repo alone: not listed, scanned or told anything (`--undo` to reverse) |
 | `muninn status` | Check everything is working |
 | `muninn pause` / `resume` | Stop or restart muninn |
 | `muninn uninstall` | Remove muninn's hooks. Your lessons are kept |

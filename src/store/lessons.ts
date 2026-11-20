@@ -6,6 +6,8 @@ const COLS = "off,plain,kind,suggested_keywords,suggested_scope,updated_at,id,re
 const now = () => new Date().toISOString();
 
 export async function ensureRepo(db: Client, id: string, path: string) {
+  const { ignoredRepos } = await import("./ignore.js");
+  if ((await ignoredRepos(db)).has(id)) return;
   await db.execute({ sql: "INSERT OR IGNORE INTO repos (id,paths) VALUES (?,?)", args: [id, JSON.stringify([path])] });
 }
 async function version(db: Client, id: string, by: string) {
