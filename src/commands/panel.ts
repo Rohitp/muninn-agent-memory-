@@ -22,6 +22,7 @@ export type PanelData = {
 
 /** Why a lesson was sent, in words, from the delivery row. */
 export function whySent(event: string, source: string | null, keyword: string | null): string {
+  if ((event === "SessionStart" || event === "SubagentStart") && keyword === "CLAUDE.local.md") return "always-on, read from CLAUDE.local.md";
   if (event === "SessionStart") return source === "compact" ? "always-on, sent again after compaction" : "always-on, at session start";
   if (event === "SubagentStart") return "always-on, for a subagent";
   if (event === "UserPromptSubmit") return keyword ? `your prompt said "${keyword}"` : "matched your prompt";

@@ -1,5 +1,5 @@
 import type { Client } from "@libsql/client";
-import { lessonFileMode } from "./local-file.js";
+import { FILE, lessonFileMode } from "./local-file.js";
 import { randomUUID } from "node:crypto";
 import { errorLine, normCommand } from "../learn/signals.js";
 import { isPaused, settings } from "../config.js";
@@ -63,8 +63,9 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   const scope = "l.status='live' AND l.off=0 AND (l.scope='global' OR l.repo_id IS ? OR l.repo_id=?)";
   let rows: Row[] = [];
   // Where always-on lessons are in CLAUDE.local.md, Claude Code has read them already: sending them again doubles them.
+  // They're still logged as told (from the file), so the panel and the "came back" check see them.
   const inFile = client === "claude-code" && !!repo && (await lessonFileMode(db, repo)) === "local";
-  if ((event === "SessionStart" || event === "SubagentStart") && !inFile) {
+  if (event === "SessionStart" || event === "SubagentStart") {
     rows = (await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,NULL pattern FROM lessons l WHERE ${scope} AND l.always_on=1`, args: [repo, repo] })).rows as unknown as Row[];
   } else if (event === "UserPromptSubmit" || failed(event, input)) {
     const hay = event === "UserPromptSubmit" ? input.prompt ?? "" : `${input.tool_input?.command ?? ""}\n${input.error ?? responseText(input.tool_response)}`;
@@ -81,6 +82,7 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
     .sort((a, b) => b.always_on - a.always_on || (b.pattern?.length ?? 0) - (a.pattern?.length ?? 0) || b.updated_at.localeCompare(a.updated_at));
   const out: Row[] = []; let here = 0;
   for (const r of ranked) {
+    if (inFile && r.always_on && (event === "SessionStart" || event === "SubagentStart")) { await log("sent", { id: r.id, pattern: FILE }, 0); continue; }
     const t = tokens(r.text);
     if (out.length >= cfg.maxPerDelivery || here + t > cfg.tokensPerDelivery || used + t > cfg.tokensPerSession) { await log("limit", r); continue; }
     out.push(r); here += t; used += t;

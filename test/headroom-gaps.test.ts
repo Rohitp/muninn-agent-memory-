@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deliver } from "../src/deliver/hook.js";
+import { whySent } from "../src/commands/panel.js";
 import { END, findBlock, START, setLessonFile, syncLessonFiles, withBlock } from "../src/deliver/local-file.js";
 import { findMoments } from "../src/learn/signals.js";
 import { readClaude } from "../src/logs/claude-code.js";
@@ -152,5 +153,9 @@ describe("the lesson file setting", () => {
     const start = (client: string, id: string) => deliver(db, client, { hook_event_name: "SessionStart", source: "startup", session_id: id, cwd: root });
     expect(await start("claude-code", "s1") ?? "").not.toContain("Quote === in zsh");
     expect(await start("codex", "s2")).toContain("Quote === in zsh");
+    // Still logged as told, from the file, so the panel can say so.
+    const told = (await db.execute("SELECT trigger_id, tokens FROM deliveries WHERE session='s1' AND outcome='sent'")).rows;
+    expect(told.map((r) => [r.trigger_id, r.tokens])).toEqual([["CLAUDE.local.md", 0]]);
+    expect(whySent("SessionStart", "startup", "CLAUDE.local.md")).toBe("always-on, read from CLAUDE.local.md");
   });
 });
