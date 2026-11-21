@@ -568,6 +568,25 @@ describe("plan updates during a long session", () => {
     s.events.push({ k: "typed", text: "One more thing to do", ts: day(2) });
     expect(await checkpoint(db, s, runner)).toBe(1);
   });
+  it("groups the steps a long session finished into outcomes right away, without waiting for a scan", async () => {
+    const { checkpoint } = await import("../src/handoff/checkpoint.js");
+    const { getHistory } = await import("../src/plan/history.js");
+    const db = await openDb();
+    let n = 0;
+    const runner = { name: "fake", run: (p: string) => {
+      if (p.includes("organise a coding branch's history")) {
+        const steps = p.split("STEPS:")[1]!.split("DECISIONS:")[0]!;
+        const ids = [...steps.matchAll(/"id":"(\w{8})"/g)].map((m) => m[1]);
+        return JSON.stringify({ outcomes: [{ title: "Long session work", result: "Done.", kind: "shipped", area: "Testing", steps: ids }], decisions: [] });
+      }
+      if (p.includes("short plan for one branch")) return JSON.stringify({ goal: null, status: "Going", next: [], decisions: [], finished: [], done: [`Finished part ${++n}`] });
+      return "Next: keep going";
+    } };
+    await checkpoint(db, long(80), runner);
+    const h = await getHistory(db, repoIdentity(cwd)!, "feat");
+    expect(h.ungrouped).toHaveLength(0);
+    expect(h.outcomes.map((o) => o.title)).toEqual(["Long session work"]);
+  });
 });
 
 describe("plan items that repeat", () => {

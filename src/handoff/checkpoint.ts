@@ -94,6 +94,8 @@ export async function checkpoint(db: Client, s: Session, runner: Runner, opts: {
       if (text) { try { if (await applyHandoff(db, note, runner)) folded++; } catch { /* the plan catches up next time */ } }
     }
     if (opts.file && existsSync(opts.file)) await db.execute({ sql: "INSERT OR REPLACE INTO meta (key,value) VALUES (?,?)", args: [`cp_size:${s.id}`, String(statSync(opts.file).size)] });
+    // Group the steps this session just finished into outcomes now, so the page's history doesn't wait for a scan.
+    if (folded) { try { const { groupHistory } = await import("../plan/history.js"); await groupHistory(db, repo, branch, runner); } catch { /* grouped at the next scan */ } }
     return folded;
   } finally { rmSync(lockFile(s.id), { force: true }); }
 }
