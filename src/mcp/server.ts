@@ -1,5 +1,8 @@
 import type { Client } from "@libsql/client";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import { gatherSources } from "../commands/answer.js";
 import { insightsData, insightsText } from "../commands/insights.js";
 import { loadEmbedder, modelCached, type Embed } from "../embed/model.js";
@@ -47,9 +50,28 @@ export const TOOLS = [
     description: "Suggest a lesson for the engineer's coding agents, when they say something should be remembered (\"remember that…\", \"agents should always…\"). It goes into muninn's review queue; nothing reaches an agent until the engineer keeps it. Write it as an instruction to an agent, in one or two plain sentences.",
     inputSchema: { type: "object", properties: { text: { type: "string" }, repo: repoArg, everywhere: { type: "boolean", description: "True if it applies in every repo, like how to explain things." } }, required: ["text"] },
   },
+  {
+    name: "get_runs",
+    description: "Autonomous work in a repo: workflow runs where agents worked together (subagents, an agent swarm, worktrees such as builder, reviewer and qa). For each run: time and tokens per role, commands and failures, approvals, work sent back, fixes made after approval, gaps where no agent worked, and the findings muninn wrote about it. Also whether each lesson kept for one role has worked since.",
+    inputSchema: { type: "object", properties: { repo: repoArg, all_repos: { type: "boolean" }, limit: { type: "number", description: "How many recent runs; default 5." }, include_single: { type: "boolean", description: "Also runs with only one role (a plain session)." } } },
+  },
+  {
+    name: "list_lessons",
+    description: "The lessons muninn keeps for the engineer's coding agents in a repo: what agents are told and when (every session, on a keyword, or only when searched), why each was kept, which role it's for in a team of agents, and whether it has worked. Also the suggestions waiting for the engineer's review.",
+    inputSchema: { type: "object", properties: { repo: repoArg, all_repos: { type: "boolean" }, waiting: { type: "boolean", description: "Only the suggestions waiting for review." } } },
+  },
+  {
+    name: "where_left_off",
+    description: "Where the last coding-agent session on a branch left off: what it was doing, what was done, and what's next. Use it when starting work, or when the engineer asks where things stand.",
+    inputSchema: { type: "object", properties: { repo: repoArg, branch: { type: "string", description: "Branch name. Leave out for the branch checked out, else main." } } },
+  },
 ] as const;
 
 type Args = Record<string, unknown>;
+/** The installed package's version, for the server's own info. */
+function packageVersion(): string {
+  try { return JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json"), "utf8")).version ?? "0"; } catch { return "0"; }
+}
 /** The repo a call means: one named (full id or the short name muninn shows), else the chat's own folder, else none. */
 export async function resolveRepo(db: Client, a: Args, cwd = process.cwd()): Promise<string | null> {
   if (a.all_repos === true) return null;
@@ -98,7 +120,62 @@ export async function callTool(db: Client, name: string, a: Args, embed: () => P
     const id = await createLesson(db, { repo_id: global ? null : repo, scope: global ? "global" : "repo", text: text.slice(0, 1000), source: "own_words", status: "proposed", suggestedScope: global ? "global" : "repo", by: "mcp" });
     return `Added to the engineer's suggestions (${id.slice(0, 8)}). Nothing reaches an agent until they keep it in muninn ui or with "muninn review".`;
   }
+  if (name === "get_runs") return runsText(db, repo, { limit: typeof a.limit === "number" ? a.limit : 5, all: a.include_single === true });
+  if (name === "list_lessons") return lessonsText(db, repo, a.waiting === true);
+  if (name === "where_left_off") {
+    if (!repo) throw new Error("Say which repo: the chat isn't running inside one.");
+    const branch = typeof a.branch === "string" && a.branch ? a.branch : (currentBranch(process.cwd()) && repoIdentity(process.cwd()) === repo ? currentBranch(process.cwd())! : "main");
+    const { latestHandoff, handoffText } = await import("../handoff/handoff.js");
+    const { settings } = await import("../config.js");
+    const h = await latestHandoff(db, repo, branch, 30);
+    return h ? handoffText(h, settings().handoffStaleDays) : `No session on ${branch} in ${repo.split("/").pop()} has left a note in the last 30 days. Try get_plan for the branch's plan.`;
+  }
   throw new Error(`No tool called ${name}.`);
+}
+
+const k = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
+const short = (r: string) => r.split("/").pop() ?? r;
+
+/** Recent runs with their numbers per role, saved findings, and how role lessons are doing. */
+export async function runsText(db: Client, repo: string | null, o: { limit: number; all: boolean }): Promise<string> {
+  const { listRuns } = await import("../workflow/runs.js");
+  const { runNumbers, savedFindings } = await import("../commands/run-findings.js");
+  const { roleEffects } = await import("../workflow/effect.js");
+  const runs = await listRuns(db, { repo, teamOnly: !o.all, limit: Math.max(1, Math.min(o.limit, 20)) });
+  const found = await savedFindings(db, runs);
+  const out: string[] = [];
+  for (const r of runs) {
+    const n = runNumbers(r);
+    out.push(`RUN ${r.started_at.slice(0, 16).replace("T", " ")}${repo ? "" : ` · ${short(r.repo_id)}`} · ${n.minutes} min · ${k(n.tokens)} tokens · roles: ${r.roles.join(", ")}${n.typed ? ` · the engineer typed ${n.typed} message(s)` : " · ran on its own"}`);
+    for (const x of n.roles) out.push(`- ${x.role}: ${x.sessions} session(s), ${Math.round(x.minutes)} min, ${k(x.tokens)} tokens (${Math.round(x.share * 100)}%), ${x.commands} command(s)${x.failed ? `, ${x.failed} failed` : ""}${x.approvals ? `, ${x.approvals} approval(s)` : ""}${x.sentBack ? `, work sent back to it ${x.sentBack} time(s)` : ""}`);
+    out.push(`Between roles: ${n.approvals} approval(s), ${n.sentBack} sent back, ${n.rework} fix(es) after approval${n.stalls.length ? `, ${n.stalls.length} gap(s) of ${n.stalls.map((g) => `${g.minutes} min`).join(", ")} with no agent working` : ""}.`);
+    for (const h of r.handoffs.filter((h) => h.kind === "review_rejected" || h.kind === "rework").slice(0, 6)) out.push(`  ${h.at.slice(11, 16)} ${h.kind === "rework" ? `${h.from_role} fixed later` : `${h.from_role} sent back to ${h.to_role}`}: ${h.note ?? h.evidence ?? ""}`);
+    const f = found[r.id];
+    if (f?.items.length) { out.push("Findings:"); for (const i of f.items) out.push(`  - ${i.role ? `[${i.role}] ` : ""}${i.text}`); }
+    out.push("");
+  }
+  const effects = await roleEffects(db, repo);
+  if (effects.length) { out.push("LESSONS FOR ONE ROLE, AND WHETHER THEY WORKED:"); for (const e of effects) out.push(`- for the ${e.role}${repo ? "" : ` (${short(e.repo)})`}: ${e.text.slice(0, 160)}\n  ${e.summary}`); }
+  if (!runs.length && !effects.length) return `No workflow runs${repo ? ` in ${short(repo)}` : ""} yet${o.all ? "" : " with more than one role (subagents, or agents in different worktrees). Set include_single for plain sessions"}. muninn builds runs when it scans.`;
+  return out.join("\n").trim();
+}
+
+/** Kept lessons and waiting suggestions, with how each is told, why it was kept, its role, and how it's doing. */
+export async function lessonsText(db: Client, repo: string | null, waitingOnly: boolean): Promise<string> {
+  const { reportData } = await import("../commands/report.js");
+  const { roleEffects } = await import("../workflow/effect.js");
+  const where = repo ? "AND (l.repo_id=? OR l.scope='global')" : "";
+  const rows = (await db.execute({ sql: `SELECT l.id,l.text,l.status,l.always_on,l.role,l.why,l.scope,l.repo_id,(SELECT group_concat(pattern, ', ') FROM triggers t WHERE t.lesson_id=l.id) kw FROM lessons l WHERE l.off=0 AND l.status IN (${waitingOnly ? "'proposed'" : "'live','proposed'"}) ${where} ORDER BY l.status DESC, l.updated_at DESC LIMIT 60`, args: repo ? [repo] : [] })).rows;
+  if (!rows.length) return waitingOnly ? "No suggestions are waiting." : `No lessons${repo ? ` for ${short(repo)}` : ""} yet.`;
+  const verdict = new Map((await reportData(db, repo)).lessons.map((l) => [l.id, l.verdict]));
+  for (const e of await roleEffects(db, repo)) verdict.set(e.id, e.summary);
+  const line = (r: Record<string, unknown>) => {
+    const when = r.status === "proposed" ? "waiting for review" : r.always_on ? "told every session" : r.kw ? `told when "${r.kw}" comes up` : "only when searched";
+    const where = r.scope === "global" ? "every repo" : repo ? null : short(String(r.repo_id));
+    return `- ${String(r.text).slice(0, 400)}\n  (${[when, r.role ? `for the ${r.role} only` : null, where].filter(Boolean).join(", ")})${r.why ? `\n  Why: ${r.why}` : ""}${verdict.get(String(r.id)) ? `\n  How it's doing: ${verdict.get(String(r.id))}` : ""}`;
+  };
+  const kept = rows.filter((r) => r.status === "live"), waiting = rows.filter((r) => r.status === "proposed");
+  return [kept.length ? `KEPT (${kept.length}):\n${kept.map(line).join("\n")}` : "", waiting.length ? `WAITING FOR REVIEW (${waiting.length}):\n${waiting.map(line).join("\n")}` : ""].filter(Boolean).join("\n\n");
 }
 
 type Msg = { jsonrpc: "2.0"; id?: number | string | null; method?: string; params?: any };
@@ -118,8 +195,8 @@ export async function serveMcp() {
     try {
       if (m.method === "initialize") {
         const asked = String(m.params?.protocolVersion ?? "");
-        reply({ protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0], capabilities: { tools: {} }, serverInfo: { name: "muninn", title: "muninn (secondnature)", version: "0.1" },
-          instructions: "muninn keeps the engineer's coding history: lessons, branch plans and past agent sessions. Search it before answering questions about past work, and suggest a lesson when they ask for something to be remembered." });
+        reply({ protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0], capabilities: { tools: {} }, serverInfo: { name: "muninn", title: "muninn (secondnature)", version: packageVersion() },
+          instructions: "muninn keeps the engineer's coding history: lessons, branch plans, past agent sessions, and autonomous runs where agents worked together. Search it before answering questions about past work, check where_left_off when starting work on a branch, use get_runs for how agent teams did, and suggest a lesson when they ask for something to be remembered." });
       } else if (m.method === "ping") reply({});
       else if (m.method === "tools/list") reply({ tools: TOOLS });
       else if (m.method === "tools/call") {
