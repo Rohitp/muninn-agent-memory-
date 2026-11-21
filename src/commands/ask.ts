@@ -98,7 +98,12 @@ export async function askData(db: Client, q: string, here: string | null, opts: 
 export async function ask(args: string[]) {
   const q = args.filter((a) => !a.startsWith("--")).join(" ").trim();
   if (!q) { console.error('Usage: muninn ask "question"'); process.exitCode = 1; return; }
-  const hits = await askData(await openDb(), q, repoIdentity(process.cwd()));
+  const db = await openDb(); const t0 = Date.now(); const repo = repoIdentity(process.cwd());
+  const hits = await askData(db, q, repo);
+  const { recordQuery, whoIsAsking } = await import("../store/queries.js");
+  const { currentBranch } = await import("../handoff/handoff.js");
+  const who = whoIsAsking();
+  await recordQuery(db, { repo, branch: repo ? currentBranch(process.cwd()) : null, session: who.session, tool: who.tool, surface: "ask", query: q, results: hits.length, result_ids: hits.map((h) => ({ kind: h.kind === "note" ? "note" : "lesson", id: h.id })), ms: Date.now() - t0 });
   if (!hits.length) { console.log("No kept lessons match."); return; }
   for (const r of hits) console.log(`- ${r.text}${r.plain ? `\n  In short: ${r.plain}` : ""}\n  ${r.where}, kept ${r.kind === "note" ? "note" : "lesson"}. ${r.origin}.`);
 }

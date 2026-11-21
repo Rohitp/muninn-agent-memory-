@@ -80,7 +80,12 @@ export async function recall(args: string[]) {
   const stored = Number((await db.execute("SELECT count(*) n FROM chunks")).rows[0]?.n ?? 0);
   if (!stored) { console.log('Nothing stored yet. Run "muninn learn --all-repos" once; after that muninn keeps your sessions as you work.'); return; }
   const repo = args.includes("--all-repos") ? null : repoIdentity(process.cwd());
+  const t0 = Date.now();
   const hits = await recallData(db, q, repo, { days: val("--days") ? Number(val("--days")) : undefined, limit: 6 });
+  const { recordQuery, whoIsAsking } = await import("../store/queries.js");
+  const { currentBranch } = await import("../handoff/handoff.js");
+  const who = whoIsAsking();
+  await recordQuery(db, { repo, branch: repo ? currentBranch(process.cwd()) : null, session: who.session, tool: who.tool, surface: "recall", query: q, results: hits.length, result_ids: hits.map((h) => ({ kind: "session" as const, id: h.session })), ms: Date.now() - t0 });
   if (!hits.length) { console.log(`Nothing in ${repo ? "this repo's" : "your"} sessions matches.${repo ? " Try --all-repos." : ""}`); return; }
   console.log(recallText(hits, args.includes("--full")));
 }

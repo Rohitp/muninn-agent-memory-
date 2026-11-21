@@ -11,6 +11,7 @@ import { getPlan, planMarkdown } from "../plan/plan.js";
 import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
 import { createLesson } from "../store/lessons.js";
+import { recordQuery, toolFromClient } from "../store/queries.js";
 
 /**
  * muninn as an MCP server, so you can ask about your own work from any chat with Claude (the desktop app,
@@ -94,9 +95,12 @@ export async function resolveRepo(db: Client, a: Args, cwd = process.cwd()): Pro
   return repoIdentity(cwd);
 }
 
-export async function callTool(db: Client, name: string, a: Args, embed: () => Promise<Embed | null>): Promise<string> {
+/** What a tool call found, for the log of agents' questions. Handlers add to it. */
+export type Found = import("../store/queries.js").ResultRef[];
+export async function callTool(db: Client, name: string, a: Args, embed: () => Promise<Embed | null>, found: Found = []): Promise<string> {
   if (name === "list_repos") {
     const rows = (await db.execute("SELECT r.id, (SELECT count(*) FROM lessons l WHERE l.repo_id=r.id AND l.status='live') kept, (SELECT count(*) FROM lessons l WHERE l.repo_id=r.id AND l.status='proposed') waiting, (SELECT count(DISTINCT session) FROM chunks c WHERE c.repo_id=r.id AND c.tool!='plan') sessions FROM repos r ORDER BY r.id")).rows;
+    for (const r of rows) found.push({ kind: "repo", id: String(r.id) });
     return rows.map((r) => `${String(r.id).split("/").pop()} (${r.id}): ${r.kept} kept lesson(s), ${r.waiting} waiting, ${r.sessions} stored session(s)`).join("\n") || "muninn doesn't know any repos yet.";
   }
   const repo = await resolveRepo(db, a);
@@ -105,20 +109,26 @@ export async function callTool(db: Client, name: string, a: Args, embed: () => P
     if (!q) throw new Error("Give a query.");
     const e = await embed();
     if (!e) throw new Error("muninn's local model isn't downloaded yet. Run \"muninn learn --all-repos\" once in a terminal.");
-    const found = await gatherSources(db, q, repo, e, { limit: 10 });
-    if (!found.length) return `Nothing muninn keeps${repo ? ` for ${repo.split("/").pop()}` : ""} matches "${q}".${repo ? " Try all_repos." : ""}`;
-    return found.map((s) => `[${s.n}] ${s.kind.toUpperCase()} · ${s.where}${s.date ? ` · ${s.date}` : ""}\n${s.text.slice(0, 1500)}`).join("\n\n");
+    const hits = await gatherSources(db, q, repo, e, { limit: 10 });
+    const KIND: Record<string, Found[number]["kind"]> = { lesson: "lesson", note: "note", decision: "plan", done: "plan", goal: "plan", session: "session", handoff: "handoff" };
+    for (const h of hits) found.push({ kind: KIND[h.kind] ?? "session", id: h.kind === "session" ? String(h.session ?? h.id) : h.id });
+    if (!hits.length) return `Nothing muninn keeps${repo ? ` for ${repo.split("/").pop()}` : ""} matches "${q}".${repo ? " Try all_repos." : ""}`;
+    return hits.map((s) => `[${s.n}] ${s.kind.toUpperCase()} · ${s.where}${s.date ? ` · ${s.date}` : ""}\n${s.text.slice(0, 1500)}`).join("\n\n");
   }
   if (name === "get_plan") {
     if (!repo) throw new Error("Say which repo: the chat isn't running inside one.");
     const branch = typeof a.branch === "string" && a.branch ? a.branch : (currentBranch(process.cwd()) && repoIdentity(process.cwd()) === repo ? currentBranch(process.cwd())! : "main");
-    return planMarkdown(await getPlan(db, repo, branch), repo.split("/").pop() ?? repo, branch);
+    const plan = await getPlan(db, repo, branch);
+    found.push({ kind: "plan", id: `${repo}#${branch}` });
+    return planMarkdown(plan, repo.split("/").pop() ?? repo, branch);
   }
   if (name === "get_related") {
     const e = await embed();
     if (!e) throw new Error("muninn's local model isn't downloaded yet. Run \"muninn learn --all-repos\" once in a terminal.");
     const { relatedText } = await import("../links/links.js");
-    return relatedText(db, String(a.about ?? ""), repo, e);
+    const text = await relatedText(db, String(a.about ?? ""), repo, e);
+    if (!text.startsWith("Found no")) found.push({ kind: "link", id: String(a.about ?? "").slice(0, 80) });
+    return text;
   }
   if (name === "get_week") return insightsText(await insightsData(db, repo, typeof a.days === "number" ? a.days : 7));
   if (name === "suggest_lesson") {
@@ -127,6 +137,7 @@ export async function callTool(db: Client, name: string, a: Args, embed: () => P
     const global = a.everywhere === true;
     if (!repo && !global) throw new Error("Say which repo it's for, or set everywhere.");
     const id = await createLesson(db, { repo_id: global ? null : repo, scope: global ? "global" : "repo", text: text.slice(0, 1000), source: "own_words", status: "proposed", suggestedScope: global ? "global" : "repo", by: "mcp" });
+    found.push({ kind: "lesson", id });
     return `Added to the engineer's suggestions (${id.slice(0, 8)}). Nothing reaches an agent until they keep it in muninn ui or with "muninn review".`;
   }
   if (name === "review_lesson") {
@@ -135,6 +146,7 @@ export async function callTool(db: Client, name: string, a: Args, embed: () => P
     const { getLesson, decide } = await import("../store/lessons.js");
     const l = await getLesson(db, String(a.id ?? "").trim());
     if (!l) throw new Error("No lesson with that id. list_lessons shows the ids.");
+    found.push({ kind: "lesson", id: l.id });
     if (l.status !== "proposed") throw new Error(`That lesson isn't waiting for review: it's ${l.status === "live" ? "already kept" : l.status}.`);
     if (a.action === "dismiss") { await decide(db, l.id, { status: "rejected" }); await db.execute({ sql: "INSERT INTO lesson_versions (id,lesson_id,snapshot,changed_by,changed_at) VALUES (lower(hex(randomblob(16))),?,?,?,?)", args: [l.id, JSON.stringify({ status: "rejected", said }), "mcp", new Date().toISOString()] }); return `Dismissed: "${l.text.slice(0, 120)}". muninn won't suggest it again.`; }
     if (a.action !== "keep") throw new Error("action is keep or dismiss.");
@@ -146,14 +158,15 @@ export async function callTool(db: Client, name: string, a: Args, embed: () => P
     const when = d.route === "always" ? "every session" : d.route === "keyword" && d.keywords.length ? `when "${d.keywords.join('", "')}" comes up` : "only when searched";
     return `Kept: "${l.text.slice(0, 120)}". Agents are told it ${when}${l.role ? `, the ${l.role} only` : ""}${d.global ? ", in every repo" : ""}. Change it in muninn ui.`;
   }
-  if (name === "get_runs") return runsText(db, repo, { limit: typeof a.limit === "number" ? a.limit : 5, all: a.include_single === true });
-  if (name === "list_lessons") return lessonsText(db, repo, a.waiting === true);
+  if (name === "get_runs") return runsText(db, repo, { limit: typeof a.limit === "number" ? a.limit : 5, all: a.include_single === true }, found);
+  if (name === "list_lessons") return lessonsText(db, repo, a.waiting === true, found);
   if (name === "where_left_off") {
     if (!repo) throw new Error("Say which repo: the chat isn't running inside one.");
     const branch = typeof a.branch === "string" && a.branch ? a.branch : (currentBranch(process.cwd()) && repoIdentity(process.cwd()) === repo ? currentBranch(process.cwd())! : "main");
     const { latestHandoff, handoffText } = await import("../handoff/handoff.js");
     const { settings } = await import("../config.js");
     const h = await latestHandoff(db, repo, branch, 30);
+    if (h) found.push({ kind: "handoff", id: h.id });
     return h ? handoffText(h, settings().handoffStaleDays) : `No session on ${branch} in ${repo.split("/").pop()} has left a note in the last 30 days. Try get_plan for the branch's plan.`;
   }
   throw new Error(`No tool called ${name}.`);
@@ -163,12 +176,13 @@ const k = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${
 const short = (r: string) => r.split("/").pop() ?? r;
 
 /** Recent runs with their numbers per role, saved findings, and how role lessons are doing. */
-export async function runsText(db: Client, repo: string | null, o: { limit: number; all: boolean }): Promise<string> {
+export async function runsText(db: Client, repo: string | null, o: { limit: number; all: boolean }, found: Found = []): Promise<string> {
   const { listRuns } = await import("../workflow/runs.js");
   const { runNumbers, savedFindings } = await import("../commands/run-findings.js");
   const { roleEffects } = await import("../workflow/effect.js");
   const runs = await listRuns(db, { repo, teamOnly: !o.all, limit: Math.max(1, Math.min(o.limit, 20)) });
-  const found = await savedFindings(db, runs);
+  for (const r of runs) found.push({ kind: "run", id: r.id });
+  const saved = await savedFindings(db, runs);
   const out: string[] = [];
   for (const r of runs) {
     const n = runNumbers(r);
@@ -179,22 +193,24 @@ export async function runsText(db: Client, repo: string | null, o: { limit: numb
     out.push(`Between roles: ${n.approvals} approval(s), ${n.sentBack} sent back, ${n.rework} fix(es) after approval${n.stalls.length ? `, ${n.stalls.length} gap(s) of ${n.stalls.map((g) => `${g.minutes} min`).join(", ")} with no agent working` : ""}.`);
     for (const h of r.handoffs.filter((h) => h.kind === "review_rejected" || h.kind === "rework").slice(0, 6)) out.push(`  ${h.at.slice(11, 16)} ${h.kind === "rework" ? `${h.from_role} fixed later` : `${h.from_role} sent back to ${h.to_role}`}: ${h.note ?? h.evidence ?? ""}`);
     for (const w of r.workflows ?? []) out.push(`Workflow ${w.name} (${w.status}): ${w.agents} agents, phases ${w.phases.join(" → ")}${w.logs.length ? `; ${w.logs.slice(-3).join("; ")}` : ""}${w.blocking_left ? `. Finished with ${w.blocking_left} blocking issue(s) still open.` : ""}`);
-    const f = found[r.id];
+    const f = saved[r.id];
     if (f?.items.length) { out.push("Findings:"); for (const i of f.items) out.push(`  - ${i.role ? `[${i.role}] ` : ""}${i.text}`); }
     out.push("");
   }
   const effects = await roleEffects(db, repo);
+  for (const e of effects) found.push({ kind: "lesson", id: e.id });
   if (effects.length) { out.push("LESSONS FOR ONE ROLE, AND WHETHER THEY WORKED:"); for (const e of effects) out.push(`- for the ${e.role}${repo ? "" : ` (${short(e.repo)})`}: ${e.text.slice(0, 160)}\n  ${e.summary}`); }
   if (!runs.length && !effects.length) return `No workflow runs${repo ? ` in ${short(repo)}` : ""} yet${o.all ? "" : " with more than one role (subagents, or agents in different worktrees). Set include_single for plain sessions"}. muninn builds runs when it scans.`;
   return out.join("\n").trim();
 }
 
 /** Kept lessons and waiting suggestions, with how each is told, why it was kept, its role, and how it's doing. */
-export async function lessonsText(db: Client, repo: string | null, waitingOnly: boolean): Promise<string> {
+export async function lessonsText(db: Client, repo: string | null, waitingOnly: boolean, found: Found = []): Promise<string> {
   const { reportData } = await import("../commands/report.js");
   const { roleEffects } = await import("../workflow/effect.js");
   const where = repo ? "AND (l.repo_id=? OR l.scope='global')" : "";
-  const rows = (await db.execute({ sql: `SELECT l.id,l.text,l.status,l.always_on,l.role,l.why,l.scope,l.repo_id,(SELECT group_concat(pattern, ', ') FROM triggers t WHERE t.lesson_id=l.id) kw FROM lessons l WHERE l.off=0 AND l.status IN (${waitingOnly ? "'proposed'" : "'live','proposed'"}) ${where} ORDER BY l.status DESC, l.updated_at DESC LIMIT 60`, args: repo ? [repo] : [] })).rows;
+  const rows = (await db.execute({ sql: `SELECT l.id,l.text,l.kind,l.status,l.always_on,l.role,l.why,l.scope,l.repo_id,(SELECT group_concat(pattern, ', ') FROM triggers t WHERE t.lesson_id=l.id) kw FROM lessons l WHERE l.off=0 AND l.status IN (${waitingOnly ? "'proposed'" : "'live','proposed'"}) ${where} ORDER BY l.status DESC, l.updated_at DESC LIMIT 60`, args: repo ? [repo] : [] })).rows;
+  for (const r of rows) found.push({ kind: r.kind === "note" ? "note" : "lesson", id: String(r.id) });
   if (!rows.length) return waitingOnly ? "No suggestions are waiting." : `No lessons${repo ? ` for ${short(repo)}` : ""} yet.`;
   const verdict = new Map((await reportData(db, repo)).lessons.map((l) => [l.id, l.verdict]));
   for (const e of await roleEffects(db, repo)) verdict.set(e.id, e.summary);
@@ -214,6 +230,7 @@ export async function serveMcp() {
   let embedder: Promise<Embed | null> | null = null;
   const embed = () => (embedder ??= modelCached() ? loadEmbedder() : Promise.resolve(null));
   const send = (m: object) => process.stdout.write(JSON.stringify(m) + "\n");
+  let client = "agent";
   const rl = createInterface({ input: process.stdin });
   for await (const line of rl) {
     if (!line.trim()) continue;
@@ -223,14 +240,21 @@ export async function serveMcp() {
     const reply = (result: object) => send({ jsonrpc: "2.0", id: m.id, result });
     try {
       if (m.method === "initialize") {
+        client = toolFromClient(m.params?.clientInfo?.name);
         const asked = String(m.params?.protocolVersion ?? "");
         reply({ protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0], capabilities: { tools: {} }, serverInfo: { name: "muninn", title: "muninn (secondnature)", version: packageVersion() },
           instructions: "muninn keeps the engineer's coding history: lessons, branch plans, past agent sessions, and autonomous runs where agents worked together. Search it before answering questions about past work, check where_left_off when starting work on a branch, use get_runs for how agent teams did, and suggest a lesson when they ask for something to be remembered." });
       } else if (m.method === "ping") reply({});
       else if (m.method === "tools/list") reply({ tools: TOOLS });
       else if (m.method === "tools/call") {
-        try { reply({ content: [{ type: "text", text: await callTool(db, String(m.params?.name), m.params?.arguments ?? {}, embed) }] }); }
+        const name = String(m.params?.name), args = (m.params?.arguments ?? {}) as Args, found: Found = [], t0 = Date.now();
+        try { reply({ content: [{ type: "text", text: await callTool(db, name, args, embed, found) }] }); }
         catch (e) { reply({ content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }], isError: true }); }
+        // The log of agents' questions: what was asked, where, and what it found.
+        const repo = await resolveRepo(db, args).catch(() => null);
+        const here = repoIdentity(process.cwd());
+        const asked = String(args.query ?? args.about ?? args.text ?? args.id ?? args.branch ?? Object.values(args).filter((v) => typeof v === "string").join(" ") ?? "");
+        await recordQuery(db, { repo, branch: repo && repo === here ? currentBranch(process.cwd()) : (typeof args.branch === "string" ? args.branch : null), session: process.env.CLAUDE_CODE_SESSION_ID ?? null, tool: client, surface: name, query: asked, results: found.length, result_ids: found, ms: Date.now() - t0 });
       } else send({ jsonrpc: "2.0", id: m.id, error: { code: -32601, message: `Unknown method ${m.method}` } });
     } catch (e) { send({ jsonrpc: "2.0", id: m.id, error: { code: -32603, message: e instanceof Error ? e.message : String(e) } }); }
   }
