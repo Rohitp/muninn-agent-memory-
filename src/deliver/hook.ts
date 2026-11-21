@@ -2,6 +2,9 @@ import type { Client } from "@libsql/client";
 import { FILE, lessonFileMode } from "./local-file.js";
 import { ignoredRepos } from "../store/ignore.js";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { errorLine, normCommand } from "../learn/signals.js";
 import { isPaused, settings } from "../config.js";
 import { repoIdentity } from "../repo/identity.js";
@@ -36,6 +39,11 @@ export function codexFailed(resp: unknown): boolean {
   return !!m && Number(m[1]) !== 0;
 }
 const responseText = (r: unknown) => (typeof r === "string" ? r : JSON.stringify(r ?? "")).slice(-2000);
+
+/** Whether muninn's MCP server is in Claude Code's user settings (~/.claude.json): a file read, fast enough for a hook. */
+export function hasMcp(file = process.env.MUNINN_CLAUDE_JSON ?? join(homedir(), ".claude.json")): boolean {
+  try { return !!JSON.parse(readFileSync(file, "utf8")).mcpServers?.muninn; } catch { return false; }
+}
 
 /** Picks lessons for a hook event, applies the limits, logs every outcome, and returns the text to add, if any. */
 export async function deliver(db: Client, client: string, input: HookInput): Promise<string | null> {
@@ -127,14 +135,19 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   // compressed, when the agent has just lost detail and is most likely to guess instead of looking it up.
   const compacted = event === "SessionStart" && input.source === "compact" && !!repo;
   const stored = freshStart || compacted ? Number((await db.execute({ sql: "SELECT count(DISTINCT session) n FROM chunks WHERE repo_id=?", args: [repo] })).rows[0]?.n ?? 0) : 0;
+  // With muninn's MCP server set up for this client, name its tools first: a tool call is more direct than a shell
+  // command, and each one is logged by name. The commands stay as the fallback.
+  const mcp = (freshStart || compacted) && client === "claude-code" && hasMcp();
+  const via = (tool: string, cmd: string) => (mcp ? `the muninn tool ${tool} (or run ${cmd})` : cmd);
   const askLine = compacted ? (stored ? [
     "This conversation was just compressed, so what happened earlier in it is now a summary. Before relying on a detail from earlier (a decision, a name, why something was done), check it instead of guessing:",
-    `- muninn recall "what you're looking for": this repo's stored sessions (${stored}), including earlier parts of this one up to muninn's last scan`,
-    `- muninn related "a decision or piece of work": what it led to, what replaced it, the commits and files behind it`,
-    `- muninn ask "your question": kept lessons and notes`,
+    `- ${via("search_history", `muninn recall "what you're looking for"`)}: this repo's stored sessions (${stored}), including earlier parts of this one up to muninn's last scan`,
+    `- ${via("get_related", `muninn related "a decision or piece of work"`)}: what it led to, what replaced it, the commits and files behind it`,
+    `- ${via("list_lessons", `muninn ask "your question"`)}: kept lessons and notes`,
+    ...(mcp ? ["- the muninn tools where_left_off and get_plan: where this branch stands"] : []),
   ].join("\n") : null) : [
-    searchable ? `muninn also keeps ${searchable} note(s) and lesson(s) about this work that aren't sent automatically. Before guessing how something here works or runs, look it up with: muninn ask "your question"` : "",
-    stored ? `muninn keeps ${stored} earlier session(s) in this repo. Look things up instead of guessing when:\n- the engineer refers to past work ("like last time", "the bug we fixed", "what did we decide"): muninn recall "what you're looking for"\n- you're about to change something that was decided or fixed before: muninn related "that decision or fix" shows why it is the way it is and what depends on it` : "",
+    searchable ? `muninn also keeps ${searchable} note(s) and lesson(s) about this work that aren't sent automatically. Before guessing how something here works or runs, look it up with ${via("search_history", `muninn ask "your question"`)}` : "",
+    stored ? `muninn keeps ${stored} earlier session(s) in this repo. Look things up instead of guessing when:\n- the engineer refers to past work ("like last time", "the bug we fixed", "what did we decide"): ${via("search_history", `muninn recall "what you're looking for"`)}\n- you're about to change something that was decided or fixed before: ${via("get_related", `muninn related "that decision or fix"`)} shows why it is the way it is and what depends on it${mcp ? "\n- the work involves agent teams, subagents or workflows: the muninn tool get_runs shows how earlier runs went, by role" : ""}` : "",
   ].filter(Boolean).join("\n") || null;
   if (!out.length && !waiting && !handoff && !plan && !loopHint && !askLine) { await log("no_match"); return null; }
   const lines: string[] = [];
