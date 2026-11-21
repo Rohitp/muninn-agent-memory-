@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { notTyped, parseLines, type LogEvent, type Session } from "./types.js";
+import { notTyped, parseLines, stripPrivate, type LogEvent, type Session } from "./types.js";
 
 /**
  * Cursor agent transcripts: ~/.cursor/projects/<slug>/agent-transcripts/<id>/<id>.jsonl.
@@ -24,7 +24,7 @@ export function readCursor(file: string, projectsRoot: string): Session {
         if (when) ts = parseCursorTime(when) ?? ts;
         const q = raw.match(/<user_query>([\s\S]*?)<\/user_query>/)?.[1]?.trim();
         const text = q ?? (raw.trimStart().startsWith("<") ? "" : raw.trim());
-        if (text && !notTyped(text)) events.push({ k: "typed", text, ts });
+        if (text && !notTyped(text)) events.push({ k: "typed", text: stripPrivate(text), ts });
       }
       if (o.role === "assistant" && b?.type === "text") events.push({ k: "agent", text: String(b.text ?? ""), ts });
       if (o.role === "assistant" && b?.type === "tool_use" && !workdir && typeof b.input?.working_directory === "string") workdir = b.input.working_directory;

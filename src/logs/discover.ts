@@ -6,6 +6,7 @@ import { readClaude } from "./claude-code.js";
 import { readCodex } from "./codex.js";
 import { readCursor, slugToPath } from "./cursor.js";
 import { isOwnRun, type Session } from "./types.js";
+import { archivedOnly } from "../store/sessions.js";
 
 export type Scan = { sessions: Session[]; byRepo: Map<string, Session[]>; missingFolder: number; ownRuns: number; files: { claude: number; codex: number; cursor: number } };
 
@@ -31,6 +32,8 @@ export function scanLogs(): Scan {
   const f = logFiles();
   const scan: Scan = { sessions: [], byRepo: new Map(), missingFolder: 0, ownRuns: 0, files: { claude: f.claude.length, codex: f.codex.length, cursor: f.cursor.length } };
   const all = [...f.claude.map(readClaude), ...f.codex.map(readCodex), ...f.cursor.map((x) => readCursor(x, f.roots.cursor))];
+  // Sessions whose log the tool has since deleted, read from muninn's compressed copy.
+  for (const a of archivedOnly()) { try { all.push(a.tool === "claude" ? readClaude(a.file) : readCodex(a.file)); } catch { /* a damaged copy */ } }
   for (const s of all) {
     if (!s.events.some((e) => e.k === "typed")) continue;
     if (isOwnRun(s)) { scan.ownRuns++; continue; }

@@ -151,6 +151,7 @@ const routes: Record<string, Handler> = {
     return { fileOn: await planFileOn(db, repo) };
   },
   "GET /api/insights": async (db, q) => { const { insightsData, insightsText } = await import("../commands/insights.js"); return { text: insightsText(await insightsData(db, q.get("repo") || null, Number(q.get("days")) || 7)) }; },
+  "GET /api/recall": async (db, q) => (await import("../commands/recall.js")).recallData(db, q.get("q") ?? "", q.get("repo") || null, { embed: await embed().catch(() => undefined), limit: 8 }),
   "GET /api/proposals": async (db, q) => {
     const repo = q.get("repo") || null;
     const since = new Date(Date.now() - 14 * 86_400_000).toISOString();

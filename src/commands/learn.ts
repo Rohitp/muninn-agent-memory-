@@ -78,6 +78,16 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
     }
     for (const s of sessions) if (s.unknown) { await db.execute({ sql: "INSERT OR REPLACE INTO scan_counts (repo_id,tool,client_version,scanned_at,unknown_records) VALUES (?,?,?,?,?)", args: [repo, s.tool, s.clientVersion, new Date().toISOString(), s.unknown] }); }
   }
+  // Every session kept as searchable exchanges, and the raw logs copied before the tool deletes them.
+  try {
+    const st = await import("../store/sessions.js");
+    const archived = await st.archiveLogs(db);
+    const all = repos.flatMap((r) => scan.byRepo.get(r)!);
+    let shown = -1;
+    const r = await st.indexSessions(db, all, embed, { ignored, onProgress: opts.auto ? undefined : (done, total) => { const pct = Math.floor((done / total) * 10); if (process.stdout.isTTY && pct !== shown) { shown = pct; process.stdout.write(`\rStoring sessions for search: ${done}/${total}`); } } });
+    if (!opts.auto && process.stdout.isTTY && shown >= 0) process.stdout.write("\r\x1b[K");
+    if (!opts.auto && (r.added || archived)) console.log(`Stored ${r.added} exchange(s) from ${r.sessions} session(s) for "muninn recall"${archived ? `, and kept a compressed copy of ${archived} log(s)` : ""}.`);
+  } catch (e) { if (!opts.auto) console.log(`Couldn't store sessions this time: ${e instanceof Error ? e.message : String(e)}`); }
   const runner = writer ? pickRunner("background") : null;
   // A plain-English line and likely questions for each lesson, for the person and for search.
   if (runner) {

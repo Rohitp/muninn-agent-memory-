@@ -16,6 +16,8 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn edit <id> [--text "..."] [--always-on|--not-always-on] [--trigger word] [--global|--repo-scope]
   muninn retire <id>
   muninn ask "question"         Search kept lessons and notes in every repo
+  muninn recall "what" [--all-repos] [--days N] [--full]
+                                Search your past sessions: what was asked, said and run
   muninn memory [--all-repos]   Lines in CLAUDE.md that may be out of date
   muninn plan tidy [--all-repos]  Rewrite branch plans, checked against git
   muninn handoff [--list]       Where the last session on this branch left off
@@ -139,6 +141,7 @@ async function main() {
     case "install": { const m = await import("./commands/install.js"); return args.includes("--learn") ? m.installLearnHook() : m.install(); }
     case "uninstall": { (await import("./commands/install.js")).uninstall(); console.log("Removed muninn's hooks. Lessons are kept."); return; }
     case "ask": return (await import("./commands/ask.js")).ask(args);
+    case "recall": return (await import("./commands/recall.js")).recall(args);
     case "cursor": return cursorCmd(args[0] ?? "");
     case "local-file": return localFileCmd(args[0] ?? "");
     case "ignore-repo": return ignoreRepoCmd(args);

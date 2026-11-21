@@ -22,7 +22,8 @@ You tell an agent the same things over and over: "explain it step by step", "the
 
    Your own Claude (or Codex) turns each one into a short lesson.
 2. **You decide what's kept.** Lessons arrive as suggestions. Nothing reaches an agent until you add it.
-3. **It tells your agents when it matters.** At the start of a session, when a word you chose comes up, or when a command fails the way it has before. It also hands the next session a short note of where you left off, and keeps a running plan for each branch you work on (goal, what's open, decisions, what's done) that you can edit and, if you like, keep in the repo as `PLAN.md`.
+3. **It keeps your sessions searchable.** Every exchange is stored, redacted, so "how did we fix the webhook last month?" has an answer, for you (`muninn recall`) and for your agents, who are told they can look.
+4. **It tells your agents when it matters.** At the start of a session, when a word you chose comes up, or when a command fails the way it has before. It also hands the next session a short note of where you left off, and keeps a running plan for each branch you work on (goal, what's open, decisions, what's done) that you can edit and, if you like, keep in the repo as `PLAN.md`.
 
 It also proposes changes to what your agents read, each one waiting for you to apply or dismiss, and undoable:
 
@@ -62,6 +63,8 @@ claude plugin install muninn-panel@muninn
 - Everything stays on your machine, in `~/.muninn`.
 - To write lessons, muninn sends **redacted** excerpts of your sessions to **your own** Claude Code (or Codex) login. It has no server, and makes no other network calls apart from a one-time download of a small local model (about 33 MB) used to compare text.
 - It reads session logs only. It never reads your code unless a session quoted it.
+- It keeps your sessions so you and your agents can search them (`muninn recall`): each exchange, redacted, with a vector from the local model, in `~/.muninn/muninn.db`. It also keeps a compressed copy of each Claude Code and Codex log in `~/.muninn/archive`, because Claude Code deletes its own logs after 30 days.
+- Wrap anything you type in `<private>…</private>` and it's never stored, learned from or summarised. `muninn ignore-repo` leaves a whole repo alone, and `muninn purge --yes` deletes everything muninn keeps.
 
 ## Install
 
@@ -92,6 +95,7 @@ After that you don't need any commands. muninn checks for new lessons on its own
 | `muninn ui` | Open the page |
 | `muninn learn` | Look for new lessons now (also runs on its own) |
 | `muninn ask "question"` | Search what you've kept |
+| `muninn recall "what"` | Search your past sessions: what was asked, said and run (`--all-repos`, `--days 30`) |
 | `muninn changes` | Proposed rules, skills and instruction edits; `check` reviews CLAUDE.md now |
 | `muninn pr [--apply]` | Write the "why" for this branch's pull request |
 | `muninn insights` | Your week with coding agents |

@@ -30,7 +30,7 @@ export async function adoptRepo(db: Client, id: string | null, cwd: string): Pro
 async function move(db: Client, top: string, id: string) {
   // The new repo row must exist before anything points at it.
   await db.execute({ sql: "INSERT OR IGNORE INTO repos (id, paths) SELECT ?, paths FROM repos WHERE id=?", args: [id, top] });
-  for (const table of ["lessons", "handoffs", "plan_items", "judged", "scan_counts", "memory_lines", "proposals"]) {
+  for (const table of ["lessons", "handoffs", "plan_items", "judged", "scan_counts", "memory_lines", "proposals", "chunks"]) {
     try { await db.execute({ sql: `UPDATE OR IGNORE ${table} SET repo_id=? WHERE repo_id=?`, args: [id, top] }); } catch { /* a table this version doesn't have */ }
   }
   // Per-repo settings live in meta under keys ending with the repo id, or with the id then "@branch".

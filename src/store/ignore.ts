@@ -17,7 +17,8 @@ export async function ignoreRepo(db: Client, id: string): Promise<number> {
   for (const l of lessons) for (const t of ["triggers", "evidence", "lesson_versions", "deliveries", "feedback", "questions"]) {
     try { await db.execute({ sql: `DELETE FROM ${t} WHERE lesson_id=?`, args: [l] }); } catch { /* a table this version doesn't have */ }
   }
-  for (const t of ["lessons", "handoffs", "plan_items", "judged", "scan_counts", "memory_lines", "proposals", "checkpoints"]) {
+  for (const c of (await db.execute({ sql: "SELECT id FROM chunks WHERE repo_id=?", args: [id] })).rows) await db.execute({ sql: "DELETE FROM chunks_fts WHERE chunk_id=?", args: [String(c.id)] });
+  for (const t of ["lessons", "handoffs", "plan_items", "judged", "scan_counts", "memory_lines", "proposals", "checkpoints", "chunks"]) {
     try { await db.execute({ sql: `DELETE FROM ${t} WHERE repo_id=?`, args: [id] }); } catch { /* a table this version doesn't have */ }
   }
   await db.execute({ sql: "DELETE FROM meta WHERE substr(key, instr(key, ':') + 1, ?) = ? AND key != 'ignored_repos'", args: [id.length, id] });

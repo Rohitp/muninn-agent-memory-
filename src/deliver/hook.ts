@@ -112,7 +112,12 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   const plan = freshStart && repo && branch ? planText(await getPlan(db, repo, branch), repo.split("/").pop() ?? repo, branch) : null;
   // Lessons and notes kept "only if an agent looks it up" reach agents only if they know to look: say so once, at the start.
   const searchable = freshStart ? Number((await db.execute({ sql: `SELECT count(*) n FROM lessons l WHERE ${scope} AND l.always_on=0 AND NOT EXISTS (SELECT 1 FROM triggers t WHERE t.lesson_id=l.id)`, args: [repo, repo] })).rows[0]?.n ?? 0) : 0;
-  const askLine = searchable ? `muninn also keeps ${searchable} note(s) and lesson(s) about this work that aren't sent automatically. Before guessing how something here works or runs, look it up with: muninn ask "your question"` : null;
+  // Past sessions here are stored and searchable: say so once, at the start, so agents look before redoing work.
+  const stored = freshStart ? Number((await db.execute({ sql: "SELECT count(DISTINCT session) n FROM chunks WHERE repo_id=?", args: [repo] })).rows[0]?.n ?? 0) : 0;
+  const askLine = [
+    searchable ? `muninn also keeps ${searchable} note(s) and lesson(s) about this work that aren't sent automatically. Before guessing how something here works or runs, look it up with: muninn ask "your question"` : "",
+    stored ? `muninn keeps ${stored} earlier session(s) in this repo. When the engineer refers to past work ("like last time", "the bug we fixed") or a problem may have come up before, search them with: muninn recall "what you're looking for"` : "",
+  ].filter(Boolean).join("\n") || null;
   if (!out.length && !waiting && !handoff && !plan && !loopHint && !askLine) { await log("no_match"); return null; }
   const lines: string[] = [];
   if (loopHint) lines.push(loopHint, "");

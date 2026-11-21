@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
+import { gunzipSync } from "node:zlib";
 export type LogEvent =
   | { k: "typed"; text: string; ts: string }
   | { k: "agent"; text: string; ts: string }
@@ -17,6 +20,13 @@ export type Tool = "claude-code" | "codex" | "cursor";
 export type Session = { id: string; tool: Tool; cwd: string; clientVersion: string; events: LogEvent[]; unknown: number; branch?: string; file?: string };
 /** First text of every LLM run muninn starts, so readers can skip those sessions. */
 export const OWN_RUN_MARK = "[muninn-lesson-writer]";
+/** Text the engineer wraps in <private>…</private> is never learned from, stored or summarised. An unclosed tag hides the rest. */
+export const PRIVATE = /<private>[\s\S]*?(<\/private>|$)/gi;
+export const stripPrivate = (t: string) => t.replace(PRIVATE, "[private]");
+/** A log file's text, unpacking muninn's compressed copies (.gz) of logs the tool has since deleted. */
+export const readText = (f: string): string => f.endsWith(".gz") ? gunzipSync(readFileSync(f)).toString("utf8") : readFileSync(f, "utf8");
+/** A session's id from its log file name, with or without muninn's .gz. */
+export const sessionIdOf = (f: string, ext = ".jsonl") => basename(f).replace(/\.gz$/, "").replace(new RegExp(`${ext.replace(".", "\\.")}$`), "");
 export const parseLines = (f: string, read: (f: string) => string): any[] =>
   read(f).split("\n").filter(Boolean).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
 export const textOf = (c: unknown): string =>
