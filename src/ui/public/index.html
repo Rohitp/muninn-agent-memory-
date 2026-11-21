@@ -620,7 +620,9 @@ async function load() {
   const runInfo = Array.isArray(runs) && runs.length ? await api("/api/run-findings", { runs }).catch(() => ({})) : {};
   // Whether each role lesson is helping, from the data side's /api/role-effects.
   const effects = repo ? await api("/api/role-effects?" + q({ repo })).catch(() => []) : [];
-  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions, rules, schedule, runs: Array.isArray(runs) ? runs : [], runInfo, effects: Array.isArray(effects) ? effects : [] };
+  // What agents asked secondnature this week (questions you typed in a terminal are left out), and how often each lesson was found.
+  const asked = await api("/api/queries?" + q({ repo, days: 7 })).catch(() => ({ queries: [], lessonFinds: {} }));
+  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions, rules, schedule, runs: Array.isArray(runs) ? runs : [], runInfo, effects: Array.isArray(effects) ? effects : [], queries: (asked.queries || []).filter((x) => x.tool !== "terminal"), lessonFinds: asked.lessonFinds || {} };
 }
 
 /* Autonomous runs: sessions working together in a repo, each in a role (subagents, or agents in their own worktrees),
@@ -976,7 +978,7 @@ function lessonRow(l) {
     <div class="row ${l.off ? "off" : ""}">
       <button class="main" data-open="${esc(l.id)}" aria-expanded="${isOpen}">
         <div class="title">${esc(l.plain || l.text)}</div>
-        <div class="sub">${roleChip(l)}${l.off ? "Off · agents aren't told this" : esc(whenText(l)) + (last ? ` · last told ${esc(ago(last))}` : "")}</div>
+        <div class="sub">${roleChip(l)}${l.off ? "Off · agents aren't told this" : esc(whenText(l)) + (last ? ` · last told ${esc(ago(last))}` : "") + (data.lessonFinds[l.id] ? ` · found by agents ${data.lessonFinds[l.id]} time${data.lessonFinds[l.id] === 1 ? "" : "s"}` : "")}</div>
         ${(() => { const fx = !l.off && data.effects.find((x) => x.id === l.id); if (!fx) return ""; const [word, cls] = VERDICT[fx.verdict] || ["", ""]; return word ? `<div class="sub" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px"><span class="status ${cls}">${esc(word.replace("{role}", fx.role))}</span><span>${esc(fx.summary)}</span></div>` : ""; })()}
         ${l.missing?.length ? `<div class="warnline">Names ${l.missing.map((f) => `<code>${esc(f)}</code>`).join(", ")}, which ${l.missing.length === 1 ? "is" : "are"} no longer in the repo. The lesson may be out of date: edit it or switch it off.</div>` : ""}
         ${c && !l.off ? `<div class="warnline">The problem came back. ${esc(c.verdict.replace(/ Make it always-on\?$/, ""))}</div>` : ""}
@@ -1098,6 +1100,7 @@ function activityView() {
     </div>` : ""}
     <div class="stack s8">
       ${repo ? runsTable() : `<ul class="group"><li class="empty">Pick a repo to see its runs.</li></ul>`}
+      ${askedSection()}
       <section aria-labelledby="wk"><h2 id="wk">Your last 7 days</h2>
         ${week ? `<div class="panel"><pre style="white-space:pre-wrap;font:12px/1.6 var(--mono);margin:0;padding:14px 16px">${esc(week)}</pre></div>`
           : `<div class="panel panelbody">${weekLoading ? `<span class="spin" aria-hidden="true" style="display:inline-block;vertical-align:-2px"></span> Reading the last 7 days of sessions…` : `<button class="btn" data-week>Show your last 7 days</button><p class="note" style="margin:10px 0 0">Where agents wasted effort, whether lessons helped, and what's waiting. Also <code>muninn insights</code>.</p>`}</div>`}
@@ -1106,6 +1109,25 @@ function activityView() {
     <div class="stack s4">
       ${roles.length ? `<section><h2>Tokens by role</h2><div class="panel panelbody" style="display:grid;gap:10px">${roles.map(([role, t]) => `<div class="meter"><span>${esc(roleName(role))}</span><span class="val">${tok(t)}</span><div class="bar"><span style="width:${Math.max(2, Math.round((t / top) * 100))}%"></span></div></div>`).join("")}<div class="note" style="margin:0">Most is reading: context taken in, not code written.</div></div></section>` : ""}
     </div>`;
+}
+/* What agents asked secondnature this week: through its MCP tools or muninn ask. Shows whether it's useful to them. */
+const TOOL_NAMES = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity", "claude-desktop": "Claude Desktop", agent: "an agent" };
+function askedSection() {
+  const qs = data.queries;
+  if (!qs.length) return `<section><h2>What agents asked · 0</h2><ul class="group"><li class="empty">No agent has asked secondnature anything this week. Agents can ask through its MCP tools (search_history, get_plan, where_left_off…) or by running muninn ask; each question shows here with what it found.</li></ul></section>`;
+  const found = qs.filter((x) => x.results > 0).length;
+  const count = (key) => Object.entries(qs.reduce((m, x) => ((m[key(x)] = (m[key(x)] || 0) + 1), m), {})).sort((a, b) => b[1] - a[1]);
+  const byTool = count((x) => TOOL_NAMES[x.tool] || x.tool).map(([k, n]) => `${esc(k)} ${n}`).join(" · ");
+  const bySurface = count((x) => x.surface).slice(0, 4).map(([k, n]) => `<span class="tag">${esc(k)}</span> ${n}`).join(" ");
+  // Asked more than once, in about the same words.
+  const again = count((x) => x.query.toLowerCase().replace(/\s+/g, " ").trim()).filter(([k, n]) => n > 1 && k).slice(0, 3);
+  const rows = qs.slice(0, 12).map((x) => `<tr><td style="white-space:nowrap;color:var(--muted)">${esc(shortDate(x.ts))}, ${esc(clock(x.ts))}</td><td>${esc(TOOL_NAMES[x.tool] || x.tool)}<div style="font:500 12px/17px var(--mono);color:var(--muted)">${esc(x.surface)}</div></td><td>${x.query ? esc(clip(x.query, 140)) : '<span style="color:var(--muted)">(no question: a lookup)</span>'}</td><td>${x.results ? `<span class="status good">${x.results} found</span>` : '<span class="status warn">nothing</span>'}</td></tr>`).join("");
+  return `<section><h2>What agents asked · ${qs.length}</h2><div class="panel">
+    <div class="panelbody" style="display:flex;gap:6px 18px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--line)">
+      <span><b>${Math.round((found / qs.length) * 100)}%</b> found something</span><span style="color:var(--muted)">${byTool}</span><span>${bySurface}</span></div>
+    ${again.length ? `<div class="panelbody" style="border-bottom:1px solid var(--line);font-size:13px"><span style="color:var(--muted)">Asked more than once:</span> ${again.map(([k, n]) => `"${esc(clip(k, 80))}" ×${n}`).join(" · ")}</div>` : ""}
+    <div class="tablewrap"><table class="data"><thead><tr><th>When</th><th>Who, and how</th><th>Question</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table></div>
+  </div><p class="note">Questions that found nothing show where secondnature has nothing to offer yet. Questions you type in a terminal aren't counted.</p></section>`;
 }
 /* Settings: this repo's delivery and files, and this Mac's background checks. */
 function settingsView() {
