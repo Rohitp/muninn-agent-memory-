@@ -1,5 +1,7 @@
 
 
+import { existsSync, readFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { notTyped, parseLines, readText, sessionIdOf, STOPPED, stripPrivate, textOf, type LogEvent, type Session } from "./types.js";
 
 /** Claude Code's own tools that name a file or folder. */
@@ -7,8 +9,15 @@ const FILE_TOOLS = new Set(["Read", "Edit", "MultiEdit", "Write", "NotebookEdit"
 /** The engineer stopped the answer itself. "…for tool use" is a stopped command, which the command result shows. */
 const INTERRUPTED = /^\s*\[Request interrupted by user\]/;
 
+/** A subagent's log: <project>/<parent session>/subagents/agent-<id>.jsonl, with agent-<id>.meta.json beside it. */
+export const isSubagentLog = (file: string) => basename(dirname(file)) === "subagents";
+
 export function readClaude(file: string): Session {
+  const sub = isSubagentLog(file);
   const events: LogEvent[] = [];
+  const usage = { input: 0, output: 0, cacheRead: 0 }; const counted = new Set<string>(); let model = "";
+  const turns: { ts: string; input: number; output: number }[] = [];
+  let task = "";
   // What each tool call asked for, until its result arrives: a shell command, or a file tool and the path it named.
   const pending = new Map<string, { cmd: string } | { tool: string; path: string; pattern?: string }>();
   let cwd = "", clientVersion = "unknown", unknown = 0, branch = "";
@@ -18,7 +27,18 @@ export function readClaude(file: string): Session {
     if (o.cwd) cwd ||= o.cwd;
     if (o.version) clientVersion = o.version;
     if (o.gitBranch) branch = o.gitBranch;
-    if (o.isSidechain || o.isMeta) continue;
+    // A message's tokens, once per message (its blocks are logged as separate records with the same id).
+    const u = o.type === "assistant" ? o.message?.usage : null;
+    if (u && !counted.has(o.message.id ?? o.uuid)) {
+      counted.add(o.message.id ?? o.uuid);
+      usage.input += (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0); usage.output += u.output_tokens ?? 0; usage.cacheRead += u.cache_read_input_tokens ?? 0;
+      turns.push({ ts: o.timestamp ?? "", input: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), output: u.output_tokens ?? 0 });
+      if (o.message.model && o.message.model !== "<synthetic>") model = o.message.model;
+    }
+    // In a subagent's own log every record is a "sidechain". Its first message is the task its parent handed it, not you.
+    if (o.isMeta || (o.isSidechain && !sub)) continue;
+    if (sub && o.type === "user" && !task && typeof o.message?.content === "string") { task = o.message.content; continue; }
+    if (sub && o.type === "user" && typeof o.message?.content === "string") continue;
     // A message sent while the agent was working is logged as a queued command, not a user message.
     if (o.type === "attachment" && o.attachment?.type === "queued_command" && typeof o.attachment.prompt === "string") {
       const t = o.attachment.prompt;
@@ -55,5 +75,11 @@ export function readClaude(file: string): Session {
       if (typeof path === "string" && path) pending.set(x.id, { tool: String(x.name).toLowerCase(), path, ...(typeof x.input?.pattern === "string" ? { pattern: x.input.pattern } : {}) });
     }
   }
-  return { id: sessionIdOf(file), tool: "claude-code", cwd, clientVersion, events, unknown, branch: branch || undefined, file };
+  const base: Session = { id: sessionIdOf(file), tool: "claude-code", cwd, clientVersion, events, unknown, branch: branch || undefined, file, usage, turns, ...(model ? { model } : {}) };
+  if (!sub) return base;
+  let meta: { agentType?: string; description?: string } = {};
+  const metaFile = join(dirname(file), `${sessionIdOf(file)}.meta.json`);
+  try { if (existsSync(metaFile)) meta = JSON.parse(readFileSync(metaFile, "utf8")); } catch { /* no type then */ }
+  // Text after the first item of a subagent's own user records is tool output, never you.
+  return { ...base, events: events.filter((e) => e.k !== "typed"), parent: basename(dirname(dirname(file))), agentType: meta.agentType ?? "subagent", task: (meta.description ? `${meta.description}: ` : "") + task.slice(0, 2000) };
 }
