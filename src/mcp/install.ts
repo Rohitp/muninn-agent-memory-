@@ -12,7 +12,8 @@ export function serverCommand(): { command: string; args: string[] } {
 }
 /** The Claude desktop app's MCP settings file (or the one tests point at). */
 export const desktopConfig = () => process.env.MUNINN_DESKTOP_CONFIG ?? join(homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json");
-const hasClaude = () => spawnSync("claude", ["--version"], { stdio: "ignore" }).status === 0;
+/** The claude command is never run under tests (MUNINN_CLAUDE_SETTINGS points them at a scratch file), so they can't touch real settings. */
+const hasClaude = () => !process.env.MUNINN_CLAUDE_SETTINGS && spawnSync("claude", ["--version"], { stdio: "ignore" }).status === 0;
 /** Whether Claude Code lists muninn among its MCP servers. Null when Claude Code isn't installed here. */
 export function claudeHasMuninn(): boolean | null {
   if (process.env.MUNINN_DESKTOP_CONFIG || !hasClaude()) return null;
@@ -58,10 +59,12 @@ function setServer(file: string, entry: { command: string; args: string[] } | nu
 }
 
 /** Registers muninn's MCP server with Claude Code (for every project), the Claude desktop app and Antigravity. */
-export function installMcp(): string[] {
+export function installMcp(opts: { skipClaudeCode?: boolean } = {}): string[] {
   const { command, args } = serverCommand();
   const done: string[] = [];
-  if (!process.env.MUNINN_DESKTOP_CONFIG && hasClaude()) {
+  // With the muninn-panel plugin, Claude Code gets the server from the plugin; a second entry would list it twice.
+  if (opts.skipClaudeCode && !process.env.MUNINN_DESKTOP_CONFIG && hasClaude()) spawnSync("claude", ["mcp", "remove", "--scope", "user", "muninn"], { stdio: "ignore" });
+  if (!opts.skipClaudeCode && !process.env.MUNINN_DESKTOP_CONFIG && hasClaude()) {
     spawnSync("claude", ["mcp", "remove", "--scope", "user", "muninn"], { stdio: "ignore" });
     execFileSync("claude", ["mcp", "add", "--scope", "user", "muninn", "--", command, ...args], { stdio: "ignore" });
     // Claude Code sessions already running can rewrite its settings from memory and drop what was just added.
@@ -112,7 +115,7 @@ export async function mcpCmd(args: string[]) {
     console.log(`Cursor and Codex get it too when they are installed here. For another app, add an MCP server that runs:\n  ${command} ${a.join(" ")}`);
     return;
   }
-  if (args[0] === "uninstall") { const d = uninstallMcp(); console.log(d.length ? `Removed muninn's MCP server from ${d.join(" and ")}.` : "It wasn't added anywhere."); return; }
+  if (args[0] === "uninstall") { const d = uninstallMcp(); (await import("../commands/connect.js")).markDisconnected(); console.log(d.length ? `Removed muninn's MCP server from ${d.join(" and ")}.` : "It wasn't added anywhere."); return; }
   if (process.stdin.isTTY) { console.error('This is the MCP server, which chat apps start themselves. To add it to Claude: muninn mcp install'); process.exitCode = 1; return; }
   const { serveMcp } = await import("./server.js");
   await serveMcp();

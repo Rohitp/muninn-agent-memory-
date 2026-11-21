@@ -64,7 +64,7 @@ Ask muninn a question about your own work and it answers from everything it keep
 - **Your lessons:** an on/off switch each. Off means agents aren't told it.
 - **Settings:** whether muninn speaks up only when a session starts, or mid-task too.
 
-In Claude Code, an optional side panel shows what muninn told your agent in this session, and why. To add it, run these in a terminal, then open it in a new session with `/muninn`:
+In Claude Code, a side panel shows what muninn told your agent in this session, and why. `muninn setup` adds it; open it in a new session with `/muninn`. To add it by hand from GitHub instead:
 
 ```sh
 claude plugin marketplace add Rohitp/secondnature
@@ -96,8 +96,10 @@ You need **Node 22 or later** (check with `node --version`).
 
 ```sh
 npm install -g secondnature
-muninn setup        # installs the hooks, scans your past sessions, opens the page
+muninn setup        # connects every coding tool on this machine, scans your past sessions, opens the page
 ```
+
+`muninn setup` asks once, then connects whatever it finds: hooks in Claude Code, Codex and Antigravity; muninn's plugin in Claude Code (its panel, and its MCP server); the MCP server in the Claude desktop app, Cursor, Codex and Antigravity; and on a Mac a background check every few hours. If something drops off later (a settings file rewritten, a new tool installed), muninn puts it back during its next scan, or run `muninn connect` to check now. After `muninn uninstall`, it stays out until you run `muninn connect` yourself.
 
 From source instead: the repo pins its pnpm version, and `corepack enable` sets it up.
 
@@ -116,6 +118,7 @@ After that you don't need any commands. muninn checks for new lessons on its own
 | Command | What it does |
 |---|---|
 | `muninn setup` | Set everything up and take a first look |
+| `muninn connect` | Connect, or re-check, every coding tool on this machine |
 | `muninn ui` | Open the page |
 | `muninn learn` | Look for new lessons now (also runs on its own) |
 | `muninn ask "question"` | Search what you've kept |

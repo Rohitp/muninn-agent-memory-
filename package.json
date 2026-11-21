@@ -31,7 +31,13 @@
     "muninn": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    ".claude-plugin",
+    "mods/muninn-panel/.claude-plugin",
+    "mods/muninn-panel/.mcp.json",
+    "mods/muninn-panel/hooks",
+    "mods/muninn-panel/types",
+    "mods/muninn-panel/README.md"
   ],
   "scripts": {
     "build": "tsc && node scripts/copy-assets.mjs",
