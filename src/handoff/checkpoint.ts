@@ -83,7 +83,7 @@ export async function checkpoint(db: Client, s: Session, runner: Runner, opts: {
     const branch = s.branch ?? currentBranch(s.cwd) ?? "main";
     const done = Number((await db.execute({ sql: "SELECT coalesce(max(to_event),0) n FROM checkpoints WHERE session=?", args: [s.id] })).rows[0]?.n ?? 0);
     if (s.events.slice(done).filter((e) => e.k === "typed").length === 0) return 0;
-    await db.execute({ sql: "INSERT INTO repos (id,paths) VALUES (?,?) ON CONFLICT(id) DO NOTHING", args: [repo, JSON.stringify([s.cwd])] });
+    await db.execute({ sql: "INSERT INTO repos (id,paths) VALUES (?,?) ON CONFLICT(id) DO NOTHING", args: [repo, JSON.stringify([(await import("../repo/identity.js")).mainFolder(s.cwd)])] });
     let folded = 0, part = 0;
     for (const p of pieces(s.events, done)) {
       part++;

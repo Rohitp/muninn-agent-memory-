@@ -26,6 +26,7 @@ const SIGNAL: Record<string, string> = {
   skimmed: "Learned from long answers you skimmed or stopped",
   stated: "You stated this as a rule",
   promised: "An agent promised this after a mistake",
+  sent_back: "Learned from work one agent sent back to another",
   steered: "You steered agents toward this in a long session",
   noticed: "Noticed in a long session",
 };

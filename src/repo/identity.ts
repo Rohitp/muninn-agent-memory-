@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 
 const cache = new Map<string, string | null>();
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -24,4 +24,16 @@ export function repoIdentity(dir: string): string | null {
   }
   cache.set(dir, id);
   return id;
+}
+
+/**
+ * The repo's main folder for any folder in it: for a linked worktree (.worktrees/reviewer), the folder all its
+ * worktrees share. muninn records this one for a repo, so rules files and PLAN.md never land in a worktree.
+ */
+export function mainFolder(dir: string): string {
+  try {
+    const common = resolve(dir, git(dir, "rev-parse", "--git-common-dir"));
+    if (basename(common) === ".git") return dirname(common);
+    return git(dir, "rev-parse", "--show-toplevel") || dir;
+  } catch { return dir; }
 }

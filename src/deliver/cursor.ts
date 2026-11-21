@@ -16,14 +16,15 @@ const yamlText = (s: string) => JSON.stringify(s.replace(/\s+/g, " "));
 export type RuleFile = { name: string; body: string };
 
 /** The rule files for one repo: one always-applied file, and one agent-requested file per keyword. */
-export async function cursorRules(db: Client, repo: string, root?: string): Promise<RuleFile[]> {
-  const scope = "status='live' AND off=0 AND (scope='global' OR repo_id=?)";
-  const always = (await db.execute({ sql: `SELECT text FROM lessons WHERE ${scope} AND always_on=1 ORDER BY updated_at`, args: [repo] })).rows.map((r) => String(r.text));
+export async function cursorRules(db: Client, repo: string, root?: string, role: string | null = null): Promise<RuleFile[]> {
+  // A role's lessons go only into that role's worktree; the repo's own folder gets the lessons for every agent.
+  const scope = "status='live' AND off=0 AND (scope='global' OR repo_id=?) AND (role IS NULL OR role IS ?)";
+  const always = (await db.execute({ sql: `SELECT text FROM lessons WHERE ${scope} AND always_on=1 ORDER BY updated_at`, args: [repo, role] })).rows.map((r) => String(r.text));
   const files: RuleFile[] = [{
     name: `${PREFIX}.mdc`,
     body: `---\ndescription: Lessons kept in muninn for this repo\nalwaysApply: true\n---\n\n# Lessons from muninn\n\n${HEADER}\n\n${always.map((t) => `- ${t}`).join("\n") || "- None yet."}\n\n${ASK}\n`,
   }];
-  const kw = (await db.execute({ sql: "SELECT lower(t.pattern) p, l.text FROM triggers t JOIN lessons l ON l.id=t.lesson_id WHERE l.status='live' AND l.off=0 AND (l.scope='global' OR l.repo_id=?) AND l.always_on=0 ORDER BY p, l.updated_at", args: [repo] })).rows;
+  const kw = (await db.execute({ sql: "SELECT lower(t.pattern) p, l.text FROM triggers t JOIN lessons l ON l.id=t.lesson_id WHERE l.status='live' AND l.off=0 AND (l.scope='global' OR l.repo_id=?) AND (l.role IS NULL OR l.role IS ?) AND l.always_on=0 ORDER BY p, l.updated_at", args: [repo, role] })).rows;
   const groups = new Map<string, string[]>();
   for (const r of kw) { const p = String(r.p); if (!groups.has(p)) groups.set(p, []); groups.get(p)!.push(String(r.text)); }
   for (const [p, texts] of groups) {

@@ -11,7 +11,7 @@ import { adoptRepo } from "../repo/adopt.js";
 import { getPlan, planText } from "../plan/plan.js";
 
 export type HookInput = { hook_event_name?: string; session_id?: string; cwd?: string; source?: string; prompt?: string; tool_name?: string; tool_input?: { command?: string; file_path?: string; notebook_path?: string; path?: string; pattern?: string }; tool_response?: unknown; error?: string; transcript_path?: string | null; [k: string]: unknown };
-type Row = { id: string; text: string; always_on: number; updated_at: string; pattern: string | null };
+type Row = { id: string; text: string; always_on: number; updated_at: string; pattern: string | null; role?: string | null };
 const tokens = (t: string) => Math.ceil(t.length / 4);
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** Case-insensitive literal match on word boundaries. */
@@ -54,7 +54,7 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   if (event === "SessionStart" && input.cwd) {
     await adoptRepo(db, repo, input.cwd);
     // Register the repo on its first session, so the page lists it before any scan has run.
-    if (repo) await db.execute({ sql: "INSERT OR IGNORE INTO repos (id,paths) VALUES (?,?)", args: [repo, JSON.stringify([input.cwd])] });
+    if (repo) await db.execute({ sql: "INSERT OR IGNORE INTO repos (id,paths) VALUES (?,?)", args: [repo, JSON.stringify([(await import("../repo/identity.js")).mainFolder(input.cwd)])] });
   }
   // A standing instruction you typed becomes a suggestion now, whatever the dial says: nothing is told to agents here.
   if (event === "UserPromptSubmit" && input.prompt) { try { await catchStanding(db, repo, session, client, input.prompt); } catch { /* never block a prompt */ } }
@@ -65,21 +65,24 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   const midTask = event === "UserPromptSubmit" || event.startsWith("PostToolUse");
   if (dial === "quiet" || (dial === "start" && midTask)) { await log("paused"); return null; }
   // Switched-off lessons stay kept but are never told.
-  const scope = "l.status='live' AND l.off=0 AND (l.scope='global' OR l.repo_id IS ? OR l.repo_id=?)";
+  // In a team of agents, a role's lessons go only to that role: a subagent by its type, a session by its worktree's name.
+  const { worktreeOf } = await import("../workflow/runs.js");
+  const role = event === "SubagentStart" ? (typeof input.agent_type === "string" ? input.agent_type : null) : input.cwd ? worktreeOf(input.cwd) : null;
+  const scope = "l.status='live' AND l.off=0 AND (l.scope='global' OR l.repo_id IS ? OR l.repo_id=?) AND (l.role IS NULL OR l.role IS ?)";
   let rows: Row[] = [];
   // Where always-on lessons are in CLAUDE.local.md, Claude Code has read them already: sending them again doubles them.
   // They're still logged as told (from the file), so the panel and the "came back" check see them.
   const inFile = client === "claude-code" && !!repo && (await lessonFileMode(db, repo)) === "local";
   if (event === "SessionStart" || event === "SubagentStart") {
-    rows = (await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,NULL pattern FROM lessons l WHERE ${scope} AND l.always_on=1`, args: [repo, repo] })).rows as unknown as Row[];
+    rows = (await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,l.role,NULL pattern FROM lessons l WHERE ${scope} AND l.always_on=1`, args: [repo, repo, role] })).rows as unknown as Row[];
   } else if (event === "UserPromptSubmit" || failed(event, input)) {
     const hay = event === "UserPromptSubmit" ? input.prompt ?? "" : `${input.tool_input?.command ?? fileCall(input)?.cmd ?? ""}\n${input.error ?? responseText(input.tool_response)}`;
-    const all = (await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,t.pattern FROM lessons l JOIN triggers t ON t.lesson_id=l.id WHERE ${scope}`, args: [repo, repo] })).rows as unknown as Row[];
+    const all = (await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,l.role,t.pattern FROM lessons l JOIN triggers t ON t.lesson_id=l.id WHERE ${scope}`, args: [repo, repo, role] })).rows as unknown as Row[];
     rows = all.filter((r) => r.pattern && matches(r.pattern, hay));
     // Lessons told every session that were kept after this session started: it never got them, so tell it now.
     if (event === "UserPromptSubmit" && session) {
       const started = String((await db.execute({ sql: "SELECT min(ts) t FROM deliveries WHERE session=?", args: [session] })).rows[0]?.t ?? "");
-      if (started) rows.push(...((await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,NULL pattern FROM lessons l WHERE ${scope} AND l.always_on=1 AND coalesce(l.reviewed_at, l.updated_at) > ?`, args: [repo, repo, started] })).rows as unknown as Row[]));
+      if (started) rows.push(...((await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,l.role,NULL pattern FROM lessons l WHERE ${scope} AND l.always_on=1 AND coalesce(l.reviewed_at, l.updated_at) > ?`, args: [repo, repo, role, started] })).rows as unknown as Row[]));
     }
   }
   // Once per session, reset by compaction. Tokens count for the whole session.
@@ -92,7 +95,8 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
     .sort((a, b) => b.always_on - a.always_on || (b.pattern?.length ?? 0) - (a.pattern?.length ?? 0) || b.updated_at.localeCompare(a.updated_at));
   const out: Row[] = []; let here = 0;
   for (const r of ranked) {
-    if (inFile && r.always_on && (event === "SessionStart" || event === "SubagentStart")) { await log("sent", { id: r.id, pattern: FILE }, 0); continue; }
+    // A role's lessons are never in CLAUDE.local.md, which every agent reads.
+    if (inFile && r.always_on && !r.role && (event === "SessionStart" || event === "SubagentStart")) { await log("sent", { id: r.id, pattern: FILE }, 0); continue; }
     const t = tokens(r.text);
     if (out.length >= cfg.maxPerDelivery || here + t > cfg.tokensPerDelivery || used + t > cfg.tokensPerSession) { await log("limit", r); continue; }
     out.push(r); here += t; used += t;
@@ -118,7 +122,7 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   // This branch's plan, at the start of a fresh session, after where the last session left off.
   const plan = freshStart && repo && branch ? planText(await getPlan(db, repo, branch), repo.split("/").pop() ?? repo, branch) : null;
   // Lessons and notes kept "only if an agent looks it up" reach agents only if they know to look: say so once, at the start.
-  const searchable = freshStart ? Number((await db.execute({ sql: `SELECT count(*) n FROM lessons l WHERE ${scope} AND l.always_on=0 AND NOT EXISTS (SELECT 1 FROM triggers t WHERE t.lesson_id=l.id)`, args: [repo, repo] })).rows[0]?.n ?? 0) : 0;
+  const searchable = freshStart ? Number((await db.execute({ sql: `SELECT count(*) n FROM lessons l WHERE ${scope} AND l.always_on=0 AND NOT EXISTS (SELECT 1 FROM triggers t WHERE t.lesson_id=l.id)`, args: [repo, repo, role] })).rows[0]?.n ?? 0) : 0;
   // Past sessions here are stored and searchable: say so once, at the start, so agents look before redoing work.
   const stored = freshStart ? Number((await db.execute({ sql: "SELECT count(DISTINCT session) n FROM chunks WHERE repo_id=?", args: [repo] })).rows[0]?.n ?? 0) : 0;
   const askLine = [

@@ -68,7 +68,7 @@ export async function makeHandoff(db: Client, s: Session, runner: Runner, branch
   const text = parseHandoff(runner.run(buildHandoffPrompt(s, branch)));
   if (!text) return null;
   const h: Handoff = { id: randomUUID(), repo_id: repo, branch, session: s.id, tool: s.tool, text, created_at: new Date().toISOString() };
-  await db.execute({ sql: "INSERT INTO repos (id,paths) VALUES (?,?) ON CONFLICT(id) DO NOTHING", args: [repo, JSON.stringify([s.cwd])] });
+  await db.execute({ sql: "INSERT INTO repos (id,paths) VALUES (?,?) ON CONFLICT(id) DO NOTHING", args: [repo, JSON.stringify([(await import("../repo/identity.js")).mainFolder(s.cwd)])] });
   if (exists) {
     await db.execute({ sql: "UPDATE handoffs SET text=?, branch=?, created_at=? WHERE session=?", args: [text, branch, h.created_at, s.id] });
     h.id = String((await db.execute({ sql: "SELECT id FROM handoffs WHERE session=?", args: [s.id] })).rows[0]!.id);
