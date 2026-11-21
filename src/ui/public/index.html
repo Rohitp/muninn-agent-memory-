@@ -78,7 +78,7 @@ input[type=text] { width: 100%; height: 40px; border: 1px solid var(--line-stron
 code { font: .9em var(--mono); background: var(--fill); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
 pre code { background: none; padding: 0; }
 .diff { white-space: pre-wrap; font: 12px/1.5 var(--mono); background: var(--fill); border-radius: 8px; padding: 10px; margin: 8px 0 0; max-height: 220px; overflow: auto; }
-.diff .add { color: var(--diff-add); } .diff .del { color: var(--diff-del); }
+.diff .plus { color: var(--diff-add); } .diff .minus { color: var(--diff-del); }
 /* One look for the repo and branch pickers. */
 .picker { border: 0; background: none; color: var(--ink); font-size: 14px; font-weight: 600; padding: 2px 0; cursor: pointer; }
 .field { flex: 1 1 260px; min-width: 0; height: 40px; border: 1px solid var(--line-strong); border-radius: 10px; padding: 0 12px; font-size: 15px; background: var(--bg); color: var(--ink); }
@@ -96,6 +96,48 @@ pre code { background: none; padding: 0; }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--group); padding: 9px 16px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
 .toast.show { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .switch, .switch::after, .toast { transition: none; } }
+/* Ask secondnature: a panel on the right; the page moves over on wide screens and it covers the page on narrow ones. */
+.askbtn { margin-left: auto; height: 32px; padding: 0 14px; border-radius: 999px; border: 0; background: var(--chip); color: var(--link); font-size: 14px; font-weight: 600; cursor: pointer; }
+.askpanel { position: fixed; top: 0; right: 0; bottom: 0; width: 440px; max-width: 100%; background: var(--group); border-left: 1px solid var(--line-strong); display: flex; flex-direction: column; z-index: 5; }
+@media (min-width: 1100px) { body.ask-open main { margin-right: 440px; margin-left: max(20px, calc((100vw - 440px - 680px) / 2)); } }
+.askhead { display: flex; align-items: center; gap: 8px; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--line); }
+.askttl { flex: 1; margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink); }
+.btn.sm { height: 32px; padding: 0 12px; font-size: 13px; }
+.askbody { flex: 1; overflow: auto; padding: 18px; display: flex; flex-direction: column; gap: 22px; }
+.askempty p { margin: 0 0 8px; } .askempty .sub { font-size: 14px; color: var(--muted); }
+.asktry { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 14px; }
+.asktry .hchip { text-align: left; padding: 6px 13px; line-height: 1.35; }
+.turn { display: flex; flex-direction: column; gap: 10px; }
+.askq-b { align-self: flex-end; max-width: 85%; background: var(--ink); color: var(--group); padding: 9px 14px; border-radius: 14px 14px 4px 14px; font-size: 15px; }
+.aska { font-size: 15px; line-height: 1.6; }
+.cite { border: 0; background: var(--chip); color: var(--link); font: 600 12px/1 var(--sans); padding: 3px 6px; margin: 0 1px; border-radius: 6px; cursor: pointer; vertical-align: 1px; }
+.cite:hover, .cite:focus-visible { background: var(--link); color: var(--group); }
+.askprog { display: flex; flex-direction: column; gap: 9px; padding: 12px 14px; border-radius: 12px; background: var(--bg); }
+.askprog-h { font-size: 14px; font-weight: 600; }
+.askstep { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.askstep.done { color: var(--on); } .askstep.later { color: var(--faint); }
+.askstep .spin { margin: 2px; } .askstep .dot { width: 12px; height: 12px; margin: 2px; border-radius: 50%; border: 2px solid var(--line-strong); flex: none; }
+.askprog-t { font-size: 12px; color: var(--muted); }
+.askerr { color: var(--warn); } .asknone { color: var(--muted); margin: 0; }
+.srcs-h { font-size: 12px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+.srcs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.src { display: flex; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; transition: border-color .2s, background .2s; scroll-margin: 12px; }
+.src.lit { border-color: var(--link); background: var(--chip); }
+.srcn { flex: none; width: 22px; height: 22px; border-radius: 6px; background: var(--chip); color: var(--link); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.src.lit .srcn { background: var(--link); color: var(--group); }
+.srcb { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.srch { font-size: 13px; color: var(--muted); } .srch b { color: var(--ink); font-weight: 600; }
+.srct { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-line; }
+.srcl { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+.srcl a { text-decoration: none; } .srcl a:hover { text-decoration: underline; } .srcl .linkbtn { font-size: 13px; }
+.askform { display: flex; gap: 8px; padding: 12px 18px 6px; border-top: 1px solid var(--line); }
+.askfoot { margin: 0; padding: 0 18px 12px; font-size: 12px; color: var(--muted); }
+.threads { list-style: none; margin: 0; padding: 0; }
+.threads li { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding: 10px 0; }
+.threads li:first-child { border-top: 0; }
+.threads .main { flex: 1; min-width: 0; text-align: left; border: 0; background: none; padding: 0; cursor: pointer; }
+.threads .title { font-weight: 500; } .threads .sub { font-size: 13px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .src { transition: none; } }
 /* Plan history: outcomes and decisions */
 .hist { border-top: 1px solid var(--line); }
 .htabs { display: flex; gap: 4px; padding: 6px 6px 0; border-bottom: 1px solid var(--line); }
@@ -130,6 +172,7 @@ pre code { background: none; padding: 0; }
 </head>
 <body>
 <main id="main" aria-live="polite"></main>
+<aside id="askPanel" class="askpanel" aria-label="Ask secondnature" hidden></aside>
 <div class="toast" id="toast" role="status"></div>
 <script>
 const TOKEN = "__TOKEN__";
@@ -260,8 +303,8 @@ function propPreview(p) {
   const pre = (t) => `<pre class="diff">${t}</pre>`;
   if (p.kind === "skill") return pre(esc(p.payload.markdown));
   const lines = [];
-  if (p.payload.find) lines.push(...String(p.payload.find).split("\n").map((l) => `<span class="del">- ${esc(l)}</span>`));
-  if (p.payload.text) lines.push(...String(p.payload.text).split("\n").map((l) => `<span class="add">+ ${esc(l)}</span>`));
+  if (p.payload.find) lines.push(...String(p.payload.find).split("\n").map((l) => `<span class="minus">- ${esc(l)}</span>`));
+  if (p.payload.text) lines.push(...String(p.payload.text).split("\n").map((l) => `<span class="plus">+ ${esc(l)}</span>`));
   return pre(lines.join("\n"));
 }
 function changesSection() {
@@ -285,39 +328,108 @@ function changesSection() {
     ${repo ? `<p class="note">${proposing ? `<span class="spin" aria-hidden="true"></span> Your Claude is reviewing this repo's CLAUDE.md, AGENTS.md and skills…` : `<button class="linkbtn" data-propose>Review CLAUDE.md, AGENTS.md and skills</button> against your sessions and propose edits. One call to your Claude.`}</p>` : ""}
   </section>`;
 }
-/* Ask muninn: a question answered from lessons, plan decisions, finished work and past sessions, with its sources. */
-let askThread = [], askThreadId = null, asking = false;
-const SRC_KIND = { lesson: "Lesson", note: "Note", decision: "Decision", done: "Done", goal: "Goal", session: "Session", handoff: "Last session" };
-function askSection() {
-  const cite = (t) => esc(t).replace(/\[(\d+)\]/g, '<sup style="color:var(--link);font-weight:600">[$1]</sup>');
-  return `<section aria-labelledby="ak">
-    <h2 id="ak">Ask muninn</h2>
-    <ul class="group">
-      ${askThread.map((t) => `<li style="padding:14px 16px;display:flex;flex-direction:column;gap:8px">
-        <div style="font-weight:600">${esc(t.q)}</div>
-        ${t.error ? `<div style="color:var(--warn)">${esc(t.error)}</div>` : t.a == null ? `<div style="color:var(--muted)">${t.sources ? "Nothing muninn keeps answers that." : '<span class="spin" aria-hidden="true"></span> Looking through your lessons, plans and past sessions…'}</div>` : `<div style="line-height:1.5">${cite(t.a)}</div>`}
-        ${t.sources?.length && t.a != null ? `<details><summary style="cursor:pointer;color:var(--muted);font-size:13px">${t.sources.length} sources</summary><ol style="margin:8px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)">${t.sources.map((s) => `<li><b style="color:var(--ink)">${esc(SRC_KIND[s.kind] || s.kind)}</b> · ${esc(s.where)}${s.date ? ` · ${esc(shortDate(s.date))}` : ""}<br>${esc(s.text.length > 260 ? s.text.slice(0, 259) + "…" : s.text)}</li>`).join("")}</ol></details>` : ""}
-      </li>`).join("")}
-      <li style="padding:12px 16px"><form data-ask-form style="display:flex;gap:8px;flex-wrap:wrap">
-        <label class="vh" for="askq">Ask a question about your work</label>
-        <input id="askq" name="q" class="field" autocomplete="off" placeholder="${askThread.length ? "Ask a follow-up" : "Why did we rename the package? What did I do on servanda this week?"}" ${asking ? "disabled" : ""}>
-        <button class="btn" type="submit" ${asking ? "disabled" : ""}>Ask</button>
-        ${askThread.length ? `<button class="linkbtn" type="button" data-ask-clear>New question</button>` : ""}
-      </form></li>
-    </ul>
-    ${!askThread.length && data.askSuggestions?.length ? `<div class="hrow" role="group" aria-label="Questions to try" style="margin:10px 0 0">${data.askSuggestions.map((s) => `<button class="hchip" data-ask-try="${esc(s)}">${esc(s)}</button>`).join("")}</div>` : ""}
-    ${data.threads?.filter((t) => t.id !== askThreadId).length ? `<div class="hday" style="margin-top:16px">Earlier questions</div><ul class="group">${data.threads.filter((t) => t.id !== askThreadId).slice(0, 6).map((t) => `<li><div class="row"><button class="main" data-thread-open="${esc(t.id)}"><div class="title" style="font-weight:500">${esc(t.title)}</div><div class="sub">${t.turns} question${t.turns === 1 ? "" : "s"} · ${esc(shortDate(t.updated_at))}${!repo && t.repo ? ` · ${esc(short(t.repo))}` : ""}</div></button><button class="x" data-thread-delete="${esc(t.id)}" aria-label="Delete this thread" title="Delete">×</button></div></li>`).join("")}</ul>` : ""}
-    <p class="note">Answers come from what muninn keeps: lessons, plan decisions, finished work and your past sessions${repo ? ` in ${esc(short(repo))}` : ""}. One call to your Claude. Also in any chat with Claude once the muninn MCP server is added: <code>muninn mcp install</code>.</p>
-  </section>`;
+/* Ask secondnature: a chat in a panel beside the page. Answers come from lessons, plan decisions, finished work and
+   past sessions; each [n] in an answer is a button that shows its source, and sources link to GitHub and the log. */
+let askThread = [], askThreadId = null, asking = false, askView = "chat", askTimer = null;
+let askOpen = (() => { try { return localStorage.getItem("askOpen") === "1"; } catch { return false; } })();
+const SRC_LABEL = {
+  lesson: () => "A lesson you kept", note: () => "A note you kept", decision: () => "A decision in your plan",
+  done: () => "Finished work in your plan", goal: () => "The goal in your plan", handoff: () => "Where your last session left off",
+  session: (s) => `Your ${({ "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity" })[s.tool] || "agent"} session`,
+};
+const STAGES = [["search", "Searching your lessons, plans and past sessions"], ["found", "Found what bears on it"], ["write", "Your Claude is writing the answer"]];
+function setAskOpen(on) { askOpen = on; try { localStorage.setItem("askOpen", on ? "1" : "0"); } catch { /* fine */ } document.body.classList.toggle("ask-open", on); drawAsk(); if (on) $("#askq")?.focus(); }
+function foundText(f) {
+  const parts = [[f.kept, "kept lesson", "kept lessons"], [f.plan, "plan item", "plan items"], [f.sessions, "session exchange", "session exchanges"]].filter(([n]) => n).map(([n, a, b]) => `${n} ${n === 1 ? a : b}`);
+  return parts.length ? `Found ${parts.slice(0, -1).join(", ")}${parts.length > 1 ? " and " : ""}${parts.at(-1)}` : "Found nothing that bears on it";
 }
-/* Asks a question in the open thread (or a new one); muninn keeps it so you can come back to it. */
-async function askNow(q) {
-  const turn = { q, a: null, sources: null }; askThread.push(turn); asking = true; draw();
-  try { const r = await api("/api/answer", { q, repo, thread: askThreadId }); turn.a = r.answer; turn.sources = r.sources; askThreadId = r.thread; data.threads = await api("/api/threads?" + q_({ repo })); }
-  catch (err) { turn.error = err.message || String(err); }
-  asking = false; draw(); $("#askq")?.focus();
+function progressBlock(t) {
+  const at = STAGES.findIndex(([k]) => k === t.stage);
+  const secs = Math.max(0, Math.round((Date.now() - t.started) / 1000));
+  return `<div class="askprog" role="status"><div class="askprog-h">Looking through what secondnature keeps</div>
+    ${STAGES.map(([k, label], i) => {
+      const state = i < at ? "done" : i === at ? "now" : "later";
+      const text = k === "found" && t.found ? foundText(t.found) : label;
+      return `<div class="askstep ${state}">${state === "done" ? '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>' : state === "now" ? '<span class="spin" aria-hidden="true"></span>' : '<span class="dot" aria-hidden="true"></span>'}${esc(text)}</div>`;
+    }).join("")}
+    <div class="askprog-t">Usually 10 to 30 seconds · <span data-ask-elapsed>${secs}</span> s so far</div></div>`;
 }
-const q_ = (o) => q(o);
+/* Stored text carries markers for the model ("DONE on main:", "ENGINEER:"); show it as people say it. */
+function sourceText(s) {
+  let t = s.text.replace(/^(DONE|DECISION|GOAL|OPEN)( on [^:]+)?:\s*/, "");
+  if (s.kind === "session") t = t.replace(/\s*\bENGINEER:\s*/g, "\nYou: ").replace(/\s*\bAGENT:\s*/g, "\nAgent: ").trim();
+  return t.length > 280 ? t.slice(0, 279) + "…" : t;
+}
+function sourceCard(s, ti) {
+  return `<li class="src" id="src-${ti}-${s.n}"><span class="srcn">${s.n}</span><div class="srcb">
+    <div class="srch"><b>${esc((SRC_LABEL[s.kind] || (() => s.kind))(s))}</b>${s.where ? ` · ${esc(s.where)}` : ""}${s.date ? ` · ${esc(shortDate(s.date))}` : ""}</div>
+    <div class="srct">${esc(sourceText(s))}</div>
+    ${s.links?.length ? `<div class="srcl">${s.links.map((l) => l.url ? `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer"${l.mono ? ' class="mono"' : ""}>${esc(l.label)} ↗</a>` : `<button class="linkbtn" data-reveal="${esc(l.log)}">${esc(l.label)}</button>`).join("")}</div>` : ""}
+  </div></li>`;
+}
+function turnBlock(t, ti) {
+  const cited = new Set([...(t.a || "").matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1])));
+  const srcs = (t.sources || []).filter((s) => !cited.size || cited.has(s.n) || t.allSources);
+  const hiddenN = (t.sources || []).length - srcs.length;
+  const body = t.error ? `<div class="askerr">${esc(t.error)}</div>`
+    : t.a == null ? (t.stage ? progressBlock(t) : `<div class="asknone">Nothing secondnature keeps answers that. Try other words, or ask about a repo by name.</div>`)
+    : `<div class="aska">${esc(t.a).replace(/\[(\d+)\]/g, (m, n) => (t.sources || []).some((s) => s.n === Number(n)) ? `<button class="cite" data-cite="${ti}:${n}" aria-label="Show source ${n}">${n}</button>` : m)}</div>
+      ${t.sources?.length ? `<div class="srcs-h">${hiddenN ? `Cited ${srcs.length} of ${t.sources.length} things it read` : `Sources · ${srcs.length}`}</div>
+      <ol class="srcs">${srcs.map((s) => sourceCard(s, ti)).join("")}</ol>
+      ${hiddenN ? `<button class="linkbtn" data-ask-all="${ti}">Show ${hiddenN} more it read but didn't cite</button>` : ""}` : ""}`;
+  return `<div class="turn"><div class="askq-b">${esc(t.q)}</div>${body}</div>`;
+}
+function drawAsk() {
+  const el = $("#askPanel"); if (!el) return;
+  document.body.classList.toggle("ask-open", askOpen);
+  if (!askOpen) { el.hidden = true; return; }
+  el.hidden = false;
+  const typing = $("#askq"), keepQ = typing?.value ?? "", keepFocus = document.activeElement === typing;
+  const threads = (data?.threads || []);
+  const body = askView === "threads"
+    ? (threads.length ? `<ul class="threads">${threads.map((t) => `<li><button class="main" data-thread-open="${esc(t.id)}"><div class="title">${esc(t.title)}</div><div class="sub">${t.turns} question${t.turns === 1 ? "" : "s"} · ${esc(shortDate(t.updated_at))}${!repo && t.repo ? ` · ${esc(short(t.repo))}` : ""}</div></button><button class="x" data-thread-delete="${esc(t.id)}" aria-label="Delete this chat" title="Delete">×</button></li>`).join("")}</ul>`
+      : `<p class="asknone">No earlier chats yet.</p>`)
+    : askThread.length ? askThread.map(turnBlock).join("")
+    : `<div class="askempty"><p>Ask about your own work: why something was decided, what you did on a branch, how a problem was fixed last time.</p>
+        <p class="sub">Answers cite the lessons, plan items and past sessions they came from, so you can check them.</p>
+        ${data?.askSuggestions?.length ? `<div class="asktry" role="group" aria-label="Questions to try">${data.askSuggestions.map((s) => `<button class="hchip" data-ask-try="${esc(s)}">${esc(s)}</button>`).join("")}</div>` : ""}</div>`;
+  el.innerHTML = `<div class="askhead"><h2 class="askttl" id="ak">${askView === "threads" ? "Earlier chats" : "Ask secondnature"}</h2>
+      ${askView === "threads" ? `<button class="btn sm" data-ask-view="chat">Back</button>` : `${threads.length ? `<button class="btn sm" data-ask-view="threads">Earlier chats</button>` : ""}${askThread.length ? `<button class="btn sm" data-ask-clear>New chat</button>` : ""}`}
+      <button class="x" data-ask-close aria-label="Close" title="Close">×</button></div>
+    <div class="askbody" id="askBody">${body}</div>
+    ${askView === "chat" ? `<form class="askform" data-ask-form><label class="vh" for="askq">Ask a question about your work</label>
+      <input id="askq" name="q" class="field" autocomplete="off" placeholder="${asking ? "Wait for the answer…" : askThread.length ? "Ask a follow-up" : "Why did we rename the package?"}" ${asking ? "disabled" : ""}>
+      <button class="btn primary" type="submit" ${asking ? "disabled" : ""}>${asking ? "Asking…" : "Ask"}</button></form>
+      <p class="askfoot">${repo ? `Searching ${esc(short(repo))}. ` : ""}One call to your Claude per question. Also in any chat with Claude: <code>muninn mcp install</code>.</p>` : ""}`;
+  const again = $("#askq");
+  if (again && keepQ && !asking) again.value = keepQ;
+  if (again && keepFocus && !asking) again.focus();
+}
+const scrollAskEnd = () => { const b = $("#askBody"); if (b) b.scrollTop = b.scrollHeight; };
+/* Asks in the open chat (or a new one), showing each stage as it happens; secondnature keeps the chat. */
+async function askNow(qtext) {
+  const turn = { q: qtext, a: null, sources: null, stage: "search", started: Date.now() };
+  askThread.push(turn); asking = true; askView = "chat"; drawAsk(); scrollAskEnd();
+  askTimer = setInterval(() => { const e = $("[data-ask-elapsed]"); if (e) e.textContent = Math.round((Date.now() - turn.started) / 1000); }, 1000);
+  try {
+    const r = await fetch("/api/answer-stream", { method: "POST", headers: { "x-muninn-token": TOKEN, "content-type": "application/json" }, body: JSON.stringify({ q: qtext, repo, thread: askThreadId }) });
+    if (!r.ok || !r.body) throw new Error((await r.json().catch(() => ({}))).error || "Request failed");
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i; while ((i = buf.indexOf("\n")) >= 0) {
+        const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1);
+        if (m.stage === "error") throw new Error(m.error);
+        if (m.stage === "done") { turn.a = m.answer; turn.sources = m.sources; turn.stage = null; askThreadId = m.thread; }
+        else { turn.stage = m.stage; if (m.stage === "found") turn.found = m; drawAsk(); scrollAskEnd(); }
+      }
+    }
+    if (turn.stage) throw new Error("The answer stopped before it finished. Try again.");
+    data.threads = await api("/api/threads?" + q({ repo })).catch(() => data.threads);
+  } catch (err) { turn.error = err.message || String(err); turn.stage = null; }
+  clearInterval(askTimer); asking = false; drawAsk(); scrollAskEnd(); $("#askq")?.focus();
+}
 /* Your week with coding agents, read from all your logs, so only on request. */
 let week = null, weekLoading = false;
 function weekSection() {
@@ -463,29 +575,24 @@ function lessonRow(l) {
 }
 
 function draw() {
-  // The page redraws when muninn's data changes; keep a half-typed question and its focus.
-  const typing = $("#askq"), keepQ = typing?.value ?? "", keepFocus = document.activeElement === typing;
+  // The page redraws when muninn's data changes; keep the history search's focus. The ask panel keeps its own.
   const inHist = document.activeElement?.id === "histQ";
   drawPage();
   if (inHist) { const h = $("#histQ"); if (h) { h.focus(); h.setSelectionRange(h.value.length, h.value.length); } }
-  const again = $("#askq");
-  if (again && keepQ && !asking) again.value = keepQ;
-  if (again && keepFocus) again.focus();
+  if (!asking) drawAsk();
 }
 function drawPage() {
   const { repos, suggested, kept, home } = data;
   const shown = showAll ? suggested : suggested.slice(0, 3);
   const dial = home.dial;
   $("#main").innerHTML = `
-    <div class="top"><span>muninn ·</span>
+    <div class="top"><span>muninn ·</span><button class="askbtn" data-ask-open ${askOpen ? "hidden" : ""}>Ask secondnature</button>
       <label class="vh" for="repo">Repo</label>
       <select id="repo" class="picker"><option value="" ${repo ? "" : "selected"}>All repos</option>${[...new Set([HERE, repo].filter((r) => r && !repos.some((x) => x.id === r)))].map((r) => `<option value="${esc(r)}" ${r === repo ? "selected" : ""}>${esc(short(r))}${r === HERE ? " (this folder)" : ""}</option>`).join("")}${repos.map((r) => `<option value="${esc(r.id)}" ${r.id === repo ? "selected" : ""}>${esc(short(r.id))}</option>`).join("")}</select>
     </div>
     <h1>What your agents know</h1>
     <p class="lead">Switch a lesson on and Claude, Codex and Cursor are told it. Switch it off and they aren't.</p>
     <p class="scan">${scanLine()}</p>
-
-    ${askSection()}
 
     ${(() => {
       // Suggestions waiting in other repos are easy to miss, since the page opens on the repo it was started from.
@@ -594,14 +701,30 @@ document.addEventListener("click", async (e) => {
       } catch (e) { toast(e.message || String(e)); }
       return;
     }
-    if (el.dataset.askClear !== undefined) { askThread = []; askThreadId = null; draw(); $("#askq")?.focus(); return; }
+    if (el.dataset.askOpen !== undefined) { setAskOpen(true); draw(); return; }
+    if (el.dataset.askClose !== undefined) { setAskOpen(false); draw(); return; }
+    if (el.dataset.askView) { askView = el.dataset.askView; drawAsk(); return; }
+    if (el.dataset.askClear !== undefined) { askThread = []; askThreadId = null; askView = "chat"; drawAsk(); $("#askq")?.focus(); return; }
     if (el.dataset.askTry) { if (!asking) await askNow(el.dataset.askTry); return; }
+    if (el.dataset.askAll) { askThread[Number(el.dataset.askAll)].allSources = true; drawAsk(); return; }
+    if (el.dataset.cite) {
+      const [ti, n] = el.dataset.cite.split(":"); const t = askThread[Number(ti)];
+      if (t && !$(`#src-${ti}-${n}`)) { t.allSources = true; drawAsk(); }
+      const card = $(`#src-${ti}-${n}`); if (!card) return;
+      card.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      document.querySelectorAll(".src.lit").forEach((c) => c.classList.remove("lit")); card.classList.add("lit");
+      return;
+    }
+    if (el.dataset.reveal) { await api("/api/reveal", { session: el.dataset.reveal }); toast("Opened the folder with that session's log."); return; }
     if (el.dataset.threadOpen) {
       const t = await api("/api/thread?" + q({ id: el.dataset.threadOpen }));
-      askThreadId = t.id; askThread = t.turns.map((u) => ({ q: u.q, a: u.a, sources: u.sources })); draw();
-      $("#ak")?.scrollIntoView({ block: "start" }); $("#askq")?.focus(); return;
+      askThreadId = t.id; askThread = t.turns.map((u) => ({ q: u.q, a: u.a, sources: u.sources })); askView = "chat"; drawAsk(); scrollAskEnd(); $("#askq")?.focus(); return;
     }
-    if (el.dataset.threadDelete) { await api("/api/thread-delete", { id: el.dataset.threadDelete }); data.threads = data.threads.filter((t) => t.id !== el.dataset.threadDelete); draw(); toast("Deleted that thread."); return; }
+    if (el.dataset.threadDelete) {
+      await api("/api/thread-delete", { id: el.dataset.threadDelete }); data.threads = data.threads.filter((t) => t.id !== el.dataset.threadDelete);
+      if (askThreadId === el.dataset.threadDelete) { askThread = []; askThreadId = null; }
+      drawAsk(); toast("Deleted that chat."); return;
+    }
     if (el.dataset.week !== undefined) {
       weekLoading = true; draw();
       try { week = (await api("/api/insights?" + q({ repo }))).text; } catch (e) { toast(e.message || String(e)); }
@@ -680,7 +803,7 @@ document.addEventListener("click", async (e) => {
 });
 document.addEventListener("change", (e) => {
   if (e.target.id === "histRoutine") { hist.routine = e.target.checked; $("#histList").innerHTML = histList(); return; }
-  if (e.target.id === "repo") { repo = e.target.value; week = null; askThread = []; askThreadId = null; open = null; showAll = false; planBranch = null; refresh(); }
+  if (e.target.id === "repo") { repo = e.target.value; week = null; if (!asking) { askThread = []; askThreadId = null; } open = null; showAll = false; planBranch = null; refresh(); }
   if (e.target.id === "planBranch") { planBranch = e.target.value; planEdit = null; Object.assign(hist, { area: "All", q: "", open: {}, limit: 8 }); refresh(); }
 });
 refresh().catch((e) => { $("#main").innerHTML = `<p class="lead">${esc(e.message)}</p>`; });

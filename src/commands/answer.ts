@@ -7,7 +7,9 @@ import { askData } from "./ask.js";
 import { recallData } from "./recall.js";
 
 /** One thing an answer can draw on: a kept lesson or note, a plan decision or finished step, a past exchange, a handoff. */
-export type Source = { n: number; id: string; kind: "lesson" | "note" | "decision" | "done" | "goal" | "session" | "handoff"; text: string; where: string; date: string | null; session?: string | null };
+export type Source = { n: number; id: string; kind: "lesson" | "note" | "decision" | "done" | "goal" | "session" | "handoff"; text: string; where: string; date: string | null; session?: string | null; repo?: string | null; branch?: string | null; tool?: string | null };
+/** What an answer is doing, for a page that shows progress: searching, what it found, then writing. */
+export type Stage = { stage: "search" } | { stage: "found"; kept: number; plan: number; sessions: number } | { stage: "write" };
 export type Answer = { answer: string | null; sources: Source[] };
 export type Turn = { q: string; a: string };
 
@@ -24,13 +26,14 @@ export async function gatherSources(db: Client, q: string, repo: string | null, 
   const past = await recallData(db, q, repo, { embed, limit: opts.limit ?? 8 });
   const handoff = repo ? (await db.execute({ sql: "SELECT id, branch, text, created_at FROM handoffs WHERE repo_id=? ORDER BY created_at DESC LIMIT 1", args: [repo] })).rows[0] : undefined;
   const out: Omit<Source, "n">[] = [
-    ...lessons.map((h) => ({ id: h.id, kind: (h.kind === "note" ? "note" : "lesson") as Source["kind"], text: h.text, where: h.where, date: day(h.updated_at) })),
+    ...lessons.map((h) => ({ id: h.id, kind: (h.kind === "note" ? "note" : "lesson") as Source["kind"], text: h.text, where: h.where, date: day(h.updated_at), repo: h.repo_id })),
     ...past.map((p) => ({
       id: p.id,
       kind: (p.tool === "plan" ? (p.text.startsWith("DECISION") ? "decision" : p.text.startsWith("GOAL") ? "goal" : "done") : "session") as Source["kind"],
       text: p.text, where: short(p.repo) + (p.branch ? ` · ${p.branch}` : ""), date: day(p.ts), session: p.tool === "plan" ? null : p.session,
+      repo: p.repo, branch: p.branch, tool: p.tool === "plan" ? null : p.tool,
     })),
-    ...(handoff ? [{ id: String(handoff.id), kind: "handoff" as const, text: `Where the last session on ${handoff.branch} left off: ${handoff.text}`, where: short(repo), date: day(String(handoff.created_at)) }] : []),
+    ...(handoff ? [{ id: String(handoff.id), kind: "handoff" as const, text: `Where the last session on ${handoff.branch} left off: ${handoff.text}`, where: short(repo), date: day(String(handoff.created_at)), repo, branch: handoff.branch ? String(handoff.branch) : null }] : []),
   ];
   // A decision found carries what it led to, so answers can say what it affected.
   for (const s of out) if (s.kind === "decision" && s.id.startsWith("plan:")) {
@@ -65,12 +68,16 @@ export async function repoForQuestion(db: Client, q: string, repo: string | null
 }
 
 /** An answer written from everything muninn keeps, citing its sources. One call to your Claude. */
-export async function answerData(db: Client, q: string, repo: string | null, runner: Runner, embed: Embed, history: Turn[] = []): Promise<Answer> {
+export async function answerData(db: Client, q: string, repo: string | null, runner: Runner, embed: Embed, history: Turn[] = [], onStage?: (s: Stage) => void): Promise<Answer> {
   // A follow-up ("and what did we try first?") is searched together with the question before it.
   const searchFor = history.length ? `${history.at(-1)!.q} ${q}` : q;
+  onStage?.({ stage: "search" });
   repo = await repoForQuestion(db, searchFor, repo);
   const sources = await gatherSources(db, searchFor, repo, embed);
+  const count = (...k: Source["kind"][]) => sources.filter((s) => k.includes(s.kind)).length;
+  onStage?.({ stage: "found", kept: count("lesson", "note"), plan: count("decision", "done", "goal", "handoff"), sessions: count("session") });
   if (!sources.length) return { answer: null, sources: [] };
+  onStage?.({ stage: "write" });
   const prompt = buildAnswerPrompt(q, sources.map(({ n, kind, text, date, where }) => ({ n, kind, text: text.slice(0, 1800), date, where })), history);
   const reply = runner.runAsync ? await runner.runAsync(prompt) : runner.run(prompt);
   return { answer: reply.trim(), sources };
@@ -83,13 +90,13 @@ export type Thread = { id: string; repo: string | null; title: string; updated_a
  * Answers a question as a turn in a thread, starting one if needed, and keeps it. The thread's earlier turns are
  * the follow-up context, read from muninn's store rather than trusted from the page.
  */
-export async function askInThread(db: Client, q: string, repo: string | null, runner: Runner, embed: Embed, threadId?: string | null): Promise<{ thread: string; answer: Answer }> {
+export async function askInThread(db: Client, q: string, repo: string | null, runner: Runner, embed: Embed, threadId?: string | null, onStage?: (s: Stage) => void): Promise<{ thread: string; answer: Answer }> {
   const { randomUUID } = await import("node:crypto");
   const now = new Date().toISOString();
   let id = threadId && (await db.execute({ sql: "SELECT 1 FROM ask_threads WHERE id=?", args: [threadId] })).rows.length ? threadId : null;
   if (!id) { id = randomUUID(); await db.execute({ sql: "INSERT INTO ask_threads (id,repo_id,title,created_at,updated_at) VALUES (?,?,?,?,?)", args: [id, repo, q.slice(0, 140), now, now] }); }
   const history = (await db.execute({ sql: "SELECT q, a FROM ask_turns WHERE thread_id=? AND a IS NOT NULL ORDER BY at", args: [id] })).rows.map((r) => ({ q: String(r.q), a: String(r.a) }));
-  const answer = await answerData(db, q, repo, runner, embed, history);
+  const answer = await answerData(db, q, repo, runner, embed, history, onStage);
   await db.execute({ sql: "INSERT INTO ask_turns (id,thread_id,q,a,sources,at) VALUES (?,?,?,?,?,?)", args: [randomUUID(), id, q, answer.answer, JSON.stringify(answer.sources), new Date().toISOString()] });
   await db.execute({ sql: "UPDATE ask_threads SET updated_at=? WHERE id=?", args: [new Date().toISOString(), id] });
   return { thread: id, answer };
