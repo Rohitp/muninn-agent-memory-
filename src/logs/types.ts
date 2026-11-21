@@ -17,7 +17,26 @@ export const eventLine = (e: LogEvent): string =>
   : e.k === "file" ? `${e.tool.toUpperCase()}${e.failed ? " (failed)" : ""}: ${e.path.slice(0, 200)}`
   : "ENGINEER stopped the answer";
 export type Tool = "claude-code" | "codex" | "cursor" | "antigravity";
-export type Session = { id: string; tool: Tool; cwd: string; clientVersion: string; events: LogEvent[]; unknown: number; branch?: string; file?: string };
+export type AgentMessage = { ts: string; dir: "in" | "out"; from: string | null; to: string[]; text: string };
+export type Usage = { input: number; output: number; cacheRead: number };
+export type Session = {
+  id: string; tool: Tool; cwd: string; clientVersion: string; events: LogEvent[]; unknown: number; branch?: string; file?: string;
+  /** Tokens the session's model read and wrote, when the log records them. */
+  usage?: Usage; model?: string;
+  /** Tokens per model reply, with its time, so a slice of a long session can be measured on its own. */
+  turns?: { ts: string; input: number; output: number }[];
+  /** A subagent: the session that started it, its type ("Explore", "general-purpose", a custom agent), and the task it was handed. */
+  parent?: string; agentType?: string; task?: string;
+  /** Messages between agents in a swarm: posted to the shared board ("out"), or sent to this agent ("in", with the sender's session id). */
+  messages?: AgentMessage[];
+  /** Subagents this session started, read from their own logs. */
+  subagents?: Session[];
+};
+/** First and last time a session did anything. */
+export const spanOf = (s: Session): { start: string; end: string } => {
+  const ts = s.events.map((e) => e.ts).filter(Boolean).sort();
+  return { start: ts[0] ?? "", end: ts.at(-1) ?? "" };
+};
 /** First text of every LLM run muninn starts, so readers can skip those sessions. */
 export const OWN_RUN_MARK = "[muninn-lesson-writer]";
 /** Text the engineer wraps in <private>…</private> is never learned from, stored or summarised. An unclosed tag hides the rest. */

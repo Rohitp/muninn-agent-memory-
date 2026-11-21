@@ -42,6 +42,7 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn pr [--apply]           Write the "why" for this branch's pull request from your sessions
   muninn insights [--days 7] [--all-repos]  Your week with coding agents: what went well, what didn't
   muninn status                 What muninn has learned and sent, and any problems
+  muninn runs [--all] [--all-repos]  Workflow runs: sessions, subagents and worktree roles that worked together
   muninn schedule [on|off]      A macOS background job that scans every few hours, for days without Claude Code
   muninn install [--learn]      Add Claude Code and Codex hooks (--learn: only automatic scans)
   muninn uninstall              Remove muninn's hooks
@@ -234,6 +235,10 @@ async function main() {
       return;
     }
     case "status": return (await import("./commands/status.js")).status();
+    case "runs": {
+      const [{ openDb }, { repoIdentity }, w] = await Promise.all([import("./store/db.js"), import("./repo/identity.js"), import("./workflow/runs.js")]);
+      return w.runsCmd(await openDb(), args.includes("--all-repos") ? null : repoIdentity(process.cwd()), { all: args.includes("--all") });
+    }
     case "schedule": return (await import("./commands/schedule.js")).schedule(args[0] ?? "");
     case "keywords": return (await import("./commands/status.js")).keywords();
     case "pause": writeFileSync(join(ensureHome(), "paused"), ""); console.log("Paused."); return;
