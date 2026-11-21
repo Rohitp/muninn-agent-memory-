@@ -42,6 +42,18 @@ describe("Antigravity transcripts", () => {
     expect(s.events[0]).toMatchObject({ text: "fix the build, the token is [private]" });
     expect(s.events[3]).toMatchObject({ cmd: "pnpm build", failed: true });
   });
+  it("reads the format Antigravity writes today: wrapped requests, arguments quoted twice, step times", () => {
+    const f = join(tmp(), "antigravity", "brain", "conv-2", ".system_generated", "logs", "transcript.jsonl");
+    write(f, [
+      { step_index: 0, source: "USER_EXPLICIT", type: "USER_INPUT", status: "DONE", created_at: "2026-11-21T14:03:43Z", content: "<USER_REQUEST>\nthere is a spec here. understand it\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: 2026-11-21.\n</ADDITIONAL_METADATA>" },
+      { step_index: 1, source: "MODEL", type: "PLANNER_RESPONSE", status: "DONE", created_at: "2026-11-21T14:03:44Z", tool_calls: [{ name: "run_command", args: { CommandLine: '"ls -la"', Cwd: JSON.stringify(root) } }, { name: "read_file", args: { Path: JSON.stringify(join(root, "src", "app.ts")) } }] },
+    ]);
+    const s = readAntigravity(f);
+    expect(s.events[0]).toEqual({ k: "typed", text: "there is a spec here. understand it", ts: "2026-11-21T14:03:43Z" });
+    expect(s.events.find((e) => e.k === "file")).toMatchObject({ tool: "read", path: join(root, "src", "app.ts") });
+    expect(s.events.find((e) => e.k === "cmd")).toMatchObject({ cmd: "ls -la" });
+    expect(s.cwd).toBe(execFileSync("git", ["-C", root, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim());
+  });
   it("is found by scans in the app, IDE and command-line folders", () => {
     const logs = tmp(); process.env.MUNINN_LOG_ROOT = logs;
     transcript(join(logs, "antigravity"));
@@ -81,5 +93,34 @@ describe("Antigravity rules", () => {
       expect(uninstallMcp()).toContain("Antigravity");
       expect(JSON.parse(readFileSync(file, "utf8")).mcpServers).toEqual({});
     } finally { delete process.env.MUNINN_DESKTOP_CONFIG; }
+  });
+});
+
+describe("turning rules on by itself", () => {
+  const sessionIn = (tool: "antigravity" | "cursor" | "claude-code") => ({ id: tool, tool, cwd: root, clientVersion: "1", unknown: 0, events: [] });
+  it("turns on Antigravity's or Cursor's rules where you've used them, and says when", async () => {
+    const { autoTurnOn, rulesState } = await import("../src/deliver/auto-rules.js");
+    const db = await openDb();
+    expect(await autoTurnOn(db, new Map([[repo, [sessionIn("claude-code")]]]))).toEqual([]);
+    const on = await autoTurnOn(db, new Map([[repo, [sessionIn("claude-code"), sessionIn("antigravity")]]]));
+    expect(on.map((t) => t.tool)).toEqual(["antigravity"]);
+    expect(existsSync(join(root, ".agents", "rules"))).toBe(true);
+    const st = await rulesState(db, repo);
+    expect(st.antigravity.on).toBe(true);
+    expect(st.antigravity.auto).toMatch(/^\d{4}-/);
+    expect(st.cursor).toEqual({ on: false, auto: null });
+    expect(await autoTurnOn(db, new Map([[repo, [sessionIn("antigravity")]]]))).toEqual([]);
+    expect((await autoTurnOn(db, new Map([[repo, [sessionIn("cursor")]]]))).map((t) => t.tool)).toEqual(["cursor"]);
+  });
+  it("never turns them back on after you turned them off, until you turn them on yourself", async () => {
+    const { autoTurnOn, rulesState, setRules } = await import("../src/deliver/auto-rules.js");
+    const db = await openDb();
+    const used = new Map([[repo, [sessionIn("antigravity")]]]);
+    await autoTurnOn(db, used);
+    await setRules(db, repo, "antigravity", false);
+    expect(await autoTurnOn(db, used)).toEqual([]);
+    expect((await rulesState(db, repo)).antigravity).toEqual({ on: false, auto: null });
+    await setRules(db, repo, "antigravity", true);
+    expect((await rulesState(db, repo)).antigravity).toEqual({ on: true, auto: null });
   });
 });

@@ -26,7 +26,7 @@ export function toAntigravity(f: RuleFile): RuleFile {
   return { name: f.name.replace(/\.mdc$/, ".md"), body: (front + "\n" + body).slice(0, MAX) };
 }
 
-async function enabled(db: Client): Promise<string[]> {
+export async function enabled(db: Client): Promise<string[]> {
   const v = (await db.execute("SELECT value FROM meta WHERE key='antigravity_repos'")).rows[0]?.value;
   return v ? JSON.parse(String(v)) : [];
 }

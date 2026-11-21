@@ -31,9 +31,9 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn dial [quiet|start|anytime]  When muninn speaks up to agents here: only when asked,
                                 at session start, or whenever relevant
   muninn ui                     Open muninn in your browser
-  muninn cursor on|off|sync     Write kept lessons as Cursor rules in this repo
+  muninn cursor on|off|sync     Kept lessons as Cursor rules in this repo (on by itself once you use Cursor here)
   muninn local-file on|off      Keep always-on lessons in this repo's CLAUDE.local.md (this machine only)
-  muninn antigravity on|off     Write kept lessons as Antigravity rules in this repo (.agents/rules)
+  muninn antigravity on|off     Kept lessons as Antigravity rules in this repo (on by itself once you use it here)
   muninn keywords               Keywords in use, and how many lessons each has
   muninn mcp install            Ask about your work from any chat with Claude (adds muninn's MCP server)
   muninn ignore-repo [name] [--undo]  Leave a repo alone: not listed, scanned or told
@@ -56,11 +56,11 @@ async function cursorCmd(sub: string) {
   const repo = repoIdentity(process.cwd());
   if (sub === "sync") { await c.syncCursor(db); console.log("Cursor rules rewritten for every repo that has them on."); return; }
   if (!repo) { console.error("Run this inside a git repo."); process.exitCode = 1; return; }
-  if (sub === "off") { await c.disableCursor(db, repo); console.log("Removed muninn's Cursor rules from this repo."); return; }
+  if (sub === "off") { await (await import("./deliver/auto-rules.js")).setRules(db, repo, "cursor", false); console.log("Removed muninn's Cursor rules from this repo. muninn won't turn them back on here."); return; }
   if (sub !== "on") { console.error("Usage: muninn cursor on|off|sync"); process.exitCode = 1; return; }
   const { ensureRepo } = await import("./store/lessons.js");
   await ensureRepo(db, repo, process.cwd());
-  const r = await c.enableCursor(db, repo);
+  const r = await (await import("./deliver/auto-rules.js")).setRules(db, repo, "cursor", true);
   if (!r) { console.error("Couldn't find this repo's folder."); process.exitCode = 1; return; }
   console.log(`Wrote ${r.files.join(", ")} in ${r.root}/.cursor/rules. They're listed in .git/info/exclude, so git ignores them without changing any shared file. muninn rewrites them when lessons change.`);
 }
@@ -85,9 +85,10 @@ async function antigravityCmd(sub: string) {
   const db = await openDb();
   const repo = repoIdentity(process.cwd());
   if (!repo) { console.error("Run this inside a git repo."); process.exitCode = 1; return; }
-  if (sub === "off") { await a.disableAntigravity(db, repo); console.log("Removed muninn's Antigravity rules from this repo."); return; }
+  const { setRules } = await import("./deliver/auto-rules.js");
+  if (sub === "off") { await setRules(db, repo, "antigravity", false); console.log("Removed muninn's Antigravity rules from this repo. muninn won't turn them back on here."); return; }
   await ensureRepo(db, repo, process.cwd());
-  const r = await a.enableAntigravity(db, repo);
+  const r = await setRules(db, repo, "antigravity", true);
   if (!r) { console.error("Couldn't find this repo's folder."); process.exitCode = 1; return; }
   console.log(`Wrote ${r.files.join(", ")} in ${r.root}/.agents/rules. Antigravity's agent reads the always-on one every turn, and the others when they fit the task. git ignores them in this clone, and muninn rewrites them when lessons change.`);
 }
