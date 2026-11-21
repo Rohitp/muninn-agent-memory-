@@ -105,7 +105,8 @@ After that you don't need any commands. muninn checks for new lessons on its own
 | `muninn learn` | Look for new lessons now (also runs on its own) |
 | `muninn ask "question"` | Search what you've kept |
 | `muninn mcp install` | Ask about your work from any chat with Claude |
-| `muninn related "what"` | What a decision or piece of work led to, the sessions and commits behind it, and the files it changed |
+| `muninn related "what"` | What a decision or piece of work led to, what replaced it, the sessions and commits behind it, the files it changed, and what it changed outside the repo |
+| `muninn link` / `unlink "decision" "work"` | Say a decision did, or didn't, lead to some work; muninn keeps your choice |
 | `muninn recall "what"` | Search your past sessions: what was asked, said and run (`--all-repos`, `--days 30`) |
 | `muninn changes` | Proposed rules, skills and instruction edits; `check` reviews CLAUDE.md now |
 | `muninn pr [--apply]` | Write the "why" for this branch's pull request |
