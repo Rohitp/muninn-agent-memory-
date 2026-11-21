@@ -206,12 +206,20 @@ const WHEN_HINT = {
   keyword: "Told when one of these words is in your prompt, or in a command that failed.",
   none: "Never sent on its own. At the start of each session agents are told they can run muninn ask \"…\" to look things up, and this is one of the things they'd find.",
 };
-let repo = HERE || "";
+/* The repo and branch you picked live in the address, so the page's own reloads (after muninn is rebuilt) and your refreshes keep them. */
+const picked = new URLSearchParams(location.search);
+let repo = picked.has("repo") ? picked.get("repo") : HERE || "";
+function rememberPick() {
+  const u = new URL(location.href);
+  u.searchParams.set("repo", repo);
+  if (planBranch) u.searchParams.set("branch", planBranch); else u.searchParams.delete("branch");
+  history.replaceState(null, "", u);
+}
 let showAll = false;
 let open = null; // the id of the row opened for editing
 let data = null;
 let planEdit = null; // the plan item being edited: an id, "goal", or "new"
-let planBranch = null; // the branch whose plan is shown; null means the one checked out
+let planBranch = picked.get("branch") || null; // the branch whose plan is shown; null means the one checked out
 const movedBack = new Set(); // steps unticked in Done this visit, marked in Next so you can see where they went
 
 /* The running plan: built from your sessions' handoffs, and yours to edit. */
@@ -690,7 +698,7 @@ function rulesRow(tool, name, dir) {
   return `<li><div class="row"><div class="main" style="cursor:default"><div class="title">Give ${name}'s agent your lessons</div><div class="sub">${name} has no way for muninn to step in during a session, so lessons go in rules files in ${dir}, which its agent reads. git is told to ignore them.${r.auto ? ` Turned on by muninn on ${esc(when)}, because you used ${name} in this repo.` : ` muninn turns this on by itself once you use ${name} here, unless you've turned it off.`}</div></div>
     <button class="switch" role="switch" aria-checked="${r.on}" aria-label="Give ${name}'s agent your lessons" data-rules="${tool}"></button></div></li>`;
 }
-async function refresh() { await load(); draw(); if (data.scan.running) followScan(data.suggested.length); }
+async function refresh() { rememberPick(); await load(); draw(); if (data.scan.running) followScan(data.suggested.length); }
 async function savePlanInput() {
   const input = $("[data-plan-input]"); if (!input) return;
   const text = input.value.trim();
