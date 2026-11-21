@@ -52,7 +52,8 @@ h2 { margin: 0 0 8px 4px; font-size: 13px; font-weight: 600; letter-spacing: .4p
 .timeline li:first-child { border-top: 0; }
 .timeline time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; padding-top: 1px; }
 .timeline .said { display: block; font-size: 13px; color: var(--muted); }
-.timeline .back, .finding .back { color: var(--warn); font-weight: 500; }
+.timeline .back, .finding .back, .row .sub .back, .rolebar .back { color: var(--warn); font-weight: 500; }
+.timeline .ok { color: var(--on); font-weight: 500; }
 .timeline .idle { color: var(--muted); font-style: italic; }
 .finding { padding: 6px 0; font-size: 14px; }
 .finding .kind { font-size: 12px; font-weight: 600; color: var(--muted); margin-right: 6px; }
@@ -542,25 +543,32 @@ async function load() {
   data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions, rules, schedule, runs: Array.isArray(runs) ? runs : [], runInfo };
 }
 
-/* Autonomous runs: a session that handed work to other agents (subagents, or agents in their own worktrees), with
-   what each role cost, what happened in order, and, on request, what your Claude makes of it. */
-let runOpen = null, runFinding = null;
+/* Autonomous runs: sessions working together in a repo, each in a role (subagents, or agents in their own worktrees),
+   with what each role took, what happened in order, and, on request, what your Claude makes of it.
+   The logs don't record money, so effort is tokens: what a role read (its context) and what it wrote. */
+let runOpen = null, runFinding = null; const runAll = new Set();
 const clock = (iso) => new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 const dur = (m) => (m >= 60 ? `${Math.floor(m / 60)}h ${Math.round(m % 60)}m` : `${Math.round(m)}m`);
-const usd = (n) => `$${(n || 0).toFixed(2)}`;
-const FINDING_LABEL = { cost: "Cost", stall: "Waiting", bounce: "Sent back", handoff: "Handoff", low_yield: "Low yield", other: "Also" };
+const tok = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n || 0));
+const roleName = (r) => (r === "main" ? "main session" : r);
+const FINDING_LABEL = { cost: "Effort", stall: "Waiting", bounce: "Sent back", handoff: "Handoff", low_yield: "Low yield", other: "Also" };
+/** Steps shown before "Show all": send-backs, follow-up fixes and gaps always show. */
+const RUN_STEPS = 8;
 function runsSection() {
   if (!repo || !data.runs.length) return "";
   return `<section aria-labelledby="rn">
     <h2 id="rn">Autonomous runs · ${data.runs.length}</h2>
     <ul class="group">${data.runs.map(runRow).join("")}</ul>
-    <p class="note">A run is a session that handed work to other agents, such as a builder, a reviewer and qa, with everything they did. Tap one to see where time and money went.</p>
+    <p class="note">A run is agents working together: a session and the subagents it started, or agents in their own worktrees such as a builder, a reviewer and qa. Tap one to see where the effort went. Effort is in tokens, since the logs don't record cost.</p>
   </section>`;
 }
 function runRow(r) {
   const info = data.runInfo[r.id]; const n = info?.numbers; const isOpen = runOpen === r.id;
-  const facts = [n ? dur(n.minutes) : "", n ? usd(n.costUsd) : "", `${r.roles.filter((x) => x !== "main").length} roles`,
+  const agents = r.roles.filter((x) => x !== "main");
+  const facts = [n ? dur(n.minutes) : "", n ? `${tok(n.tokens)} tokens` : "", agents.length <= 3 ? agents.map(esc).join(", ") : `${agents.length} roles`,
+    n?.approvals ? `approved ${n.approvals}×` : "",
     n?.sentBack ? `<span class="back">sent back ${n.sentBack === 1 ? "once" : `${n.sentBack} times`}</span>` : "",
+    n?.rework ? `<span class="back">${n.rework} follow-up fix${n.rework === 1 ? "" : "es"}</span>` : "",
     n?.stalls.length ? `waiting ${dur(n.stalls.reduce((a, s) => a + s.minutes, 0))}` : ""].filter(Boolean).join(" · ");
   return `<li><div class="row"><button class="main" data-run-open="${esc(r.id)}" aria-expanded="${isOpen}">
       <div class="title">${esc(shortDate(r.started_at))}, ${esc(clock(r.started_at))}–${esc(clock(r.ended_at))}</div>
@@ -568,23 +576,37 @@ function runRow(r) {
       ${info?.findings?.items?.[0] ? `<div class="sub why">${esc(info.findings.items[0].text)}</div>` : ""}
     </button></div>${isOpen && n ? runDetail(r, info) : ""}</li>`;
 }
+/** One handoff in words: who handed to whom, approved, sent back, or asked for a follow-up fix. */
+function handoffLine(h) {
+  const to = /^(everyone|board)$/.test(h.to_role) ? null : h.to_role.split(/,\s*/).map(roleName).join(" and ");
+  const from = esc(roleName(h.from_role));
+  if (h.kind === "approved") return `<span class="ok">${from} approved</span>`;
+  if (h.kind === "review_rejected") return `<span class="back">${from} sent it back${to ? ` to ${esc(to)}` : ""}</span>`;
+  // A follow-up posted to the board is the agent's own fix; one aimed at a role asks that role for it.
+  if (h.kind === "rework") return `<span class="back">${to ? `${from} asked ${esc(to)} for a follow-up fix` : `${from} posted a follow-up fix`}</span>`;
+  return to ? `${from} handed to ${esc(to)}` : `${from} posted to the board`;
+}
 function runDetail(r, info) {
-  const n = info.numbers; const top = Math.max(...n.roles.map((x) => x.costUsd), 0.0001);
-  const bars = n.roles.map((x) => `<div class="rolebar"><span>${x.role === "main" ? "main session" : esc(x.role)}</span><div class="bar"><span style="width:${Math.max(2, Math.round((x.costUsd / top) * 100))}%"></span></div>
-    <div class="what">${usd(x.costUsd)} (${Math.round(x.share * 100)}%) · ${dur(x.minutes)} · ${x.sessions} session${x.sessions === 1 ? "" : "s"}${x.typed ? ` · you typed ${x.typed}` : ""}${x.sentBack ? ` · <span class="back" style="color:var(--warn)">sent back ${x.sentBack}×, redoing it cost ${usd(x.reworkCostUsd)}</span>` : ""}</div></div>`).join("");
-  // What happened, in order: handoffs and the gaps when no agent was working.
+  const n = info.numbers; const top = Math.max(...n.roles.map((x) => x.tokens), 1);
+  const bars = n.roles.map((x) => `<div class="rolebar"><span>${esc(roleName(x.role))}</span><div class="bar"><span style="width:${Math.max(2, Math.round((x.tokens / top) * 100))}%"></span></div>
+    <div class="what">${tok(x.tokens)} tokens (${Math.round(x.share * 100)}%): read ${tok(x.tokensIn)}, wrote ${tok(x.tokensOut)} · ${dur(x.minutes)} · ${x.sessions} session${x.sessions === 1 ? "" : "s"}${x.commands ? ` · ${x.commands} command${x.commands === 1 ? "" : "s"}${x.failed ? `, ${x.failed} failed` : ""}` : ""}${x.approvals ? ` · approved ${x.approvals}×` : ""}${x.sentBack ? ` · <span class="back">sent back ${x.sentBack}×${x.reworkTokens ? `, the redo took ${tok(x.reworkTokens)} tokens` : ""}</span>` : ""}</div></div>`).join("");
+  // What happened, in order: handoffs and the gaps when no agent was working. Long runs show the steps that matter first.
   const events = [
-    ...r.handoffs.map((h) => ({ at: h.at, html: `${h.kind === "handoff" ? `${esc(h.from_role)} handed to ${esc(h.to_role)}` : `<span class="back">${esc(h.from_role)} sent it back to ${esc(h.to_role)}${h.kind === "rework" ? " for rework" : ""}</span>`}${h.evidence ? `<span class="said">"${esc(h.evidence)}"</span>` : ""}` })),
-    ...n.stalls.map((s) => ({ at: s.from, html: `<span class="idle">No agent working for ${dur(s.minutes)}${s.after ? ` after ${esc(s.after)} finished` : ""}${s.before ? `, until ${esc(s.before)} started` : ""}</span>` })),
+    ...r.handoffs.map((h) => ({ at: h.at, key: h.kind !== "handoff" && h.kind !== "approved", html: `${handoffLine(h)}${h.note ? `<span class="said">"${esc(h.note)}"</span>` : ""}` })),
+    ...n.stalls.map((s) => ({ at: s.from, key: true, html: `<span class="idle">No agent working for ${dur(s.minutes)}${s.after ? ` after ${esc(roleName(s.after))} finished` : ""}${s.before ? `, until ${esc(roleName(s.before))} started` : ""}</span>` })),
   ].sort((a, b) => a.at.localeCompare(b.at));
+  const all = runAll.has(r.id) || events.length <= RUN_STEPS;
+  let plain = 0;
+  const shown = all ? events : events.filter((e) => e.key || plain++ < RUN_STEPS - events.filter((x) => x.key).length);
   const f = info.findings;
-  const findings = f?.items?.length ? f.items.map((x) => `<div class="finding"><span class="kind">${esc(FINDING_LABEL[x.kind] || "Also")}${x.role ? ` · ${esc(x.role)}` : ""}</span>${esc(x.text)}</div>`).join("") + `<p class="note" style="margin-left:0">Your Claude looked at this run ${esc(ago(f.at))}. <button class="linkbtn" data-run-find="${esc(r.id)}">Look again</button></p>`
+  const findings = f?.items?.length ? f.items.map((x) => `<div class="finding"><span class="kind">${esc(FINDING_LABEL[x.kind] || "Also")}${x.role ? ` · ${esc(roleName(x.role))}` : ""}</span>${esc(x.text)}</div>`).join("") + `<p class="note" style="margin-left:0">Your Claude looked at this run ${esc(ago(f.at))}. <button class="linkbtn" data-run-find="${esc(r.id)}">Look again</button></p>`
     : f ? `<p class="note" style="margin-left:0">Your Claude found nothing that stood out. <button class="linkbtn" data-run-find="${esc(r.id)}">Look again</button></p>`
     : runFinding === r.id ? `<p class="note" style="margin-left:0"><span class="spin" aria-hidden="true"></span> Your Claude is looking at this run…</p>`
-    : `<p class="note" style="margin-left:0"><button class="linkbtn" data-run-find="${esc(r.id)}">Find what this run shows</button>: where it stalled, what was sent back and why, and roles that cost a lot for little. One call to your Claude.</p>`;
+    : `<p class="note" style="margin-left:0"><button class="linkbtn" data-run-find="${esc(r.id)}">Find what this run shows</button>: where effort went, where it stalled, what was sent back and why, and roles that took a lot for little. One call to your Claude.</p>`;
   return `<div class="rundetail">
-    <h3>Cost by role · ${usd(n.costUsd)} in all${r.wasted_tokens ? `, about ${Math.round(r.wasted_tokens / 1000)}k tokens wasted` : ""}</h3>${bars}
-    <h3>What happened</h3>${events.length ? `<ol class="timeline">${events.map((e) => `<li><time datetime="${esc(e.at)}">${esc(clock(e.at))}</time><div>${e.html}</div></li>`).join("")}</ol>` : `<p class="note" style="margin-left:0">No handoffs recorded.</p>`}
+    <h3>Tokens by role · ${tok(n.tokens)} in all${r.wasted_tokens ? `, about ${tok(r.wasted_tokens)} on failed retries and re-reads` : ""}</h3>${bars}
+    <h3>What happened · ${events.length} step${events.length === 1 ? "" : "s"}</h3>${events.length ? `<ol class="timeline">${shown.map((e) => `<li><time datetime="${esc(e.at)}">${esc(clock(e.at))}</time><div>${e.html}</div></li>`).join("")}</ol>
+      ${events.length > RUN_STEPS ? `<button class="linkbtn" data-run-all="${esc(r.id)}">${all ? "Show fewer" : `Show all ${events.length} steps`}</button>` : ""}` : `<p class="note" style="margin-left:0">No handoffs recorded.</p>`}
     <h3>What it shows</h3>${findings}
   </div>`;
 }
@@ -874,6 +896,7 @@ document.addEventListener("click", async (e) => {
       drawAsk(); toast("Deleted that chat."); return;
     }
     if (el.dataset.runOpen) { runOpen = runOpen === el.dataset.runOpen ? null : el.dataset.runOpen; draw(); return; }
+    if (el.dataset.runAll) { const id = el.dataset.runAll; if (runAll.has(id)) runAll.delete(id); else runAll.add(id); draw(); return; }
     if (el.dataset.runFind) {
       const run = data.runs.find((r) => r.id === el.dataset.runFind); if (!run) return;
       runFinding = run.id; if (data.runInfo[run.id]) data.runInfo[run.id].findings = null; draw();

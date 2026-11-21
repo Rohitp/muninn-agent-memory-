@@ -21,7 +21,7 @@ export type Insights = {
   waiting: { suggestions: number; changes: number };
   spend: { calls: number; costUsd: number };
   /** Autonomous runs (a main session and the agents it handed work to) that ended in the window. */
-  runs: { count: number; minutes: number; costUsd: number; sentBack: number; reworkCostUsd: number; stallMinutes: number; byRole: { role: string; costUsd: number; share: number }[]; findings: string[] };
+  runs: { count: number; minutes: number; tokens: number; sentBack: number; rework: number; reworkTokens: number; stallMinutes: number; byRole: { role: string; tokens: number; share: number }[]; findings: string[] };
 };
 
 const lastTs = (s: Session) => s.events.reduce((m, e) => (e.ts > m ? e.ts : m), "");
@@ -52,9 +52,9 @@ export async function insightsData(db: Client, repo: string | null, days = 7, se
 
   const runs = (runList ?? await loadRuns(db, repo)).filter((r) => r.ended_at >= since && (!repo || r.repo_id === repo));
   const nums = runs.map(runNumbers);
-  const roleCost = new Map<string, number>();
-  for (const n of nums) for (const r of n.roles) roleCost.set(r.role, (roleCost.get(r.role) ?? 0) + r.costUsd);
-  const runCost = nums.reduce((a, n) => a + n.costUsd, 0);
+  const roleTokens = new Map<string, number>();
+  for (const n of nums) for (const r of n.roles) roleTokens.set(r.role, (roleTokens.get(r.role) ?? 0) + r.tokens);
+  const runTokens = nums.reduce((a, n) => a + n.tokens, 0);
   const found = await savedFindings(db, runs);
 
   return {
@@ -74,10 +74,10 @@ export async function insightsData(db: Client, repo: string | null, days = 7, se
     skills, waiting: { suggestions: waitingSug, changes: waitingCh },
     spend: { calls: Number(spend.n ?? 0), costUsd: Number(spend.c ?? 0) },
     runs: {
-      count: runs.length, minutes: nums.reduce((a, n) => a + n.minutes, 0), costUsd: runCost,
-      sentBack: nums.reduce((a, n) => a + n.sentBack, 0), reworkCostUsd: nums.reduce((a, n) => a + n.reworkCostUsd, 0),
+      count: runs.length, minutes: nums.reduce((a, n) => a + n.minutes, 0), tokens: runTokens,
+      sentBack: nums.reduce((a, n) => a + n.sentBack, 0), rework: nums.reduce((a, n) => a + n.rework, 0), reworkTokens: nums.reduce((a, n) => a + n.reworkTokens, 0),
       stallMinutes: nums.reduce((a, n) => a + n.stalls.reduce((b, x) => b + x.minutes, 0), 0),
-      byRole: [...roleCost.entries()].map(([role, c]) => ({ role, costUsd: c, share: runCost ? c / runCost : 0 })).sort((a, b) => b.costUsd - a.costUsd),
+      byRole: [...roleTokens.entries()].map(([role, t]) => ({ role, tokens: t, share: runTokens ? t / runTokens : 0 })).sort((a, b) => b.tokens - a.tokens),
       findings: Object.values(found).flatMap((f) => f.items.slice(0, 1).map((i) => i.text)).slice(0, 3),
     },
   };
@@ -102,9 +102,9 @@ export function insightsText(i: Insights): string {
     const r = i.runs;
     const hm = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`);
     out.push("", "Autonomous runs");
-    out.push(`  ${r.count} run(s), ${hm(r.minutes)} in all${r.costUsd ? `, about $${r.costUsd.toFixed(2)}` : ""}.`);
-    if (r.byRole.length) out.push(`  Cost by role: ${r.byRole.slice(0, 5).map((x) => `${x.role} ${Math.round(x.share * 100)}%`).join(", ")}.`);
-    if (r.sentBack) out.push(`  Work sent back ${r.sentBack} time(s)${r.reworkCostUsd ? `; redoing it cost about $${r.reworkCostUsd.toFixed(2)}` : ""}.`);
+    out.push(`  ${r.count} run(s) with more than one agent, ${hm(r.minutes)} in all, about ${k(r.tokens)} tokens.`);
+    if (r.byRole.length) out.push(`  Tokens by role: ${r.byRole.slice(0, 5).map((x) => `${x.role} ${Math.round(x.share * 100)}%`).join(", ")}.`);
+    if (r.sentBack || r.rework) out.push(`  ${[r.sentBack ? `Work sent back ${r.sentBack} time(s)` : "", r.rework ? `${r.rework} follow-up fix(es) asked for` : ""].filter(Boolean).join(", ")}${r.reworkTokens ? `; the redo took about ${k(r.reworkTokens)} tokens` : ""}.`);
     if (r.stallMinutes) out.push(`  No agent was working for ${hm(r.stallMinutes)}, in gaps of ${STALL_MIN} minutes or more.`);
     for (const f of r.findings) out.push(`  ${f}`);
   }
