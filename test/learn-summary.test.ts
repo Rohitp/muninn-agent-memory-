@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scanSummary } from "../src/commands/learn-summary.js";
+import { repoBlock, scanSummary } from "../src/commands/learn-summary.js";
 import type { Scan } from "../src/logs/discover.js";
 import type { Session } from "../src/logs/types.js";
 
@@ -29,5 +29,30 @@ describe("what muninn learn says first", () => {
       "  rohitp/muninn: 1 Claude Code and 1 Antigravity",
       "  rohitp/dartboard: 1 Antigravity",
     ]);
+  });
+});
+
+describe("each repo's block after the scan", () => {
+  const base = { repo: "github.com/rohitp/servanda", sessions: 9, minSessions: 3, moments: 5, known: 2, newLessons: 0, noise: 3, review: null, notes: [] };
+  it("leads with what's new, counting the long-session reading too, then how it was found", () => {
+    expect(repoBlock({ ...base, review: { calls: 2, sessions: 1, added: 5, known: 0 }, notes: ['Two kept lessons come from the same quotes: "A" and "B".'] })).toEqual([
+      "rohitp/servanda (9 sessions): 5 new suggestions, waiting in muninn ui.",
+      "  Spotted 5 moments: 2 matched lessons you already have, 0 new and 3 judged noise by your Claude.",
+      "  Read 2 parts of 1 long session: 5 new suggestions.",
+      '  Two kept lessons come from the same quotes: "A" and "B".',
+    ]);
+  });
+  it("says plainly when nothing is new, and why repeats need more sessions", () => {
+    expect(repoBlock({ ...base, repo: "github.com/rohitp/dartboard", sessions: 1, moments: 0, known: 0, noise: 0 })).toEqual([
+      "rohitp/dartboard (1 session): nothing new.",
+      "  Only 1 session so far. Something you say again counts once it's in 3 sessions.",
+    ]);
+  });
+});
+
+describe("counts in a repo's block", () => {
+  it("says one match in the singular, and leaves out noise nobody judged", () => {
+    expect(repoBlock({ repo: "github.com/rohitp/claude-mods", sessions: 4, minSessions: 3, moments: 1, known: 1, newLessons: 0, noise: 0, review: null, notes: [] })[1])
+      .toBe("  Spotted 1 moment: 1 matched a lesson you already have and 0 new.");
   });
 });

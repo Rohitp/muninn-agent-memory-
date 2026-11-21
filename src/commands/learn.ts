@@ -11,7 +11,7 @@ import { openDb } from "../store/db.js";
 import { ensureRepo, foldDuplicates, overlappingLive } from "../store/lessons.js";
 import { adoptRepo } from "../repo/adopt.js";
 import { review } from "./review.js";
-import { scanSummary } from "./learn-summary.js";
+import { repoBlock, repoLabel, scanSummary, type RepoReport } from "./learn-summary.js";
 
 export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview?: boolean }): Promise<number> {
   if (opts.auto && isPaused()) return 0;
@@ -49,12 +49,14 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
     await ensureRepo(db, repo, sessions[0]!.cwd);
     // Marks the repo as scanned, so a session ending in a brand-new repo can trigger its first scan straight away.
     await db.execute({ sql: "INSERT OR REPLACE INTO meta (key,value) VALUES (?,?)", args: [`scanned:${repo}`, new Date().toISOString()] });
-    if (sessions.length < cfg.minSessions && !opts.auto) console.log(`${repo}: only ${sessions.length} session(s), which may be too few to find repeats.`);
+    // What this repo's scan finds is gathered here and printed as one block at the end, so lines don't interleave.
+    const notes: string[] = [];
+    let review: RepoReport["review"] = null;
     // Lines in the repo's CLAUDE.md that may be out of date. Cheap: no model calls.
     try {
       const { checkAndSave } = await import("../memory/stale.js");
       const n = await checkAndSave(db, repo, sessions);
-      if (n && !opts.auto) console.log(`${repo}: ${n} line(s) in CLAUDE.md may be out of date. See them in muninn ui, or run "muninn memory".`);
+      if (n) notes.push(`${n} line(s) in CLAUDE.md may be out of date. See them in muninn ui, or run "muninn memory".`);
     } catch { /* a repo muninn can't read shouldn't stop the scan */ }
     const folded = await foldDuplicates(db, repo);
     // Workflow runs: sessions that worked together, with their subagents and roles. Agents sending each other's work back become moments.
@@ -73,11 +75,10 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
         const { reviewSessions } = await import("../learn/session-review.js");
         const reviewer = pickRunner("background");
         if (reviewer) {
-          const rv = await reviewSessions(db, repo, sessions, reviewer, embed, { cutoff: cfg.similarityCutoff });
+          review = await reviewSessions(db, repo, sessions, reviewer, embed, { cutoff: cfg.similarityCutoff });
           await saveUsage(db, reviewer, "session review");
-          if (rv.calls && !opts.auto) console.log(`  Read ${rv.calls} part(s) of ${rv.sessions} long session(s): ${rv.added} new suggestion(s)${rv.known ? `, ${rv.known} already known (evidence added)` : ""}.`);
         }
-      } catch (e) { if (!opts.auto) console.log(`  Couldn't read long sessions this time: ${e instanceof Error ? e.message : String(e)}`); }
+      } catch (e) { notes.push(`Couldn't read long sessions this time: ${e instanceof Error ? e.message : String(e)}`); }
     }
     // Changes to propose: "ask first" rules from commands you keep stopping, and skills from steps that repeat.
     try {
@@ -88,13 +89,16 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
       const skillRunner = writer ? pickRunner("background") : null;
       const skills = await p.proposeSkills(db, repo, sessions, skillRunner);
       await saveUsage(db, skillRunner, "skill drafts");
-      if ((guards || skills) && !opts.auto) console.log(`  Proposed ${[guards ? `${guards} "ask first" rule(s)` : "", skills ? `${skills} skill(s)` : ""].filter(Boolean).join(" and ")}. Apply or dismiss them in muninn ui.`);
-    } catch (e) { if (!opts.auto) console.log(`  Couldn't look for changes to propose: ${e instanceof Error ? e.message : String(e)}`); }
+      if (guards || skills) notes.push(`Proposed ${[guards ? `${guards} "ask first" rule(s)` : "", skills ? `${skills} skill(s)` : ""].filter(Boolean).join(" and ")}. Apply or dismiss them in muninn ui.`);
+    } catch (e) { notes.push(`Couldn't look for changes to propose: ${e instanceof Error ? e.message : String(e)}`); }
     if (!opts.auto) {
-      const total = Object.values(r.moments).reduce((a, b) => a + b, 0);
-      console.log(`${repo}: ${total} moments. ${r.known} already known (evidence added), ${r.newLessons} new lesson(s), ${r.discarded} discarded as noise.`);
-      if (folded) console.log(`  Folded ${folded} duplicate proposed lesson(s) into the lesson they repeat.`);
-      for (const [a, b] of await overlappingLive(db, repo)) console.log(`  Live lessons ${a.slice(0, 8)} and ${b.slice(0, 8)} come from the same quotes. Retire one with "muninn retire <id>".`);
+      if (folded) notes.push(`Folded ${folded} duplicate suggestion(s) into the lesson they repeat.`);
+      // Two kept lessons built from the same quotes: name them by their words, since ids mean nothing to read.
+      for (const [a, b] of await overlappingLive(db, repo)) {
+        const text = async (id: string) => { const t = String((await db.execute({ sql: "SELECT coalesce(plain,text) t FROM lessons WHERE id=?", args: [id] })).rows[0]?.t ?? id); return t.length > 70 ? `${t.slice(0, 69)}…` : t; };
+        notes.push(`Two kept lessons come from the same quotes: "${await text(a)}" and "${await text(b)}". Switch one off in muninn ui, or run "muninn retire ${b.slice(0, 8)}".`);
+      }
+      for (const line of repoBlock({ repo, sessions: sessions.length, minSessions: cfg.minSessions, moments: Object.values(r.moments).reduce((a, b) => a + b, 0), known: r.known, newLessons: r.newLessons, noise: r.discarded, review, notes })) console.log(line);
     }
     for (const s of sessions) if (s.unknown) { await db.execute({ sql: "INSERT OR REPLACE INTO scan_counts (repo_id,tool,client_version,scanned_at,unknown_records) VALUES (?,?,?,?,?)", args: [repo, s.tool, s.clientVersion, new Date().toISOString(), s.unknown] }); }
   }
@@ -102,7 +106,7 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
   try {
     const { autoTurnOn, TOOL_NAME } = await import("../deliver/auto-rules.js");
     for (const t of await autoTurnOn(db, new Map(repos.map((r) => [r, scan.byRepo.get(r)!]))))
-      if (!opts.auto) console.log(`${t.repo}: you've used ${TOOL_NAME[t.tool]} here, so its agent now gets your lessons as rules files (${t.files.join(", ")}). Turn this off with "muninn ${t.tool} off" or on the page.`);
+      if (!opts.auto) console.log(`${repoLabel(t.repo)}: you've used ${TOOL_NAME[t.tool]} here, so its agent now gets your lessons as rules files (${t.files.join(", ")}). Turn this off with "muninn ${t.tool} off" or on the page.`);
   } catch { /* rules files are a convenience */ }
   // Every session kept as searchable exchanges, and the raw logs copied before the tool deletes them.
   try {
