@@ -20,6 +20,7 @@
     --fill: #24262B; --diff-add: #6CD49A; --diff-del: #FF8A80; }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; } /* a class that sets display mustn't bring back something hidden */
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--sans); }
 button, input, textarea, select { font: inherit; color: inherit; }
 a { color: var(--link); }
@@ -163,8 +164,21 @@ pre code { background: none; padding: 0; }
 .hkind.fixed, .hkind.new { background: var(--warn-bg); color: var(--warn); }
 .hkind.checked, .hkind.explored { background: var(--bg); color: var(--muted); }
 .href { font: 12px ui-monospace, Menlo, monospace; color: var(--link); white-space: nowrap; padding-top: 3px; }
-.hsteps { margin: 0 0 14px 28px; padding-left: 16px; display: flex; flex-direction: column; gap: 5px; font-size: 14px; line-height: 1.45; }
-.hsteps .routine { color: var(--muted); }
+.hsteps { list-style: none; margin: 0 0 14px 28px; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; line-height: 1.45; }
+.hstep { display: flex; gap: 12px; align-items: flex-start; padding: 5px 0; }
+.hstep > span:last-child { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.hstep.routine { color: var(--muted); }
+.hstep .check { display: inline-flex; align-items: center; justify-content: center; color: var(--group); margin-top: -1px; }
+.hstep .check:hover, .hstep .check:focus-visible { background: var(--group); color: var(--on); }
+.hdot { flex: none; width: 22px; height: 20px; display: flex; align-items: center; justify-content: center; }
+.hdot::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--line-strong); }
+.hby { font-size: 12px; color: var(--muted); }
+.hstep.bysession { background: var(--warn-bg); border-radius: 10px; padding: 7px 10px; margin: 2px -10px; }
+.hstep.bysession .hby { color: var(--warn); font-weight: 500; }
+.row.back { background: var(--warn-bg); }
+.row.back .sub { color: var(--warn); font-weight: 500; }
+.toast button { border: 0; background: none; color: var(--chip); font: inherit; font-weight: 600; cursor: pointer; padding: 2px 4px; margin-left: 10px; }
+.toast.act { pointer-events: auto; }
 .hdec { border-top: 1px solid var(--line); display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 12px; padding: 12px 0; align-items: start; }
 .hdec .why { font-size: 14px; line-height: 1.45; color: var(--muted); margin-top: 3px; }
 .hdate { font-size: 12px; color: var(--muted); white-space: nowrap; padding-top: 3px; }
@@ -198,6 +212,7 @@ let open = null; // the id of the row opened for editing
 let data = null;
 let planEdit = null; // the plan item being edited: an id, "goal", or "new"
 let planBranch = null; // the branch whose plan is shown; null means the one checked out
+const movedBack = new Set(); // steps unticked in Done this visit, marked in Next so you can see where they went
 
 /* The running plan: built from your sessions' handoffs, and yours to edit. */
 /** What's done, newest first, grouped by day and narrowed by the filter, so a long history stays easy to scan. */
@@ -225,6 +240,16 @@ function histItems() {
     decisions: h.decisions.filter((d) => (hist.area === "All" || d.area === hist.area) && (!words.length || has(d.what + " " + (d.why || "")))),
   };
 }
+/* A finished step. One that was in Next shows the same round tick, filled in: untick it to move it back to Next.
+   Steps a session ticked off are marked, since those are the ones most likely ticked too early. */
+const TICK = '<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function stepRow(s) {
+  if (!s.reopenable) return `<li class="hstep${s.routine ? " routine" : ""}"><span class="hdot" aria-hidden="true"></span><span>${esc(s.text)}</span></li>`;
+  const bySession = s.closedBy === "session";
+  return `<li class="hstep${s.routine ? " routine" : ""}${bySession ? " bysession" : ""}">
+    <button class="check" role="checkbox" aria-checked="true" data-plan-reopen="${esc(s.id)}" aria-label="Ticked off. Untick to move it back to Next: ${esc(s.text)}" title="Untick to move it back to Next">${TICK}</button>
+    <span><span>${esc(s.text)}</span><span class="hby">${bySession ? `Ticked off by a session · ${esc(shortDate(s.at))}. Not done? Untick it.` : `Ticked off by you · ${esc(shortDate(s.at))}`}</span></span></li>`;
+}
 function histList() {
   const { outcomes, decisions } = histItems();
   if (hist.tab === "decisions") {
@@ -246,7 +271,7 @@ function histList() {
         <span class="hmeta"><span class="hkind ${o.kind}">${KIND_LABEL[o.kind] || o.kind}</span>${o.area ? `<span>${esc(o.area)}</span><span aria-hidden="true">·</span>` : ""}<span>${o.steps.length} step${o.steps.length === 1 ? "" : "s"}${hidden ? `, ${hidden} routine hidden` : ""}</span></span></span>
       <span class="href">${esc(o.ref || "")}</span></button>
       ${isOpen && (o.links?.because?.length || o.links?.sessions || o.links?.files?.length) ? `<div class="hres" style="margin:0 0 8px 28px">${[o.links.because?.length ? `Because of: ${o.links.because.map((d) => `${esc(d.title)} <button class="linkbtn" data-unlink="${esc(d.id)}|${esc(o.id)}" aria-label="Remove: this work wasn't because of ${esc(d.title)}" title="Not related">×</button>`).join(" · ")}` : "", o.links.outside?.length ? `Changed outside the repo: ${o.links.outside.map(esc).join(", ")}` : "", o.links.sessions ? `Built in ${o.links.sessions} session${o.links.sessions === 1 ? "" : "s"}` : "", o.links.files?.length ? `Files: ${o.links.files.map((f) => `<code>${esc(f)}</code>`).join(", ")}` : ""].filter(Boolean).join(". ")}</div>` : ""}
-      ${isOpen ? `<ol class="hsteps">${steps.map((s) => `<li class="${s.routine ? "routine" : ""}">${esc(s.text)}${s.reopenable ? ` <button class="linkbtn" data-plan-reopen="${esc(s.id)}">reopen</button>` : ""}</li>`).join("")}</ol>` : ""}</div>`;
+      ${isOpen ? `<ul class="hsteps">${steps.map(stepRow).join("")}</ul>` : ""}</div>`;
   }).join("")}`).join("") + (shown.length < outcomes.length ? `<button class="more" data-hist-more>Show ${Math.min(8, outcomes.length - shown.length)} earlier outcomes of ${outcomes.length - shown.length}</button>` : "");
 }
 function historyBlock() {
@@ -442,9 +467,9 @@ function planSection() {
   if (!repo || !data.plan) return "";
   const p = data.plan.plan;
   const empty = !p.goal && !p.status && !p.open.length && !p.decisions.length && !p.done.length;
-  const openRow = (o) => planEdit === o.id ? `<li>${planEditor("open", o.id, o.text, "A next step or open question")}</li>` : `<li><div class="row">
+  const openRow = (o) => planEdit === o.id ? `<li>${planEditor("open", o.id, o.text, "A next step or open question")}</li>` : `<li><div class="row${movedBack.has(o.id) ? " back" : ""}">
       <button class="check" role="checkbox" aria-checked="false" aria-label="Mark done: ${esc(o.text)}" data-plan-close="${esc(o.id)}"></button>
-      <button class="main" data-plan-edit="${esc(o.id)}"><div class="title">${esc(o.text)}</div><div class="sub">${o.by_person ? "added by you" : `from a session on ${shortDate(o.created_at)}`}</div></button>
+      <button class="main" data-plan-edit="${esc(o.id)}"><div class="title">${esc(o.text)}</div><div class="sub">${movedBack.has(o.id) ? "Moved back from Done just now" : o.by_person ? "added by you" : `from a session on ${shortDate(o.created_at)}`}</div></button>
       <button class="x" data-plan-remove="${esc(o.id)}" aria-label="Remove" title="Remove">×</button></div></li>`;
   return `<section aria-labelledby="pl">
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -473,7 +498,12 @@ async function api(path, body) {
   if (!r.ok) throw new Error(j.error || "Request failed");
   return j;
 }
-function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2800); }
+/* A short message after you act. With an action (like Undo) it stays longer and the button works. */
+function toast(msg, action) {
+  const t = $("#toast"); t.textContent = msg; t.classList.toggle("act", !!action);
+  if (action) { const b = document.createElement("button"); b.textContent = action.label; b.onclick = () => { t.classList.remove("show", "act"); action.run().catch((e) => toast(e.message)); }; t.append(b); }
+  t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show", "act"), action ? 7000 : 2800);
+}
 
 async function load() {
   const [repos, suggested, kept, home, scan] = await Promise.all([
@@ -674,8 +704,18 @@ document.addEventListener("click", async (e) => {
     if (el.dataset.planNew !== undefined) { planEdit = "new"; draw(); $("#pe")?.focus(); return; }
     if (el.dataset.planCancel !== undefined) { planEdit = null; draw(); return; }
     if (el.dataset.planSave !== undefined) { await savePlanInput(); return; }
-    if (el.dataset.planClose) { el.setAttribute("aria-checked", "true"); await planDo({ action: "close", id: el.dataset.planClose }); toast("Marked done."); return; }
-    if (el.dataset.planReopen) { await planDo({ action: "reopen", id: el.dataset.planReopen }); toast("Reopened."); return; }
+    if (el.dataset.planClose) {
+      const id = el.dataset.planClose; el.setAttribute("aria-checked", "true"); movedBack.delete(id);
+      await planDo({ action: "close", id });
+      toast("Marked done. It's under Done below.", { label: "Undo", run: async () => { await planDo({ action: "reopen", id }); toast("Back in Next."); } });
+      return;
+    }
+    if (el.dataset.planReopen) {
+      const id = el.dataset.planReopen; el.setAttribute("aria-checked", "false");
+      movedBack.add(id); await planDo({ action: "reopen", id });
+      toast("Moved back to Next. Agents are told it again.", { label: "Undo", run: async () => { movedBack.delete(id); await planDo({ action: "close", id }); toast("Back under Done."); } });
+      return;
+    }
     if (el.dataset.planRemove) { await planDo({ action: "remove", id: el.dataset.planRemove }); toast("Removed from the plan."); return; }
     if (el.dataset.unlink) {
       const [decision, outcome] = el.dataset.unlink.split("|");
