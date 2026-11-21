@@ -44,3 +44,14 @@ describe("with muninn's MCP server set up in Claude Code", () => {
     expect(after).toContain("the muninn tools where_left_off and get_plan");
   });
 });
+
+describe("muninn's MCP server through the muninn-panel plugin", () => {
+  it("counts as set up, since it survives running sessions rewriting ~/.claude.json", async () => {
+    const { hasMcp } = await import("../src/deliver/hook.js");
+    expect(hasMcp()).toBe(false);
+    writeFileSync(process.env.MUNINN_CLAUDE_SETTINGS!, JSON.stringify({ enabledPlugins: { "muninn-panel@muninn": true } }));
+    expect(hasMcp()).toBe(true);
+    writeFileSync(process.env.MUNINN_CLAUDE_SETTINGS!, JSON.stringify({ enabledPlugins: { "muninn-panel@muninn": false } }));
+    expect(hasMcp()).toBe(false);
+  });
+});

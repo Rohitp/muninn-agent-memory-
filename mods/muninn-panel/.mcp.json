@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "muninn": { "command": "muninn", "args": ["mcp"] }
+  }
+}
