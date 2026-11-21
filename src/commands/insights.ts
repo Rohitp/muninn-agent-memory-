@@ -21,7 +21,7 @@ export type Insights = {
   waiting: { suggestions: number; changes: number };
   spend: { calls: number; costUsd: number };
   /** Autonomous runs (a main session and the agents it handed work to) that ended in the window. */
-  runs: { count: number; minutes: number; tokens: number; sentBack: number; rework: number; reworkTokens: number; stallMinutes: number; byRole: { role: string; tokens: number; share: number }[]; findings: string[] };
+  runs: { count: number; minutes: number; tokens: number; sentBack: number; rework: number; reworkTokens: number; stallMinutes: number; blockersLeft: { workflows: number; issues: number }; byRole: { role: string; tokens: number; share: number }[]; findings: string[] };
 };
 
 const lastTs = (s: Session) => s.events.reduce((m, e) => (e.ts > m ? e.ts : m), "");
@@ -77,6 +77,7 @@ export async function insightsData(db: Client, repo: string | null, days = 7, se
       count: runs.length, minutes: nums.reduce((a, n) => a + n.minutes, 0), tokens: runTokens,
       sentBack: nums.reduce((a, n) => a + n.sentBack, 0), rework: nums.reduce((a, n) => a + n.rework, 0), reworkTokens: nums.reduce((a, n) => a + n.reworkTokens, 0),
       stallMinutes: nums.reduce((a, n) => a + n.stalls.reduce((b, x) => b + x.minutes, 0), 0),
+      blockersLeft: runs.flatMap((r) => r.workflows ?? []).filter((w) => w.blocking_left > 0).reduce((a, w) => ({ workflows: a.workflows + 1, issues: a.issues + w.blocking_left }), { workflows: 0, issues: 0 }),
       byRole: [...roleTokens.entries()].map(([role, t]) => ({ role, tokens: t, share: runTokens ? t / runTokens : 0 })).sort((a, b) => b.tokens - a.tokens),
       findings: Object.values(found).flatMap((f) => f.items.slice(0, 1).map((i) => i.text)).slice(0, 3),
     },
@@ -105,6 +106,7 @@ export function insightsText(i: Insights): string {
     out.push(`  ${r.count} run(s) with more than one agent, ${hm(r.minutes)} in all, about ${k(r.tokens)} tokens.`);
     if (r.byRole.length) out.push(`  Tokens by role: ${r.byRole.slice(0, 5).map((x) => `${x.role} ${Math.round(x.share * 100)}%`).join(", ")}.`);
     if (r.sentBack || r.rework) out.push(`  ${[r.sentBack ? `Work sent back ${r.sentBack} time(s)` : "", r.rework ? `${r.rework} follow-up fix(es) asked for` : ""].filter(Boolean).join(", ")}${r.reworkTokens ? `; the redo took about ${k(r.reworkTokens)} tokens` : ""}.`);
+    if (r.blockersLeft.workflows) out.push(`  ${r.blockersLeft.workflows} workflow(s) finished with ${r.blockersLeft.issues} blocking review issue(s) still open.`);
     if (r.stallMinutes) out.push(`  No agent was working for ${hm(r.stallMinutes)}, in gaps of ${STALL_MIN} minutes or more.`);
     for (const f of r.findings) out.push(`  ${f}`);
   }
