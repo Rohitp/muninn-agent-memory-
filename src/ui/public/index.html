@@ -964,7 +964,7 @@ function suggestionRow(l) {
       <textarea id="t-${esc(l.id)}" rows="3" data-f="text">${esc(l.text)}</textarea>
       ${whenChoices(d.route, (d.keywords.length ? d.keywords : l.suggested || []).join(", "))}${roleNote(l)}
       ${whereFields(l, l.scope === "global" || d.global)}
-      ${ev ? `<div class="evidence">${runs ? "What ran in your session:" : ["repeat", "correction", "explained", "confused", "friction", "stated", "steered"].includes(l.signal) ? "You said:" : l.signal === "promised" ? "The agent said:" : l.signal === "sent_back" || l.signal === "missed" ? "What the agents said:" : "From your session:"} ${ev}</div>` : ""}
+      ${ev ? `<div class="evidence">${runs ? "What ran in your session:" : ["repeat", "correction", "explained", "confused", "friction", "stated", "steered"].includes(l.signal) ? "You said:" : l.signal === "promised" ? "The agent said:" : l.signal === "sent_back" || l.signal === "missed" ? "What the agents said:" : l.signal === "unanswered" ? "What agents asked:" : "From your session:"} ${ev}</div>` : ""}
       <div class="btns"><button class="btn primary" data-add="${esc(l.id)}" data-custom="1">Keep</button><button class="btn" data-open="${esc(l.id)}">Cancel</button></div>
     </div>` : ""}
   </li>`;
