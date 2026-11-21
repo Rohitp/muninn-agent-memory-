@@ -118,6 +118,7 @@ export async function review(db: Client, repo: string | null, lessons?: Lesson[]
     if (!l || l.status !== "proposed") continue;
     const ev = await db.execute({ sql: "SELECT tool,quote FROM evidence WHERE lesson_id=? LIMIT 3", args: [l.id] });
     console.log(`\n[${i}/${shown.length}] ${l.kind === "note" ? "NOTE: " : ""}${l.text}\n  ${l.signal === "explained" ? "you explained this" : l.signal}, ${l.sessions} session(s)`);
+    if (l.why) console.log(`  Why: ${l.why}`);
     for (const e of ev.rows) console.log(`  ${e.tool}: ${e.quote}`);
     await markShown(db, l.id);
     const sim = await similar(db, l);

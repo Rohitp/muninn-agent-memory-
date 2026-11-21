@@ -4,7 +4,7 @@ import { redact } from "../privacy/redact.js";
 import { cosine, type Embed } from "../embed/model.js";
 import type { Session } from "../logs/types.js";
 
-export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned" | "explained" | "loop" | "refetch" | "stopped" | "confused" | "friction" | "wrong_path" | "big_file" | "skimmed" | "stated";
+export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned" | "explained" | "loop" | "refetch" | "stopped" | "confused" | "friction" | "wrong_path" | "big_file" | "skimmed" | "stated" | "promised";
 export type Moment = {
   signal: Signal; text: string; quotes: { tool: string; session: string; ts: string; quote: string }[];
   sessions: number; days: number; wordings: number; tools: string[]; last: string; vector?: Float32Array;
@@ -120,7 +120,7 @@ export async function findMoments(sessions: Session[], embed: Embed, opts: { cut
     if (kept) moments.push(m);
     opts.trace?.({ signal: "correction", texts: c.items.map((i) => `${i.text}   ⟵ after: ${i.before?.slice(0, 100) ?? ""}`), times: c.items.length, sessions: m.sessions, wordings: m.wordings, days: m.days, hours: spanHours(c), kept });
   }
-  moments.push(...commandMoments(sessions), ...explainedMoments(sessions), ...intentMoments(sessions), ...pathMoments(sessions), ...skimMoments(sessions), ...statedMoments(sessions));
+  moments.push(...commandMoments(sessions), ...explainedMoments(sessions), ...intentMoments(sessions), ...pathMoments(sessions), ...skimMoments(sessions), ...statedMoments(sessions), ...promisedMoments(sessions));
   return moments;
 }
 
@@ -466,9 +466,11 @@ const FUTURE = /\b(from now on|going forward|moving forward|from here on|in (the
 const DIRECTIVE = /\b(let'?s|lets|we (want|need|should|'ll|will|must)|i (want|need|prefer|'d like|would like)|please|make sure|you should|you must|don'?t|do not|stop|use|keep|start)\b/i;
 /** Phrases that make a rule by themselves; weaker ones ("always", "for features") also need an instruction word. */
 const RULE = /\b(from now on|going forward|moving forward|from here on( out)?|by default|as a rule)\b/i;
+/** "From now on I delete…" is about the speaker, not a rule for the agent: often the engineer quoting the agent back. */
+const ABOUT_ME = /\b(from now on|going forward|moving forward|from here on( out)?),? i (?!(want|need|prefer|'d like|would like|expect)\b)/i;
 export function isStanding(sentence: string): boolean {
   const t = sentence.trim();
-  return t.length >= 15 && t.length <= 300 && !t.endsWith("?") && (RULE.test(t) || (FUTURE.test(t) && DIRECTIVE.test(t)));
+  return t.length >= 15 && t.length <= 300 && !t.endsWith("?") && !ABOUT_ME.test(t) && (RULE.test(t) || (FUTURE.test(t) && DIRECTIVE.test(t)));
 }
 /** The standing instructions in something typed, as sentences. */
 export const standingIn = (text: string) => sentences(text).flatMap((x) => x.split(/(?<=[A-Za-z0-9)][.!])\s+(?=[a-z])/)).filter(isStanding);
@@ -480,6 +482,42 @@ function statedMoments(sessions: Session[]): Moment[] {
     for (const x of standingIn(e.text)) {
       const quote = redact(x).slice(0, 240);
       out.push({ signal: "stated", text: redact(x), quotes: [{ tool: s.tool, session: s.id, ts: e.ts, quote }], sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: e.ts });
+    }
+  }
+  return out;
+}
+
+/**
+ * The agent's own side of the conversation: a promise about how it will work from now on ("From now on I delete a
+ * branch only after checking the merge happened"), or a mistake it owned up to ("my mistake", "I should have…").
+ * A promise in chat is forgotten next session, so it's only kept if it becomes a lesson. The agent's whole message
+ * goes with it, since that usually says what went wrong: the why.
+ */
+export const PROMISE = /\b((from now on|going forward|from here on|next time|in future|in the future),? (i|i'll|i will|i'd|we'll)\b|i('ll| will) (always|never|make sure|remember|check first|only)\b|my (mistake|error|fault|bad)\b|that was (my|a) (mistake|error)|i should(n'?t| not)? have\b|i (wrongly|mistakenly)\b)|^lesson( learned| for me)?:/i;
+/** Sentences in an agent message, without the size limit `sentences` has for what the engineer types. */
+const agentSentences = (text: string) => text.replace(/```[\s\S]*?```/g, " ").split("\n").filter((l) => !l.trim().startsWith(">"))
+  .flatMap((l) => [...seg.segment(l)].map((x) => x.segment.trim().replace(/^[-*\s]+/, "").replace(/\*\*/g, ""))).filter(Boolean);
+export function promisesIn(text: string): string[] {
+  return agentSentences(text).filter((x) => x.length >= 15 && x.length <= 400 && !x.endsWith("?") && PROMISE.test(x));
+}
+function promisedMoments(sessions: Session[]): Moment[] {
+  const out: Moment[] = [];
+  for (const s of sessions) {
+    let asked = "";
+    const seen = new Set<string>();
+    for (const e of s.events) {
+      if (e.k === "typed") { asked = e.text; continue; }
+      if (e.k !== "agent") continue;
+      for (const x of promisesIn(e.text)) {
+        const key = norm(x); if (seen.has(key)) continue; seen.add(key);
+        const quote = redact(x).slice(0, 240);
+        // What the engineer last asked, and the agent's whole message around the promise: what happened, and why.
+        // The text around the promise, mostly before it: what went wrong is usually said just ahead of the promise.
+        const at = Math.max(0, e.text.indexOf(x.slice(0, 30)));
+        const near = e.text.slice(Math.max(0, at - 1500), at + x.length + 300);
+        const context = redact(`ENGINEER ASKED: ${asked.slice(0, 400)}\nAGENT SAID: ${at > 1500 ? "…" : ""}${near}`);
+        out.push({ signal: "promised", text: redact(x), quotes: [{ tool: s.tool, session: s.id, ts: e.ts, quote }], sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: e.ts, context });
+      }
     }
   }
   return out;
