@@ -622,7 +622,9 @@ async function load() {
   const effects = repo ? await api("/api/role-effects?" + q({ repo })).catch(() => []) : [];
   // What agents asked secondnature this week (questions you typed in a terminal are left out), and how often each lesson was found.
   const asked = await api("/api/queries?" + q({ repo, days: 7 })).catch(() => ({ queries: [], lessonFinds: {} }));
-  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions, rules, schedule, runs: Array.isArray(runs) ? runs : [], runInfo, effects: Array.isArray(effects) ? effects : [], queries: (asked.queries || []).filter((x) => x.tool !== "terminal"), lessonFinds: asked.lessonFinds || {} };
+  // What secondnature's hooks told agents this week, session by session, and what it held back.
+  const told = await api("/api/told?" + q({ repo, days: 7 })).catch(() => null);
+  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions, rules, schedule, runs: Array.isArray(runs) ? runs : [], runInfo, effects: Array.isArray(effects) ? effects : [], queries: (asked.queries || []).filter((x) => x.tool !== "terminal"), lessonFinds: asked.lessonFinds || {}, told };
 }
 
 /* Autonomous runs: sessions working together in a repo, each in a role (subagents, or agents in their own worktrees),
@@ -1101,6 +1103,7 @@ function activityView() {
     <div class="stack s8">
       ${repo ? runsTable() : `<ul class="group"><li class="empty">Pick a repo to see its runs.</li></ul>`}
       ${askedSection()}
+      ${toldSection()}
       <section aria-labelledby="wk"><h2 id="wk">Your last 7 days</h2>
         ${week ? `<div class="panel"><pre style="white-space:pre-wrap;font:12px/1.6 var(--mono);margin:0;padding:14px 16px">${esc(week)}</pre></div>`
           : `<div class="panel panelbody">${weekLoading ? `<span class="spin" aria-hidden="true" style="display:inline-block;vertical-align:-2px"></span> Reading the last 7 days of sessions…` : `<button class="btn" data-week>Show your last 7 days</button><p class="note" style="margin:10px 0 0">Where agents wasted effort, whether lessons helped, and what's waiting. Also <code>muninn insights</code>.</p>`}</div>`}
@@ -1109,6 +1112,34 @@ function activityView() {
     <div class="stack s4">
       ${roles.length ? `<section><h2>Tokens by role</h2><div class="panel panelbody" style="display:grid;gap:10px">${roles.map(([role, t]) => `<div class="meter"><span>${esc(roleName(role))}</span><span class="val">${tok(t)}</span><div class="bar"><span style="width:${Math.max(2, Math.round((t / top) * 100))}%"></span></div></div>`).join("")}<div class="note" style="margin:0">Most is reading: context taken in, not code written.</div></div></section>` : ""}
     </div>`;
+}
+/* What secondnature told agents this week through its hooks: each session, what it got, and when nothing was sent, why. */
+const OUTCOME = { sent: ["told", "good"], no_match: ["checked, nothing fit", ""], limit: ["held back: over the limit", "caution"], paused: ["paused or set to quiet", "caution"], timeout: ["too slow, skipped", "warn"], unsupported_client: ["tool can't take it", "warn"] };
+function toldSection() {
+  const t = data.told;
+  if (!t) return "";
+  const total = Object.values(t.outcomes).reduce((a, b) => a + b, 0);
+  const strip = Object.entries(t.outcomes).sort((a, b) => b[1] - a[1]).map(([o, n]) => { const [word, cls] = OUTCOME[o] || [o, ""]; return `<span><b>${n}</b> <span class="status ${cls}">${esc(word)}</span></span>`; }).join("");
+  const item = (x) => `<div style="margin:2px 0"><span class="tag">${x.kind === "handoff" ? "where you left off" : "lesson"}</span> ${esc(clip(x.text, 110))} <span style="color:var(--muted)">· ${esc(x.why)}</span></div>`;
+  const rows = t.sessions.slice(0, 10).map((s) => {
+    const nothing = Object.entries(s.outcomes).filter(([o]) => o !== "sent").map(([o, n]) => `${n} ${(OUTCOME[o] || [o])[0]}`).join(" · ");
+    const got = s.told.map(item).join("")
+      + (s.fromFile ? `<div style="margin:2px 0;color:var(--muted)">${s.fromFile} lesson${s.fromFile === 1 ? "" : "s"} already in CLAUDE.local.md, which it read itself</div>` : "")
+      + s.loops.map((l) => `<div style="margin:2px 0"><span class="status warn">loop warning</span> <code>${esc(clip(l.cmd, 60))}</code> failed ${l.n} times</div>`).join("")
+      + (s.held.length ? `<div style="margin:2px 0"><span class="status caution">held back</span> ${s.held.map((h) => esc(clip(h.text, 60))).join(" · ")}</div>` : "");
+    return `<tr><td style="white-space:nowrap;color:var(--muted)">${esc(shortDate(s.start))}, ${esc(clock(s.start))}</td><td>${esc(TOOL_NAMES[s.tool] || s.tool)}<div style="font:500 12px/17px var(--mono);color:var(--muted)">${esc(s.session.slice(0, 8))}</div></td><td>${got || '<span style="color:var(--muted)">Nothing told</span>'}${nothing ? `<div class="note" style="margin:4px 0 0">${esc(nothing)}</div>` : ""}</td></tr>`;
+  }).join("");
+  const how = (l) => l.how === "always" ? (l.role ? `goes only to agents in the ${l.role} role, and none got it (see Lessons for why)` : "goes to every session, yet none got it")
+    : l.how === "keyword" ? `waits for ${l.keywords.slice(0, 4).map((k) => `"${k}"`).join(", ")}, which never came up` : "only if an agent looks it up, and none did";
+  const never = t.neverTold.slice(0, 8).map((l) => `<li><div class="row"><div class="main"><div class="title">${esc(clip(l.text, 140))}</div><div class="sub"><span class="status warn">not told in ${t.days} days</span> ${esc(how(l))}</div></div></div></li>`).join("");
+  return `<section><h2>What secondnature told agents · ${t.sessions.length} session${t.sessions.length === 1 ? "" : "s"}</h2>
+    ${t.sessions.length ? `<div class="panel">
+      <div class="panelbody" style="display:flex;gap:6px 18px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--line)"><span style="color:var(--muted)">${total} checks:</span>${strip}</div>
+      <div class="tablewrap"><table class="data"><thead><tr><th>Started</th><th>Who</th><th>What it was told</th></tr></thead><tbody>${rows}</tbody></table></div>
+    </div>` : `<ul class="group"><li class="empty">No agent session here was told anything this week. secondnature tells agents through hooks: kept lessons when a session or agent starts, matching ones when a prompt or failed command fits, and where the last session left off.</li></ul>`}
+    <p class="note">It checks at every session start, prompt and failed command; "nothing fit" is normal. The branch plan and the note about stored sessions aren't logged yet.${t.unplaced ? ` ${t.unplaced} session${t.unplaced === 1 ? "" : "s"} this week couldn't be tied to a repo yet, so they aren't shown.` : ""}</p>
+    ${never ? `<h3 style="margin:18px 0 8px;font-size:14px">Kept, but not told in ${t.days} days · ${t.neverTold.length}</h3><ul class="group">${never}</ul>` : ""}
+  </section>`;
 }
 /* What agents asked secondnature this week: through its MCP tools or muninn ask. Shows whether it's useful to them. */
 const TOOL_NAMES = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity", "claude-desktop": "Claude Desktop", agent: "an agent" };

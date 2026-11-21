@@ -195,6 +195,7 @@ const routes: Record<string, Handler> = {
     const days = Number(q.get("days") || 7);
     return { queries: await listQueries(db, { repo: q.get("repo") || null, days }), lessonFinds: await lessonFinds(db, { days: Number(q.get("findsDays") || 3650) }) };
   },
+  "GET /api/told": async (db, q) => (await import("../commands/told.js")).toldData(db, q.get("repo") || null, Number(q.get("days") || 7)),
   "GET /api/role-effects": async (db, q) => (await import("../workflow/effect.js")).roleEffects(db, q.get("repo") || null),
   "GET /api/runs": async (db, q) => (await import("../workflow/runs.js")).listRuns(db, { repo: q.get("repo") || null, teamOnly: q.get("all") !== "1", limit: Number(q.get("limit") || 30) }),
   "GET /api/rules": async (db, q) => { const repo = q.get("repo"); if (!repo) throw new Error("Pick a repo first."); return (await import("../deliver/auto-rules.js")).rulesState(db, repo); },
