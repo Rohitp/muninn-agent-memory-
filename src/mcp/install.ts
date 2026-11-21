@@ -16,7 +16,10 @@ const hasClaude = () => spawnSync("claude", ["--version"], { stdio: "ignore" }).
 /** Whether Claude Code lists muninn among its MCP servers. Null when Claude Code isn't installed here. */
 export function claudeHasMuninn(): boolean | null {
   if (process.env.MUNINN_DESKTOP_CONFIG || !hasClaude()) return null;
-  return spawnSync("claude", ["mcp", "get", "muninn"], { stdio: "ignore", timeout: 20_000 }).status === 0;
+  if (spawnSync("claude", ["mcp", "get", "muninn"], { stdio: "ignore", timeout: 20_000 }).status === 0) return true;
+  // The muninn-panel plugin carries the server too, under a plugin-prefixed name.
+  const list = spawnSync("claude", ["mcp", "list"], { encoding: "utf8", timeout: 30_000 }).stdout ?? "";
+  return /muninn-panel.*muninn|plugin:muninn/i.test(list);
 }
 
 /** Antigravity's global MCP settings (antigravity.google/docs/mcp), or the one tests point at. */
@@ -62,7 +65,7 @@ export function installMcp(): string[] {
     spawnSync("claude", ["mcp", "remove", "--scope", "user", "muninn"], { stdio: "ignore" });
     execFileSync("claude", ["mcp", "add", "--scope", "user", "muninn", "--", command, ...args], { stdio: "ignore" });
     // Claude Code sessions already running can rewrite its settings from memory and drop what was just added.
-    done.push(claudeHasMuninn() ? "Claude Code (every project)" : "Claude Code, though it doesn't list muninn yet: close running Claude Code sessions and run \"muninn mcp install\" again");
+    done.push(claudeHasMuninn() ? "Claude Code (every project)" : "Claude Code, though it doesn't list muninn yet: running Claude Code sessions may have rewritten its settings. For a setup that stays, install the muninn-panel plugin (claude plugin marketplace add Rohitp/secondnature, then claude plugin install muninn-panel@muninn), which carries the server");
   }
   const file = desktopConfig();
   if (existsSync(dirname(file))) {

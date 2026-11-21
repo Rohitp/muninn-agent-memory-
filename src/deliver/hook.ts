@@ -40,9 +40,14 @@ export function codexFailed(resp: unknown): boolean {
 }
 const responseText = (r: unknown) => (typeof r === "string" ? r : JSON.stringify(r ?? "")).slice(-2000);
 
-/** Whether muninn's MCP server is in Claude Code's user settings (~/.claude.json): a file read, fast enough for a hook. */
-export function hasMcp(file = process.env.MUNINN_CLAUDE_JSON ?? join(homedir(), ".claude.json")): boolean {
-  try { return !!JSON.parse(readFileSync(file, "utf8")).mcpServers?.muninn; } catch { return false; }
+/**
+ * Whether Claude Code has muninn's MCP server: in its user MCP settings (~/.claude.json), or through the muninn-panel
+ * plugin, which carries the server and isn't lost when a running session rewrites ~/.claude.json. File reads only,
+ * fast enough for a hook.
+ */
+export function hasMcp(file = process.env.MUNINN_CLAUDE_JSON ?? join(homedir(), ".claude.json"), settingsFile = process.env.MUNINN_CLAUDE_SETTINGS ?? join(homedir(), ".claude", "settings.json")): boolean {
+  try { if (JSON.parse(readFileSync(file, "utf8")).mcpServers?.muninn) return true; } catch { /* no file */ }
+  try { return Object.entries(JSON.parse(readFileSync(settingsFile, "utf8")).enabledPlugins ?? {}).some(([k, on]) => on === true && k.startsWith("muninn-panel@")); } catch { return false; }
 }
 
 /** Picks lessons for a hook event, applies the limits, logs every outcome, and returns the text to add, if any. */
