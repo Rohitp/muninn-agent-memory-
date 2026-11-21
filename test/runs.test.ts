@@ -151,8 +151,22 @@ describe("Claude Code workflows", () => {
     const runs = buildRuns("r", [lead]);
     const run = runs.find((r) => r.workflows?.length)!;
     expect(run.roles).toEqual(expect.arrayContaining(["main", "coder", "reviewer", "qa"]));
-    expect(run.workflows![0]).toMatchObject({ name: "factory-step", agents: 3, logs: ["Round 1: 2 blocking", "Round 2: 0 blocking"] });
+    expect(run.workflows![0]).toMatchObject({ name: "factory-step", agents: 3, logs: ["Round 1: 2 blocking", "Round 2: 0 blocking"], blocking_left: 0 });
+    expect(run.sessions.find((x) => x.role === "reviewer")).toMatchObject({ workflow_id: "wf_1", phase: "Check", label: "review:step-4:r1" });
+    const { blockingLeft } = await import("../src/workflow/runs.js");
+    expect(blockingLeft(["Round 1: 7 blocking", "Round 3: 4 blocking"])).toBe(4);
+    expect(blockingLeft(["Fix round 1: 2 blocking left", "Fix round 2: 0 blocking left"])).toBe(0);
     expect(run.handoffs.filter((h) => h.kind === "review_rejected")).toEqual([expect.objectContaining({ from_role: "reviewer", to_role: "coder", note: "factory-step: Round 1: 2 blocking" })]);
     delete process.env.MUNINN_LOG_ROOT;
+  });
+});
+
+describe("role names from tasks", () => {
+  it("take a name that is a role, not a description of the work", async () => {
+    const { roleFromTask } = await import("../src/workflow/runs.js");
+    expect(roleFromTask("Write final report: combine the findings")).toBeNull();
+    expect(roleFromTask("Ledgerup deep dive: what they do")).toBeNull();
+    expect(roleFromTask("product:step-4")).toBe("product");
+    expect(roleFromTask("coder-fix:step-4:r2")).toBe("coder-fix");
   });
 });

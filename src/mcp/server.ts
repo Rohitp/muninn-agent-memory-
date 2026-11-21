@@ -178,6 +178,7 @@ export async function runsText(db: Client, repo: string | null, o: { limit: numb
     for (const x of n.roles) out.push(`- ${x.role}: ${x.sessions} session(s), ${Math.round(x.minutes)} min, ${k(x.tokens)} tokens (${Math.round(x.share * 100)}%)${costOfRole(x.role) ? `, ${costOfRole(x.role)}` : ""}, ${x.commands} command(s)${x.failed ? `, ${x.failed} failed` : ""}${x.approvals ? `, ${x.approvals} approval(s)` : ""}${x.sentBack ? `, work sent back to it ${x.sentBack} time(s)` : ""}`);
     out.push(`Between roles: ${n.approvals} approval(s), ${n.sentBack} sent back, ${n.rework} fix(es) after approval${n.stalls.length ? `, ${n.stalls.length} gap(s) of ${n.stalls.map((g) => `${g.minutes} min`).join(", ")} with no agent working` : ""}.`);
     for (const h of r.handoffs.filter((h) => h.kind === "review_rejected" || h.kind === "rework").slice(0, 6)) out.push(`  ${h.at.slice(11, 16)} ${h.kind === "rework" ? `${h.from_role} fixed later` : `${h.from_role} sent back to ${h.to_role}`}: ${h.note ?? h.evidence ?? ""}`);
+    for (const w of r.workflows ?? []) out.push(`Workflow ${w.name} (${w.status}): ${w.agents} agents, phases ${w.phases.join(" → ")}${w.logs.length ? `; ${w.logs.slice(-3).join("; ")}` : ""}${w.blocking_left ? `. Finished with ${w.blocking_left} blocking issue(s) still open.` : ""}`);
     const f = found[r.id];
     if (f?.items.length) { out.push("Findings:"); for (const i of f.items) out.push(`  - ${i.role ? `[${i.role}] ` : ""}${i.text}`); }
     out.push("");
