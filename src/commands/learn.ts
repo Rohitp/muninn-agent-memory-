@@ -112,6 +112,19 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
     const { applyPending, writePlanFile } = await import("../plan/plan.js");
     const folded = await applyPending(db, runner);
     await saveUsage(db, runner, "plan");
+    // Group newly finished steps into outcomes, and give decisions their area and reason, for the page's history.
+    try {
+      const { branchesToGroup, groupHistory } = await import("../plan/history.js");
+      let branches = 0;
+      for (const repo of repos) for (const b of await branchesToGroup(db, repo)) { if (branches++ >= 6) break; await groupHistory(db, repo, b, runner).catch(() => 0); }
+      await saveUsage(db, runner, "plan history");
+    } catch { /* the history is a convenience */ }
+    // Questions worth asking muninn, written from each repo's recent work, for the page's Ask box.
+    try {
+      const { refreshSuggestions } = await import("./suggestions.js");
+      for (const repo of [...repos, null]) await refreshSuggestions(db, repo, runner).catch(() => []);
+      await saveUsage(db, runner, "question suggestions");
+    } catch { /* suggestions are a convenience */ }
     if (folded) for (const repo of repos) await writePlanFile(db, repo).catch(() => null);
     if (made && !opts.auto) console.log(`Wrote ${made} handoff(s) for recent sessions. See them with "muninn handoff --list".`);
   }

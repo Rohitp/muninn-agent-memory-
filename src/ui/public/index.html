@@ -87,6 +87,36 @@ input[type=text] { width: 100%; height: 40px; border: 1px solid var(--line-stron
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--group); padding: 9px 16px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
 .toast.show { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .switch, .switch::after, .toast { transition: none; } }
+/* Plan history: outcomes and decisions */
+.hist { border-top: 1px solid var(--line); }
+.htabs { display: flex; gap: 4px; padding: 6px 10px 0; border-bottom: 1px solid var(--line); }
+.htab { all: unset; cursor: pointer; min-height: 44px; padding: 0 12px; font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; border-bottom: 2px solid transparent; color: var(--muted); }
+.htab[aria-selected="true"] { border-color: var(--ink); color: var(--ink); }
+.htab span { font-weight: 500; color: var(--muted); }
+.hbar { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 4px; }
+.hrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.hsearch { flex: 1 1 240px; min-width: 0; height: 40px; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: 10px; padding: 0 12px; font-size: 15px; background: var(--bg); color: var(--ink); }
+.hchip { all: unset; cursor: pointer; min-height: 34px; padding: 0 13px; border-radius: 999px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+.hchip[aria-pressed="true"] { background: var(--ink); color: var(--group); border-color: var(--ink); }
+.hchip span { opacity: .7; }
+.hlist { padding: 0 16px 14px; }
+.hday { margin: 16px 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.hitem { border-top: 1px solid var(--line); }
+.hhead { all: unset; cursor: pointer; display: grid; grid-template-columns: 18px minmax(0,1fr) auto; gap: 10px; align-items: start; padding: 12px 0; width: 100%; box-sizing: border-box; }
+.hhead svg { margin-top: 3px; transition: transform .15s; }
+.hhead[aria-expanded="true"] svg { transform: rotate(90deg); }
+.htitle { font-size: 15px; font-weight: 600; line-height: 1.35; }
+.hres { font-size: 14px; line-height: 1.45; color: var(--muted); margin-top: 3px; }
+.hmeta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.hkind { padding: 2px 8px; border-radius: 6px; font-weight: 600; background: var(--chip); color: var(--link); }
+.hkind.fixed, .hkind.new { background: var(--warn-bg); color: var(--warn); }
+.hkind.checked, .hkind.explored { background: var(--bg); color: var(--muted); }
+.href { font: 12px ui-monospace, Menlo, monospace; color: var(--link); white-space: nowrap; padding-top: 3px; }
+.hsteps { margin: 0 0 14px 28px; padding-left: 16px; display: flex; flex-direction: column; gap: 5px; font-size: 14px; line-height: 1.45; }
+.hsteps .routine { color: var(--muted); }
+.hdec { border-top: 1px solid var(--line); display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 12px; padding: 12px 0; align-items: start; }
+.hdec .why { font-size: 14px; line-height: 1.45; color: var(--muted); margin-top: 3px; }
+.hdate { font-size: 12px; color: var(--muted); white-space: nowrap; padding-top: 3px; }
 </style>
 </head>
 <body>
@@ -116,21 +146,77 @@ let planBranch = null; // the branch whose plan is shown; null means the one che
 const planShow = { decisions: false, done: false };
 
 /* The running plan: built from your sessions' handoffs, and yours to edit. */
-let doneFilter = ""; // text typed in the Done filter
-let doneLimit = 15; // how many done items show before "Show more"
 /** What's done, newest first, grouped by day and narrowed by the filter, so a long history stays easy to scan. */
-function doneList(items) {
-  const words = doneFilter.toLowerCase().split(/\s+/).filter(Boolean);
-  const hits = items.filter((d) => words.every((w) => d.text.toLowerCase().includes(w)));
-  if (!hits.length) return `<p class="note" style="margin:0 0 8px">Nothing done matches "${esc(doneFilter)}".</p>`;
-  const dayOf = (d) => (d.closed_at || d.created_at).slice(0, 10);
-  const today = new Date().toISOString().slice(0, 10), yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
-  const label = (day) => (day === today ? "Today" : day === yesterday ? "Yesterday" : new Date(day + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }));
-  const shown = words.length ? hits : hits.slice(0, doneLimit);
-  const groups = [];
-  for (const d of shown) { const day = dayOf(d); if (groups.at(-1)?.day !== day) groups.push({ day, items: [] }); groups.at(-1).items.push(d); }
-  return groups.map((g) => `<div class="doneday">${label(g.day)} · ${g.items.length}</div><ul class="sublist">${g.items.map((d) => `<li><span>${esc(d.text)}</span>${d.kind === "open" ? ` <button class="linkbtn" data-plan-reopen="${esc(d.id)}">reopen</button>` : ""}</li>`).join("")}</ul>`).join("")
-    + (shown.length < hits.length ? `<button class="more" data-done-more>Show ${Math.min(15, hits.length - shown.length)} more of ${hits.length - shown.length}</button>` : "");
+/* Plan history: finished work grouped into outcomes, and decisions with their reasons. */
+const hist = { tab: "done", area: "All", q: "", routine: false, open: {}, limit: 8 };
+const dayLabel = (iso) => {
+  const day = iso.slice(0, 10), today = new Date().toISOString().slice(0, 10), yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  return day === today ? `Today · ${shortDate(iso)}` : day === yesterday ? `Yesterday · ${shortDate(iso)}` : new Date(day + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+};
+const KIND_LABEL = { shipped: "Shipped", fixed: "Fixed", checked: "Checked", explored: "Explored", new: "Not grouped yet" };
+const CHEVRON = '<svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function histItems() {
+  const h = data.plan.history || { outcomes: [], ungrouped: [], decisions: [], areas: [] };
+  const words = hist.q.toLowerCase().split(/\s+/).filter(Boolean);
+  const has = (t) => words.every((w) => t.toLowerCase().includes(w));
+  const outcomes = [
+    ...(h.ungrouped.length ? [{ id: "new", title: "New steps", result: "Finished since muninn last grouped this branch's history. They're grouped into outcomes on the next check.", kind: "new", area: null, ref: null, at: h.ungrouped.map((s) => s.at).sort().at(-1), steps: h.ungrouped }] : []),
+    ...h.outcomes,
+  ];
+  return {
+    h,
+    outcomes: outcomes.filter((o) => (hist.area === "All" || o.area === hist.area) && (!words.length || has([o.title, o.result, o.ref || "", ...o.steps.map((s) => s.text)].join(" ")))),
+    decisions: h.decisions.filter((d) => (hist.area === "All" || d.area === hist.area) && (!words.length || has(d.what + " " + (d.why || "")))),
+  };
+}
+function histList() {
+  const { outcomes, decisions } = histItems();
+  if (hist.tab === "decisions") {
+    if (!decisions.length) return `<p class="note">No decisions match.</p>`;
+    const areas = [...new Set(decisions.map((d) => d.area || "Other"))];
+    return areas.map((a) => `<div class="hday">${esc(a)}</div>${decisions.filter((d) => (d.area || "Other") === a).map((d) => `<div class="hdec"><div><div class="htitle">${esc(d.what)}</div>${d.why ? `<div class="why">Because ${esc(d.why)}</div>` : ""}</div><span class="hdate">${esc(shortDate(d.at))}</span><button class="x" data-plan-remove="${esc(d.id)}" aria-label="Remove this decision" title="Remove">×</button></div>`).join("")}`).join("");
+  }
+  if (!outcomes.length) return `<p class="note">${hist.q || hist.area !== "All" ? "Nothing done matches. Clear the search or pick All." : "Nothing done on this branch yet."}</p>`;
+  const searching = !!hist.q;
+  const shown = searching ? outcomes : outcomes.slice(0, hist.limit);
+  const days = [];
+  for (const o of shown) { const d = dayLabel(o.at); if (days.at(-1)?.d !== d) days.push({ d, items: [] }); days.at(-1).items.push(o); }
+  return days.map((g) => `<div class="hday">${esc(g.d)}</div>${g.items.map((o, i) => {
+    const isOpen = searching || (hist.open[o.id] ?? (o.id === "new"));
+    const steps = o.steps.filter((s) => hist.routine || !s.routine);
+    const hidden = o.steps.length - steps.length;
+    return `<div class="hitem"><button class="hhead" aria-expanded="${isOpen}" data-hist-open="${esc(o.id)}">${CHEVRON}
+      <span><span class="htitle">${esc(o.title)}</span><div class="hres">${esc(o.result)}</div>
+        <span class="hmeta"><span class="hkind ${o.kind}">${KIND_LABEL[o.kind] || o.kind}</span>${o.area ? `<span>${esc(o.area)}</span><span aria-hidden="true">·</span>` : ""}<span>${o.steps.length} step${o.steps.length === 1 ? "" : "s"}${hidden ? `, ${hidden} routine hidden` : ""}</span></span></span>
+      <span class="href">${esc(o.ref || "")}</span></button>
+      ${isOpen ? `<ol class="hsteps">${steps.map((s) => `<li class="${s.routine ? "routine" : ""}">${esc(s.text)}${s.reopenable ? ` <button class="linkbtn" data-plan-reopen="${esc(s.id)}">reopen</button>` : ""}</li>`).join("")}</ol>` : ""}</div>`;
+  }).join("")}`).join("") + (shown.length < outcomes.length ? `<button class="more" data-hist-more>Show ${Math.min(8, outcomes.length - shown.length)} earlier outcomes of ${outcomes.length - shown.length}</button>` : "");
+}
+function historyBlock() {
+  const h = data.plan.history;
+  if (!h || (!h.outcomes.length && !h.ungrouped.length && !h.decisions.length)) return "";
+  const { outcomes } = histItems();
+  const source = hist.tab === "done" ? [...h.outcomes, ...(h.ungrouped.length ? [{ area: null }] : [])] : h.decisions;
+  const areas = [...new Set(source.map((x) => x.area).filter(Boolean))];
+  const count = (a) => (a === "All" ? source.length : source.filter((x) => x.area === a).length);
+  const shipped = h.outcomes.filter((o) => o.kind === "shipped").length, fixed = h.outcomes.filter((o) => o.kind === "fixed").length;
+  const steps = h.outcomes.reduce((n, o) => n + o.steps.length, 0) + h.ungrouped.length;
+  return `<div class="hist">
+    <div class="htabs" role="tablist" aria-label="History">
+      <button class="htab" role="tab" aria-selected="${hist.tab === "done"}" data-hist-tab="done">Done <span>${h.outcomes.length} outcome${h.outcomes.length === 1 ? "" : "s"}</span></button>
+      <button class="htab" role="tab" aria-selected="${hist.tab === "decisions"}" data-hist-tab="decisions">Decisions <span>${h.decisions.length}</span></button>
+      <span class="sub" style="margin-left:auto;align-self:center;font-size:13px">${shipped} shipped · ${fixed} fixed · ${steps} steps</span>
+    </div>
+    <div class="hbar">
+      <div class="hrow">
+        <label class="vh" for="histQ">Search this branch's history</label>
+        <input id="histQ" class="hsearch" type="search" value="${esc(hist.q)}" placeholder="Search: a file, a command, a word" autocomplete="off">
+        ${hist.tab === "done" ? `<label style="display:flex;align-items:center;gap:8px;font-size:14px;min-height:44px;cursor:pointer"><input id="histRoutine" type="checkbox" ${hist.routine ? "checked" : ""} style="width:18px;height:18px;margin:0"> Show routine steps</label>` : ""}
+      </div>
+      ${areas.length > 1 ? `<div class="hrow" role="group" aria-label="Filter by area">${["All", ...areas].map((a) => `<button class="hchip" aria-pressed="${hist.area === a}" data-hist-area="${esc(a)}">${esc(a)} <span>${count(a)}</span></button>`).join("")}</div>` : ""}
+    </div>
+    <div class="hlist" id="histList">${histList()}</div>
+  </div>`;
 }
 const shortDate = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 function planEditor(kind, id, value, placeholder) {
@@ -186,7 +272,7 @@ function changesSection() {
   </section>`;
 }
 /* Ask muninn: a question answered from lessons, plan decisions, finished work and past sessions, with its sources. */
-let askThread = [], asking = false;
+let askThread = [], askThreadId = null, asking = false;
 const SRC_KIND = { lesson: "Lesson", note: "Note", decision: "Decision", done: "Done", goal: "Goal", session: "Session", handoff: "Last session" };
 function askSection() {
   const cite = (t) => esc(t).replace(/\[(\d+)\]/g, '<sup style="color:var(--link);font-weight:600">[$1]</sup>');
@@ -205,9 +291,19 @@ function askSection() {
         ${askThread.length ? `<button class="linkbtn" type="button" data-ask-clear>New question</button>` : ""}
       </form></li>
     </ul>
+    ${!askThread.length && data.askSuggestions?.length ? `<div class="hrow" role="group" aria-label="Questions to try" style="margin:10px 0 0">${data.askSuggestions.map((s) => `<button class="hchip" data-ask-try="${esc(s)}">${esc(s)}</button>`).join("")}</div>` : ""}
+    ${data.threads?.filter((t) => t.id !== askThreadId).length ? `<div class="hday" style="margin-top:16px">Earlier questions</div><ul class="group">${data.threads.filter((t) => t.id !== askThreadId).slice(0, 6).map((t) => `<li><div class="row"><button class="main" data-thread-open="${esc(t.id)}"><div class="title" style="font-weight:500">${esc(t.title)}</div><div class="sub">${t.turns} question${t.turns === 1 ? "" : "s"} · ${esc(shortDate(t.updated_at))}${!repo && t.repo ? ` · ${esc(short(t.repo))}` : ""}</div></button><button class="x" data-thread-delete="${esc(t.id)}" aria-label="Delete this thread" title="Delete">×</button></div></li>`).join("")}</ul>` : ""}
     <p class="note">Answers come from what muninn keeps: lessons, plan decisions, finished work and your past sessions${repo ? ` in ${esc(short(repo))}` : ""}. One call to your Claude. Also in any chat with Claude once the muninn MCP server is added: <code>muninn mcp install</code>.</p>
   </section>`;
 }
+/* Asks a question in the open thread (or a new one); muninn keeps it so you can come back to it. */
+async function askNow(q) {
+  const turn = { q, a: null, sources: null }; askThread.push(turn); asking = true; draw();
+  try { const r = await api("/api/answer", { q, repo, thread: askThreadId }); turn.a = r.answer; turn.sources = r.sources; askThreadId = r.thread; data.threads = await api("/api/threads?" + q_({ repo })); }
+  catch (err) { turn.error = err.message || String(err); }
+  asking = false; draw(); $("#askq")?.focus();
+}
+const q_ = (o) => q(o);
 /* Your week with coding agents, read from all your logs, so only on request. */
 let week = null, weekLoading = false;
 function weekSection() {
@@ -238,10 +334,7 @@ function planSection() {
       ${p.open.length ? `<li><div class="sub" style="padding:10px 14px 0">Next</div></li>` : ""}
       ${p.open.map(openRow).join("")}
       ${planEdit === "new" ? `<li>${planEditor("open", "", "", "A next step or open question")}</li>` : `<li><button class="more" data-plan-new>+ Add a next step</button></li>`}
-      ${p.decisions.length ? `<li><button class="more" data-plan-toggle="decisions" style="color:var(--ink)">Decisions · ${p.decisions.length} <span class="sub">${planShow.decisions ? "hide" : "show"}</span></button>
-        ${planShow.decisions ? `<ul class="sublist">${p.decisions.map((d) => `<li><span class="sub">${shortDate(d.created_at)}</span> ${esc(d.text)} <button class="x" data-plan-remove="${esc(d.id)}" aria-label="Remove">×</button></li>`).join("")}</ul>` : ""}</li>` : ""}
-      ${p.done.length ? `<li><button class="more" data-plan-toggle="done" style="color:var(--ink)">Done · ${p.done.length} <span class="sub">${planShow.done ? "hide" : "show"}</span></button>
-        ${planShow.done ? `<div class="donebox">${p.done.length > 8 ? `<label class="vh" for="doneFilter">Filter what's done</label><input id="doneFilter" type="search" placeholder="Filter what's done" value="${esc(doneFilter)}" autocomplete="off">` : ""}<div id="doneList">${doneList(p.done)}</div></div>` : ""}</li>` : ""}
+      ${(data.plan.history?.outcomes.length || data.plan.history?.ungrouped.length || data.plan.history?.decisions.length) ? `<li style="padding:0">${historyBlock()}</li>` : ""}
     </ul>
     <p class="note">${data.plan.branches.find((b) => b.name === data.plan.branch)?.merged ? "This branch is merged, so its work is finished. " : ""}${empty ? "Each branch is its own piece of work. muninn builds its plan from the sessions on it: a short summary of where things stand, the next few steps, and the decisions that still hold. You can also write your own." : "Rewritten as your sessions go, and checked against the branch's commits and pull requests. Agents working on this branch get it when a session starts. Anything you write yourself stays as you wrote it."}</p>
   </section>`;
@@ -260,8 +353,8 @@ async function load() {
   const [repos, suggested, kept, home, scan] = await Promise.all([
     api("/api/repos"), api("/api/lessons?" + q({ repo, status: "proposed" })), api("/api/lessons?" + q({ repo, status: "live" })), api("/api/home?" + q({ repo })), api("/api/scan"),
   ]);
-  const [plan, memory, lessonFile, proposals] = await Promise.all([repo ? api("/api/plan?" + q({ repo, branch: planBranch })) : null, api("/api/memory?" + q({ repo })), repo ? api("/api/lesson-file?" + q({ repo })) : null, api("/api/proposals?" + q({ repo }))]);
-  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals };
+  const [plan, memory, lessonFile, proposals, threads, askSuggestions] = await Promise.all([repo ? api("/api/plan?" + q({ repo, branch: planBranch })) : null, api("/api/memory?" + q({ repo })), repo ? api("/api/lesson-file?" + q({ repo })) : null, api("/api/proposals?" + q({ repo })), api("/api/threads?" + q({ repo })), api("/api/ask-suggestions?" + q({ repo })).catch(() => [])]);
+  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions };
 }
 
 /* muninn checks your sessions on its own after they end. This line shows when it last did, and lets you ask now. */
@@ -358,7 +451,9 @@ function lessonRow(l) {
 function draw() {
   // The page redraws when muninn's data changes; keep a half-typed question and its focus.
   const typing = $("#askq"), keepQ = typing?.value ?? "", keepFocus = document.activeElement === typing;
+  const inHist = document.activeElement?.id === "histQ";
   drawPage();
+  if (inHist) { const h = $("#histQ"); if (h) { h.focus(); h.setSelectionRange(h.value.length, h.value.length); } }
   const again = $("#askq");
   if (again && keepQ && !asking) again.value = keepQ;
   if (again && keepFocus) again.focus();
@@ -431,18 +526,14 @@ async function savePlanInput() {
   toast("Saved to the plan.");
 }
 document.addEventListener("input", (e) => {
-  if (e.target.id !== "doneFilter") return;
-  doneFilter = e.target.value; $("#doneList").innerHTML = doneList(data.plan.plan.done);
+  if (e.target.id !== "histQ") return;
+  hist.q = e.target.value; $("#histList").innerHTML = histList();
 });
 document.addEventListener("submit", async (e) => {
   const form = e.target.closest("[data-ask-form]"); if (!form) return;
   e.preventDefault();
   const q = form.q.value.trim(); if (!q || asking) return;
-  const history = askThread.filter((t) => t.a).map((t) => ({ q: t.q, a: t.a }));
-  const turn = { q, a: null, sources: null }; askThread.push(turn); asking = true; draw();
-  try { const r = await api("/api/answer", { q, repo, history }); turn.a = r.answer; turn.sources = r.sources; }
-  catch (err) { turn.error = err.message || String(err); }
-  asking = false; draw(); $("#askq")?.focus();
+  await askNow(q);
 });
 document.addEventListener("keydown", (e) => {
   if (!e.target.matches?.("[data-plan-input]")) return;
@@ -464,7 +555,10 @@ document.addEventListener("click", async (e) => {
     if (el.dataset.planClose) { el.setAttribute("aria-checked", "true"); await planDo({ action: "close", id: el.dataset.planClose }); toast("Marked done."); return; }
     if (el.dataset.planReopen) { await planDo({ action: "reopen", id: el.dataset.planReopen }); toast("Reopened."); return; }
     if (el.dataset.planRemove) { await planDo({ action: "remove", id: el.dataset.planRemove }); toast("Removed from the plan."); return; }
-    if (el.dataset.doneMore !== undefined) { doneLimit += 15; $("#doneList").innerHTML = doneList(data.plan.plan.done); return; }
+    if (el.dataset.histTab) { hist.tab = el.dataset.histTab; hist.area = "All"; draw(); return; }
+    if (el.dataset.histArea) { hist.area = el.dataset.histArea; draw(); return; }
+    if (el.dataset.histOpen) { const id = el.dataset.histOpen; hist.open[id] = !(hist.open[id] ?? (id === "new")); $("#histList").innerHTML = histList(); return; }
+    if (el.dataset.histMore !== undefined) { hist.limit += 8; $("#histList").innerHTML = histList(); return; }
     if (el.dataset.memRemove || el.dataset.memRestore || el.dataset.memKeep) {
       const action = el.dataset.memRemove ? "remove" : el.dataset.memRestore ? "restore" : "keep";
       await api("/api/memory", { action, id: el.dataset.memRemove || el.dataset.memRestore || el.dataset.memKeep });
@@ -487,7 +581,14 @@ document.addEventListener("click", async (e) => {
       } catch (e) { toast(e.message || String(e)); }
       return;
     }
-    if (el.dataset.askClear !== undefined) { askThread = []; draw(); $("#askq")?.focus(); return; }
+    if (el.dataset.askClear !== undefined) { askThread = []; askThreadId = null; draw(); $("#askq")?.focus(); return; }
+    if (el.dataset.askTry) { if (!asking) await askNow(el.dataset.askTry); return; }
+    if (el.dataset.threadOpen) {
+      const t = await api("/api/thread?" + q({ id: el.dataset.threadOpen }));
+      askThreadId = t.id; askThread = t.turns.map((u) => ({ q: u.q, a: u.a, sources: u.sources })); draw();
+      $("#ak")?.scrollIntoView({ block: "start" }); $("#askq")?.focus(); return;
+    }
+    if (el.dataset.threadDelete) { await api("/api/thread-delete", { id: el.dataset.threadDelete }); data.threads = data.threads.filter((t) => t.id !== el.dataset.threadDelete); draw(); toast("Deleted that thread."); return; }
     if (el.dataset.week !== undefined) {
       weekLoading = true; draw();
       try { week = (await api("/api/insights?" + q({ repo }))).text; } catch (e) { toast(e.message || String(e)); }
@@ -565,8 +666,9 @@ document.addEventListener("click", async (e) => {
   } catch (err) { toast(err.message); el.disabled = false; }
 });
 document.addEventListener("change", (e) => {
-  if (e.target.id === "repo") { repo = e.target.value; week = null; askThread = []; open = null; showAll = false; planBranch = null; refresh(); }
-  if (e.target.id === "planBranch") { planBranch = e.target.value; planEdit = null; planShow.decisions = planShow.done = false; doneFilter = ""; doneLimit = 15; refresh(); }
+  if (e.target.id === "histRoutine") { hist.routine = e.target.checked; $("#histList").innerHTML = histList(); return; }
+  if (e.target.id === "repo") { repo = e.target.value; week = null; askThread = []; askThreadId = null; open = null; showAll = false; planBranch = null; refresh(); }
+  if (e.target.id === "planBranch") { planBranch = e.target.value; planEdit = null; Object.assign(hist, { area: "All", q: "", open: {}, limit: 8 }); refresh(); }
 });
 refresh().catch((e) => { $("#main").innerHTML = `<p class="lead">${esc(e.message)}</p>`; });
 

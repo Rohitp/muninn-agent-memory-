@@ -70,3 +70,36 @@ export async function answerData(db: Client, q: string, repo: string | null, run
   const reply = runner.runAsync ? await runner.runAsync(prompt) : runner.run(prompt);
   return { answer: reply.trim(), sources };
 }
+
+/** A question thread: what you asked, the answers and their sources, oldest first. */
+export type Thread = { id: string; repo: string | null; title: string; updated_at: string; turns: { q: string; a: string | null; sources: Source[]; at: string }[] };
+
+/**
+ * Answers a question as a turn in a thread, starting one if needed, and keeps it. The thread's earlier turns are
+ * the follow-up context, read from muninn's store rather than trusted from the page.
+ */
+export async function askInThread(db: Client, q: string, repo: string | null, runner: Runner, embed: Embed, threadId?: string | null): Promise<{ thread: string; answer: Answer }> {
+  const { randomUUID } = await import("node:crypto");
+  const now = new Date().toISOString();
+  let id = threadId && (await db.execute({ sql: "SELECT 1 FROM ask_threads WHERE id=?", args: [threadId] })).rows.length ? threadId : null;
+  if (!id) { id = randomUUID(); await db.execute({ sql: "INSERT INTO ask_threads (id,repo_id,title,created_at,updated_at) VALUES (?,?,?,?,?)", args: [id, repo, q.slice(0, 140), now, now] }); }
+  const history = (await db.execute({ sql: "SELECT q, a FROM ask_turns WHERE thread_id=? AND a IS NOT NULL ORDER BY at", args: [id] })).rows.map((r) => ({ q: String(r.q), a: String(r.a) }));
+  const answer = await answerData(db, q, repo, runner, embed, history);
+  await db.execute({ sql: "INSERT INTO ask_turns (id,thread_id,q,a,sources,at) VALUES (?,?,?,?,?,?)", args: [randomUUID(), id, q, answer.answer, JSON.stringify(answer.sources), new Date().toISOString()] });
+  await db.execute({ sql: "UPDATE ask_threads SET updated_at=? WHERE id=?", args: [new Date().toISOString(), id] });
+  return { thread: id, answer };
+}
+export async function listThreads(db: Client, repo: string | null, limit = 10): Promise<{ id: string; title: string; turns: number; updated_at: string; repo: string | null }[]> {
+  const rows = (await db.execute({ sql: `SELECT t.id, t.title, t.updated_at, t.repo_id, (SELECT count(*) FROM ask_turns u WHERE u.thread_id=t.id) n FROM ask_threads t ${repo ? "WHERE t.repo_id=? OR t.repo_id IS NULL" : ""} ORDER BY t.updated_at DESC LIMIT ?`, args: repo ? [repo, limit] : [limit] })).rows;
+  return rows.map((r) => ({ id: String(r.id), title: String(r.title), turns: Number(r.n), updated_at: String(r.updated_at), repo: r.repo_id ? String(r.repo_id) : null }));
+}
+export async function getThread(db: Client, id: string): Promise<Thread | null> {
+  const t = (await db.execute({ sql: "SELECT * FROM ask_threads WHERE id=?", args: [id] })).rows[0];
+  if (!t) return null;
+  const turns = (await db.execute({ sql: "SELECT q, a, sources, at FROM ask_turns WHERE thread_id=? ORDER BY at", args: [id] })).rows.map((r) => ({ q: String(r.q), a: r.a == null ? null : String(r.a), sources: JSON.parse(String(r.sources)) as Source[], at: String(r.at) }));
+  return { id, repo: t.repo_id ? String(t.repo_id) : null, title: String(t.title), updated_at: String(t.updated_at), turns };
+}
+export async function deleteThread(db: Client, id: string) {
+  await db.execute({ sql: "DELETE FROM ask_turns WHERE thread_id=?", args: [id] });
+  await db.execute({ sql: "DELETE FROM ask_threads WHERE id=?", args: [id] });
+}

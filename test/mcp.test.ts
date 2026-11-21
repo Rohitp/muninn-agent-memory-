@@ -108,3 +108,67 @@ describe("which repo a question is about", () => {
     expect(await repoForQuestion(db, "what did we decide about npm?", repo)).toBe(repo);
   });
 });
+
+describe("a branch's history as outcomes", () => {
+  it("groups finished steps into outcomes with routine steps marked, and gives decisions a reason", async () => {
+    const { groupHistory, getHistory, branchesToGroup, historyPrompt } = await import("../src/plan/history.js");
+    const db = await openDb();
+    const a = (await addItem(db, repo, "main", "done", "Stored sessions as searchable exchanges"))!;
+    const b = (await addItem(db, repo, "main", "done", "Full suite passes, 165 tests"))!;
+    const c = (await addItem(db, repo, "main", "done", "Read the npm staged publishing docs"))!;
+    const d = (await addItem(db, repo, "main", "decision", "Publish as secondnature, since muninn was taken"))!;
+    expect(await branchesToGroup(db, repo)).toEqual(["main"]);
+    let prompt = "";
+    const reply = JSON.stringify({
+      outcomes: [
+        { title: "Every session is searchable", result: "Sessions are kept and can be searched.", kind: "shipped", area: "Searching past sessions", ref: "ffbf07e", steps: [a.slice(0, 8), b.slice(0, 8)], routine: [b.slice(0, 8)] },
+        { title: "How npm staging works", result: "Learned that a maintainer approves first releases.", kind: "explored", area: "Publishing on npm", steps: [c.slice(0, 8), "nonsense"] },
+      ],
+      decisions: [{ id: d.slice(0, 8), what: "Publish as secondnature", why: "muninn was taken on npm", area: "Publishing on npm" }],
+    });
+    expect(await groupHistory(db, repo, "main", { name: "fake", run: (p) => { prompt = p; return reply; } })).toBe(3);
+    expect(prompt).toContain("Never jargon");
+    const h = await getHistory(db, repo, "main");
+    expect(h.ungrouped).toHaveLength(0);
+    expect(h.outcomes.map((o) => [o.title, o.steps.length, o.ref])).toEqual(expect.arrayContaining([["Every session is searchable", 2, "ffbf07e"], ["How npm staging works", 1, null]]));
+    expect(h.outcomes.find((o) => o.ref === "ffbf07e")!.steps.find((s) => s.routine)!.text).toBe("Full suite passes, 165 tests");
+    expect(h.decisions[0]).toMatchObject({ what: "Publish as secondnature", why: "muninn was taken on npm", area: "Publishing on npm" });
+    expect(h.areas).toEqual(expect.arrayContaining(["Searching past sessions", "Publishing on npm"]));
+    expect(await branchesToGroup(db, repo)).toEqual([]);
+    expect(historyPrompt({ steps: [], recent: [], decisions: [], areas: ["X"] })).toContain('AREAS: ["X"]');
+  });
+});
+
+describe("question threads", () => {
+  it("keeps each question and answer, and gives a follow-up the thread so far", async () => {
+    const { askInThread, listThreads, getThread, deleteThread } = await import("../src/commands/answer.js");
+    const db = await seed();
+    const prompts: string[] = [];
+    const runner = { name: "fake", run: (p: string) => { prompts.push(p); return `answer ${prompts.length} [1]`; } };
+    const first = await askInThread(db, "what did we publish?", repo, runner, fakeEmbed);
+    const second = await askInThread(db, "and why that name?", repo, runner, fakeEmbed, first.thread);
+    expect(second.thread).toBe(first.thread);
+    expect(prompts[1]).toContain("what did we publish?");
+    expect(await listThreads(db, repo)).toEqual([expect.objectContaining({ title: "what did we publish?", turns: 2 })]);
+    const t = (await getThread(db, first.thread))!;
+    expect(t.turns.map((u) => [u.q, u.a])).toEqual([["what did we publish?", "answer 1 [1]"], ["and why that name?", "answer 2 [1]"]]);
+    expect(t.turns[0]!.sources.length).toBeGreaterThan(0);
+    await deleteThread(db, first.thread);
+    expect(await listThreads(db, repo)).toEqual([]);
+  });
+});
+
+describe("questions to try", () => {
+  it("builds them from real items until your Claude writes better ones, then shows those", async () => {
+    const { getSuggestions, refreshSuggestions } = await import("../src/commands/suggestions.js");
+    const db = await openDb();
+    await addItem(db, repo, "main", "decision", "Publish as secondnature", { person: true });
+    await addItem(db, repo, "main", "open", "Release 0.1.1", { person: true });
+    expect(await getSuggestions(db, repo)).toEqual(["Why did we decide to publish as secondnature?", "What's left before we can release 0.1.1?", "What did I work on in shop this week?"]);
+    let prompt = "";
+    await refreshSuggestions(db, repo, { name: "fake", run: (p) => { prompt = p; return '["Why secondnature?", "What blocks the 0.1.1 release?", "How did the npm publish go?", "What changed this week?"]'; } });
+    expect(prompt).toContain("Publish as secondnature");
+    expect(await getSuggestions(db, repo)).toHaveLength(4);
+    expect((await getSuggestions(db, repo))[1]).toBe("What blocks the 0.1.1 release?");
+  });
+});

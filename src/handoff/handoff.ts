@@ -60,6 +60,9 @@ export async function makeHandoff(db: Client, s: Session, runner: Runner, branch
   if (s.events.filter((e) => e.k === "typed").length < 2) return null;
   const repo = s.cwd ? repoIdentity(s.cwd) : null;
   if (!repo) return null;
+  // A repo you told muninn to leave alone gets no handoff and no plan.
+  const { ignoredRepos } = await import("../store/ignore.js");
+  if ((await ignoredRepos(db)).has(repo)) return null;
   const branch = s.branch ?? branchHint ?? currentBranch(s.cwd) ?? "unknown";
   const exists = (await db.execute({ sql: "SELECT 1 FROM handoffs WHERE session=?", args: [s.id] })).rows.length;
   const text = parseHandoff(runner.run(buildHandoffPrompt(s, branch)));

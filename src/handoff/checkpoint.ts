@@ -76,7 +76,9 @@ export async function lastCheckpointSize(db: Client, session: string): Promise<n
 /** Processes the part of a session not yet covered. Returns how many notes were folded into the plan. */
 export async function checkpoint(db: Client, s: Session, runner: Runner, opts: { file?: string } = {}): Promise<number> {
   const repo = s.cwd ? repoIdentity(s.cwd) : null;
-  if (!repo || !takeSessionLock(s.id)) return 0;
+  if (!repo) return 0;
+  const { ignoredRepos } = await import("../store/ignore.js");
+  if ((await ignoredRepos(db)).has(repo) || !takeSessionLock(s.id)) return 0;
   try {
     const branch = s.branch ?? currentBranch(s.cwd) ?? "main";
     const done = Number((await db.execute({ sql: "SELECT coalesce(max(to_event),0) n FROM checkpoints WHERE session=?", args: [s.id] })).rows[0]?.n ?? 0);

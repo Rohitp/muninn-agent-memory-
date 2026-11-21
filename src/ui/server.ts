@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { askData, originOf, shortRepo } from "../commands/ask.js";
-import { answerData } from "../commands/answer.js";
+import { askInThread, deleteThread, getThread, listThreads } from "../commands/answer.js";
 import { homeData } from "../commands/home.js";
 import { adoptRepo } from "../repo/adopt.js";
 import { addItem, editItem, setPlanStatus, getPlan, planBranches, planFileOn, setPlanFile, setStatus, writePlanFile } from "../plan/plan.js";
@@ -59,7 +59,8 @@ async function planView(db: Client, repo: string, branch: string | null) {
   const b = branch || checkedOut || "main";
   const branches = await planBranches(db, repo, root);
   if (!branches.some((x) => x.name === b)) branches.unshift({ name: b, open: 0, merged: false });
-  return { branch: b, checkedOut, branches, plan: await getPlan(db, repo, b), fileOn: await planFileOn(db, repo) };
+  const { getHistory } = await import("../plan/history.js");
+  return { branch: b, checkedOut, branches, plan: await getPlan(db, repo, b), history: await getHistory(db, repo, b), fileOn: await planFileOn(db, repo) };
 }
 
 const routes: Record<string, Handler> = {
@@ -192,10 +193,13 @@ const routes: Record<string, Handler> = {
   "POST /api/answer": async (db, _q, b) => {
     const runner = pickRunner("background");
     if (!runner) throw new Error("No Claude Code found to write an answer.");
-    const history = Array.isArray(b.history) ? (b.history as { q: unknown; a: unknown }[]).slice(-4).map((t) => ({ q: String(t.q ?? ""), a: String(t.a ?? "").slice(0, 2000) })) : [];
-    try { return await answerData(db, String(b.q ?? ""), b.repo || null, runner, await embed(), history); }
+    try { const r = await askInThread(db, String(b.q ?? ""), b.repo || null, runner, await embed(), b.thread ? String(b.thread) : null); return { ...r.answer, thread: r.thread }; }
     finally { await saveUsage(db, runner, "answer"); }
   },
+  "GET /api/ask-suggestions": async (db, q) => (await import("../commands/suggestions.js")).getSuggestions(db, q.get("repo") || null),
+  "GET /api/threads": async (db, q) => listThreads(db, q.get("repo") || null),
+  "GET /api/thread": async (db, q) => { const t = await getThread(db, q.get("id") ?? ""); if (!t) throw new Error("That thread is gone."); return t; },
+  "POST /api/thread-delete": async (db, _q, b) => { await deleteThread(db, String(b.id ?? "")); return { ok: true }; },
   "GET /api/settings": async () => ({ maxPerDelivery: settings().maxPerDelivery }),
   "GET /api/version": async () => ({ boot: BOOT, page: pageHash() }),
   // Scans: when the last one finished, whether one is running, and "Check now".

@@ -20,6 +20,7 @@ const USAGE = `muninn: lessons that carry across coding sessions
                                 Search your past sessions: what was asked, said and run
   muninn memory [--all-repos]   Lines in CLAUDE.md that may be out of date
   muninn plan tidy [--all-repos]  Rewrite branch plans, checked against git
+  muninn plan history [--all-repos]  Group finished steps into outcomes, and give decisions their reasons
   muninn handoff [--list]       Where the last session on this branch left off
   muninn setup                  Set everything up and take a first look (start here)
   muninn report [--all]         Did kept lessons work: delivered, and seen again since
