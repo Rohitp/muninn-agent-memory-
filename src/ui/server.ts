@@ -4,6 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { askData, originOf, shortRepo } from "../commands/ask.js";
 import { askInThread, deleteThread, getThread, listThreads } from "../commands/answer.js";
+import { logFile, withLinks } from "../commands/source-links.js";
 import { homeData } from "../commands/home.js";
 import { adoptRepo } from "../repo/adopt.js";
 import { addItem, editItem, setPlanStatus, getPlan, planBranches, planFileOn, setPlanFile, setStatus, writePlanFile } from "../plan/plan.js";
@@ -193,12 +194,24 @@ const routes: Record<string, Handler> = {
   "POST /api/answer": async (db, _q, b) => {
     const runner = pickRunner("background");
     if (!runner) throw new Error("No Claude Code found to write an answer.");
-    try { const r = await askInThread(db, String(b.q ?? ""), b.repo || null, runner, await embed(), b.thread ? String(b.thread) : null); return { ...r.answer, thread: r.thread }; }
+    try { const r = await askInThread(db, String(b.q ?? ""), b.repo || null, runner, await embed(), b.thread ? String(b.thread) : null); return { ...r.answer, sources: await withLinks(db, r.answer.sources), thread: r.thread }; }
     finally { await saveUsage(db, runner, "answer"); }
+  },
+  // Opens a past session's log in Finder (or the file manager), so a source can be checked at its origin.
+  "POST /api/reveal": async (db, _q, b) => {
+    const f = await logFile(db, String(b.session ?? ""));
+    if (!f) throw new Error("That session's log isn't on this machine any more.");
+    if (process.platform === "darwin") spawn("open", ["-R", f], { stdio: "ignore", detached: true }).unref();
+    else if (process.platform === "linux") spawn("xdg-open", [dirname(f)], { stdio: "ignore", detached: true }).unref();
+    else throw new Error(`The log is at ${f}`);
+    return { file: f };
   },
   "GET /api/ask-suggestions": async (db, q) => (await import("../commands/suggestions.js")).getSuggestions(db, q.get("repo") || null),
   "GET /api/threads": async (db, q) => listThreads(db, q.get("repo") || null),
-  "GET /api/thread": async (db, q) => { const t = await getThread(db, q.get("id") ?? ""); if (!t) throw new Error("That thread is gone."); return t; },
+  "GET /api/thread": async (db, q) => {
+    const t = await getThread(db, q.get("id") ?? ""); if (!t) throw new Error("That thread is gone.");
+    return { ...t, turns: await Promise.all(t.turns.map(async (u) => ({ ...u, sources: await withLinks(db, u.sources) }))) };
+  },
   "POST /api/thread-delete": async (db, _q, b) => { await deleteThread(db, String(b.id ?? "")); return { ok: true }; },
   "GET /api/settings": async () => ({ maxPerDelivery: settings().maxPerDelivery }),
   "GET /api/version": async () => ({ boot: BOOT, page: pageHash() }),
@@ -279,6 +292,20 @@ async function serveNow(args: string[], want: number) {
       return send(200, page().replace("__TOKEN__", token).replace("__REPO__", JSON.stringify(here)), "text/html; charset=utf-8");
     }
     if (!same(String(req.headers["x-muninn-token"] ?? ""), token)) return send(403, { error: "Missing token." });
+    // The answer as it happens: one JSON line per stage (searching, what was found, writing), then the answer.
+    if (req.method === "POST" && url.pathname === "/api/answer-stream") {
+      res.writeHead(200, { "content-type": "application/x-ndjson", "cache-control": "no-store", "x-content-type-options": "nosniff" });
+      const line = (o: unknown) => res.write(JSON.stringify(o) + "\n");
+      const runner = pickRunner("background");
+      try {
+        if (!runner) throw new Error("No Claude Code found to write an answer.");
+        const b = JSON.parse((await readBody(req)) || "{}");
+        const r = await askInThread(db, String(b.q ?? ""), b.repo || null, runner, await embed(), b.thread ? String(b.thread) : null, line);
+        line({ stage: "done", ...r.answer, sources: await withLinks(db, r.answer.sources), thread: r.thread });
+      } catch (e) { line({ stage: "error", error: e instanceof Error ? e.message : String(e) }); }
+      finally { if (runner) await saveUsage(db, runner, "answer").catch(() => {}); res.end(); }
+      return;
+    }
     const h = routes[`${req.method} ${url.pathname}`];
     if (!h) return send(404, { error: "Not found." });
     try {
