@@ -11,7 +11,8 @@ import { EVENTS, codexPresent, installed } from "./install.js";
 
 const ago = (iso: string, now = Date.now()) => {
   const m = Math.round((now - Date.parse(iso)) / 60_000);
-  return m < 1 ? "just now" : m < 60 ? `${m} minute${m === 1 ? "" : "s"} ago` : m < 2880 ? `${Math.round(m / 60)} hours ago` : `${Math.round(m / 1440)} days ago`;
+  const h = Math.round(m / 60);
+  return m < 1 ? "just now" : m < 60 ? `${m} minute${m === 1 ? "" : "s"} ago` : m < 2880 ? `${h} hour${h === 1 ? "" : "s"} ago` : `${Math.round(m / 1440)} days ago`;
 };
 const HOOK_WORDS: Record<string, string> = { SessionStart: "session start", UserPromptSubmit: "your prompts", PostToolUseFailure: "failed commands", PostToolUse: "failed commands", SubagentStart: "subagents", Stop: "plan updates while you work", PreCompact: "plan updates before compaction", SessionEnd: "session end" };
 

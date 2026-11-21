@@ -9,6 +9,27 @@ const STOP = new Set(["the", "and", "for", "with", "how", "what", "where", "when
 /** How close in meaning an exchange must be to count, on the local model's 0 to 1 scale. */
 export const MEANING_MIN = 0.55;
 
+/** How many nearest matches to ask the index for: enough that filtering by repo or date still leaves plenty. */
+const TOP_K = 200;
+/**
+ * Exchanges closest in meaning to a vector, best first. The vector index finds the nearest across everything;
+ * when a repo or date filter leaves too few of those, the filtered set is compared directly instead (it's small).
+ */
+export async function nearest(db: Client, v: Float32Array, where: string, args: (string | number)[], max = 30): Promise<{ id: string; s: number }[]> {
+  const q = `[${Array.from(v).join(",")}]`;
+  let hits: { id: string; s: number }[] = [];
+  try {
+    const rows = (await db.execute({ sql: `SELECT c.id, vector_distance_cos(c.embedding, vector32(?)) d FROM vector_top_k('chunks_vec', vector32(?), ?) t JOIN chunks c ON c.rowid = t.id WHERE ${where}`, args: [q, q, TOP_K, ...args] })).rows;
+    hits = rows.map((r) => ({ id: String(r.id), s: 1 - Number(r.d) }));
+  } catch { /* no index (an older database): compare directly below */ }
+  const filtered = where !== "1 AND 1";
+  if (hits.filter((x) => x.s >= MEANING_MIN).length < 10 && (filtered || !hits.length)) {
+    const rows = (await db.execute({ sql: `SELECT c.id, c.embedding FROM chunks c WHERE c.embedding IS NOT NULL AND ${where}`, args })).rows;
+    hits = rows.map((r) => ({ id: String(r.id), s: cosine(v, unvec(r.embedding)) }));
+  }
+  return hits.filter((x) => x.s >= MEANING_MIN).sort((a, b) => b.s - a.s).slice(0, max);
+}
+
 /**
  * Searches every stored exchange (what you typed, what the agent said and ran) by words and by meaning,
  * in this repo or all of them, and merges the two rankings.
@@ -26,8 +47,7 @@ export async function recallData(db: Client, q: string, repo: string | null, opt
   const embed = opts.embed ?? (modelCached() ? await loadEmbedder() : null);
   if (embed) {
     const v = (await embed([q])).get(q)!;
-    const rows = (await db.execute({ sql: `SELECT c.id, c.embedding FROM chunks c WHERE c.embedding IS NOT NULL AND ${where}`, args })).rows;
-    add(rows.map((r) => ({ id: String(r.id), s: cosine(v, unvec(r.embedding)) })).filter((x) => x.s >= MEANING_MIN).sort((a, b) => b.s - a.s).slice(0, 30).map((x) => x.id), "meaning");
+    add((await nearest(db, v, where, args)).map((x) => x.id), "meaning");
   }
   if (!score.size) return [];
   const top = [...score.entries()].sort((a, b) => b[1] - a[1]).slice(0, opts.limit ?? 6);

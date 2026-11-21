@@ -11,11 +11,13 @@
   --bg: #F5F5F3; --group: #FFFFFF; --line: #EDEDEA; --line-strong: #DADAD6;
   --ink: #1C1D21; --muted: #6B6E76; --faint: #9A9CA3;
   --on: #1F7A45; --off: #D9D9D5; --link: #2B3AB8; --chip: #EDEFFE; --warn: #B23E06; --warn-bg: #FDF1EA;
+  --fill: #F0F0EC; --diff-add: #067647; --diff-del: #B42318;
   --sans: Inter, "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #111214; --group: #1C1D21; --line: #2A2C31; --line-strong: #3A3C43; --ink: #ECECEF; --muted: #A1A3AB; --faint: #74767E;
-    --on: #3DBB72; --off: #3A3C43; --link: #A9B1FF; --chip: #262B4D; --warn: #FF9C6E; --warn-bg: #2A1E17; }
+    --on: #3DBB72; --off: #3A3C43; --link: #A9B1FF; --chip: #262B4D; --warn: #FF9C6E; --warn-bg: #2A1E17;
+    --fill: #24262B; --diff-add: #6CD49A; --diff-del: #FF8A80; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--sans); }
@@ -24,7 +26,6 @@ a { color: var(--link); }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 main { max-width: 680px; margin: 0 auto; padding: 36px 20px 72px; }
 .top { font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-.top select { border: 0; background: none; color: var(--muted); font-size: 14px; padding: 2px 0; cursor: pointer; }
 h1 { margin: 4px 0 0; font-size: 30px; font-weight: 600; letter-spacing: -.4px; line-height: 1.2; }
 .lead { margin: 6px 0 0; color: var(--muted); }
 section { margin-top: 30px; }
@@ -73,7 +74,15 @@ input[type=text] { width: 100%; height: 40px; border: 1px solid var(--line-stron
 .check:hover { border-color: var(--on); }
 .check[aria-checked="true"] { background: var(--on); border-color: var(--on); }
 .sublist { list-style: none; margin: 0; padding: 0 18px 12px; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
+.mono { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+code { font: .9em var(--mono); background: var(--fill); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+pre code { background: none; padding: 0; }
+.diff { white-space: pre-wrap; font: 12px/1.5 var(--mono); background: var(--fill); border-radius: 8px; padding: 10px; margin: 8px 0 0; max-height: 220px; overflow: auto; }
+.diff .add { color: var(--diff-add); } .diff .del { color: var(--diff-del); }
+/* One look for the repo and branch pickers. */
+.picker { border: 0; background: none; color: var(--ink); font-size: 14px; font-weight: 600; padding: 2px 0; cursor: pointer; }
+.field { flex: 1 1 260px; min-width: 0; height: 40px; border: 1px solid var(--line-strong); border-radius: 10px; padding: 0 12px; font-size: 15px; background: var(--bg); color: var(--ink); }
+.rowlabel { padding: 12px 18px 0; font-size: 13px; color: var(--muted); }
 .donebox input[type=search] { margin: 0 18px 10px; width: calc(100% - 36px); box-sizing: border-box; }
 .doneday { padding: 6px 18px 0; font-size: 13px; color: var(--muted); font-weight: 600; }
 .sublist li { padding: 6px 0; font-size: 15px; display: flex; gap: 8px; align-items: baseline; }
@@ -89,17 +98,17 @@ input[type=text] { width: 100%; height: 40px; border: 1px solid var(--line-stron
 @media (prefers-reduced-motion: reduce) { .switch, .switch::after, .toast { transition: none; } }
 /* Plan history: outcomes and decisions */
 .hist { border-top: 1px solid var(--line); }
-.htabs { display: flex; gap: 4px; padding: 6px 10px 0; border-bottom: 1px solid var(--line); }
+.htabs { display: flex; gap: 4px; padding: 6px 6px 0; border-bottom: 1px solid var(--line); }
 .htab { all: unset; cursor: pointer; min-height: 44px; padding: 0 12px; font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; border-bottom: 2px solid transparent; color: var(--muted); }
 .htab[aria-selected="true"] { border-color: var(--ink); color: var(--ink); }
 .htab span { font-weight: 500; color: var(--muted); }
-.hbar { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 4px; }
+.hbar { display: flex; flex-direction: column; gap: 10px; padding: 14px 18px 4px; }
 .hrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .hsearch { flex: 1 1 240px; min-width: 0; height: 40px; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: 10px; padding: 0 12px; font-size: 15px; background: var(--bg); color: var(--ink); }
 .hchip { all: unset; cursor: pointer; min-height: 34px; padding: 0 13px; border-radius: 999px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
 .hchip[aria-pressed="true"] { background: var(--ink); color: var(--group); border-color: var(--ink); }
 .hchip span { opacity: .7; }
-.hlist { padding: 0 16px 14px; }
+.hlist { padding: 0 18px 14px; }
 .hday { margin: 16px 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .hitem { border-top: 1px solid var(--line); }
 .hhead { all: unset; cursor: pointer; display: grid; grid-template-columns: 18px minmax(0,1fr) auto; gap: 10px; align-items: start; padding: 12px 0; width: 100%; box-sizing: border-box; }
@@ -129,7 +138,10 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const short = (r) => (r ? String(r).split("/").filter(Boolean).pop() : "all repos");
 const q = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v)).toString();
-const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 60 ? "just now" : m < 2880 ? `${Math.round(m / 60)} hours ago` : `${Math.round(m / 1440)} days ago`; };
+const ago = (iso) => {
+  const m = Math.round((Date.now() - Date.parse(iso)) / 60000), h = Math.round(m / 60);
+  return m < 2 ? "just now" : m < 60 ? `${m} minutes ago` : m < 2880 ? `${h} hour${h === 1 ? "" : "s"} ago` : `${Math.round(m / 1440)} days ago`;
+};
 const WHEN = { always: "Every session", keyword: "When a word comes up", none: "Only if an agent looks it up" };
 /* What each choice means, in a sentence under the choices. */
 const WHEN_HINT = {
@@ -143,15 +155,16 @@ let open = null; // the id of the row opened for editing
 let data = null;
 let planEdit = null; // the plan item being edited: an id, "goal", or "new"
 let planBranch = null; // the branch whose plan is shown; null means the one checked out
-const planShow = { decisions: false, done: false };
 
 /* The running plan: built from your sessions' handoffs, and yours to edit. */
 /** What's done, newest first, grouped by day and narrowed by the filter, so a long history stays easy to scan. */
 /* Plan history: finished work grouped into outcomes, and decisions with their reasons. */
 const hist = { tab: "done", area: "All", q: "", routine: false, open: {}, limit: 8 };
 const dayLabel = (iso) => {
-  const day = iso.slice(0, 10), today = new Date().toISOString().slice(0, 10), yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
-  return day === today ? `Today · ${shortDate(iso)}` : day === yesterday ? `Yesterday · ${shortDate(iso)}` : new Date(day + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  // Local days, so "Today" and the date beside it agree near midnight.
+  const local = (d) => d.toLocaleDateString("en-CA");
+  const day = local(new Date(iso)), today = local(new Date()), yesterday = local(new Date(Date.now() - 864e5));
+  return day === today ? `Today · ${shortDate(iso)}` : day === yesterday ? `Yesterday · ${shortDate(iso)}` : new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 };
 const KIND_LABEL = { shipped: "Shipped", fixed: "Fixed", checked: "Checked", explored: "Explored", new: "Not grouped yet" };
 const CHEVRON = '<svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -203,7 +216,7 @@ function historyBlock() {
   const steps = h.outcomes.reduce((n, o) => n + o.steps.length, 0) + h.ungrouped.length;
   return `<div class="hist">
     <div class="htabs" role="tablist" aria-label="History">
-      <button class="htab" role="tab" aria-selected="${hist.tab === "done"}" data-hist-tab="done">Done <span>${h.outcomes.length} outcome${h.outcomes.length === 1 ? "" : "s"}</span></button>
+      <button class="htab" role="tab" aria-selected="${hist.tab === "done"}" data-hist-tab="done">Done <span>${h.outcomes.length + (h.ungrouped.length ? 1 : 0)}</span></button>
       <button class="htab" role="tab" aria-selected="${hist.tab === "decisions"}" data-hist-tab="decisions">Decisions <span>${h.decisions.length}</span></button>
       <span class="sub" style="margin-left:auto;align-self:center;font-size:13px">${shipped} shipped · ${fixed} fixed · ${steps} steps</span>
     </div>
@@ -233,9 +246,9 @@ function memorySection() {
     <ul class="group">${rows.map((r) => r.status === "removed"
       ? `<li><div class="row"><div class="main" style="cursor:default"><div class="title" style="color:var(--muted)">Removed from ${esc(r.file)}</div><div class="sub mono">${esc(r.text)}</div></div><button class="btn" data-mem-restore="${esc(r.id)}">Put it back</button></div></li>`
       : `<li><div class="row"><div class="main" style="cursor:default"><div class="title mono">${esc(r.text)}</div><div class="sub">${esc(MEMORY_WHY[r.reason] || "")}: ${esc(r.detail.replace(/\`/g, ""))}. ${esc(r.file)}${!repo ? ` in ${esc(short(r.repo_id))}` : ""}, line ${r.line}.</div></div>
-          <button class="x" data-mem-keep="${esc(r.id)}" aria-label="Keep this line" title="Keep this line">×</button>
-          <button class="add" data-mem-remove="${esc(r.id)}">Remove</button></div></li>`).join("")}</ul>
-    <p class="note">Agents read these files at the start of every session, so an out-of-date line costs tokens each time and can send them the wrong way. Remove edits the file; × keeps the line and stops muninn asking.</p>
+          <button class="btn" data-mem-keep="${esc(r.id)}">Keep</button>
+          <button class="btn" data-mem-remove="${esc(r.id)}">Remove</button></div></li>`).join("")}</ul>
+    <p class="note">Agents read these files at the start of every session, so an out-of-date line costs tokens each time and can send them the wrong way. Remove takes the line out of the file; Keep leaves it and stops muninn asking.</p>
   </section>`;
 }
 /* Changes muninn proposes to files agents read: ask-first rules, new skills, edits to CLAUDE.md. Nothing is written until Apply. */
@@ -243,11 +256,11 @@ const PROP_KIND = { guard: "Ask-first rule", skill: "New skill", instruction: "I
 let proposing = false;
 function propPreview(p) {
   if (p.kind === "guard") return `Adds <code>${esc(p.payload.rule)}</code> to the "ask" list in <code>.claude/settings.local.json</code>.`;
-  const pre = (t) => `<pre style="white-space:pre-wrap;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--fill,rgba(127,127,127,.08));border-radius:8px;padding:10px;margin:8px 0 0;max-height:220px;overflow:auto">${t}</pre>`;
+  const pre = (t) => `<pre class="diff">${t}</pre>`;
   if (p.kind === "skill") return pre(esc(p.payload.markdown));
   const lines = [];
-  if (p.payload.find) lines.push(...String(p.payload.find).split("\n").map((l) => `<span style="color:#b42318">- ${esc(l)}</span>`));
-  if (p.payload.text) lines.push(...String(p.payload.text).split("\n").map((l) => `<span style="color:#067647">+ ${esc(l)}</span>`));
+  if (p.payload.find) lines.push(...String(p.payload.find).split("\n").map((l) => `<span class="del">- ${esc(l)}</span>`));
+  if (p.payload.text) lines.push(...String(p.payload.text).split("\n").map((l) => `<span class="add">+ ${esc(l)}</span>`));
   return pre(lines.join("\n"));
 }
 function changesSection() {
@@ -286,7 +299,7 @@ function askSection() {
       </li>`).join("")}
       <li style="padding:12px 16px"><form data-ask-form style="display:flex;gap:8px;flex-wrap:wrap">
         <label class="vh" for="askq">Ask a question about your work</label>
-        <input id="askq" name="q" autocomplete="off" placeholder="${askThread.length ? "Ask a follow-up" : "Why did we rename the package? What did I do on servanda this week?"}" style="flex:1 1 260px;min-width:0;height:40px;box-sizing:border-box;border:1px solid var(--line-strong);border-radius:10px;padding:0 12px;font-size:15px;background:var(--bg);color:var(--ink)" ${asking ? "disabled" : ""}>
+        <input id="askq" name="q" class="field" autocomplete="off" placeholder="${askThread.length ? "Ask a follow-up" : "Why did we rename the package? What did I do on servanda this week?"}" ${asking ? "disabled" : ""}>
         <button class="btn" type="submit" ${asking ? "disabled" : ""}>Ask</button>
         ${askThread.length ? `<button class="linkbtn" type="button" data-ask-clear>New question</button>` : ""}
       </form></li>
@@ -324,14 +337,14 @@ function planSection() {
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap">
       <h2 id="pl">Plan for this branch</h2>
       <span style="font-size:14px;color:var(--muted)"><label class="vh" for="planBranch">Branch</label>
-        <select id="planBranch" style="border:0;background:none;color:var(--ink);font-size:14px;font-weight:600;cursor:pointer">${data.plan.branches.map((b) => `<option value="${esc(b.name)}" ${b.name === data.plan.branch ? "selected" : ""}>${esc(b.name)}${b.name === data.plan.checkedOut ? " (checked out)" : b.merged ? " (merged)" : ""}</option>`).join("")}</select></span>
+        <select id="planBranch" class="picker">${data.plan.branches.map((b) => `<option value="${esc(b.name)}" ${b.name === data.plan.branch ? "selected" : ""}>${esc(b.name)}${b.name === data.plan.checkedOut ? " (checked out)" : b.merged ? " (merged)" : ""}</option>`).join("")}</select></span>
     </div>
     <ul class="group">
       ${planEdit === "goal" ? `<li>${planEditor("goal", "", p.goal?.text ?? "", "What this project is trying to do")}</li>`
         : `<li><div class="row"><button class="main" data-plan-edit="goal"><div class="sub">Goal</div><div class="title">${p.goal ? esc(p.goal.text) : '<span style="color:var(--link)">Add a goal</span>'}</div></button></div></li>`}
       ${planEdit === "status" ? `<li>${planEditor("status", "", p.status?.text ?? "", "Where things stand, in a few sentences")}</li>`
         : `<li><div class="row"><button class="main" data-plan-edit="status"><div class="sub">Where it stands${p.status ? ` · ${p.status.by_person ? "written by you" : `updated ${esc(shortDate(p.status.at))}`}` : ""}</div><div class="title" style="font-weight:400">${p.status ? esc(p.status.text) : '<span style="color:var(--link)">Add a summary</span>'}</div></button></div></li>`}
-      ${p.open.length ? `<li><div class="sub" style="padding:10px 14px 0">Next</div></li>` : ""}
+      ${p.open.length ? `<li><div class="rowlabel">Next</div></li>` : ""}
       ${p.open.map(openRow).join("")}
       ${planEdit === "new" ? `<li>${planEditor("open", "", "", "A next step or open question")}</li>` : `<li><button class="more" data-plan-new>+ Add a next step</button></li>`}
       ${(data.plan.history?.outcomes.length || data.plan.history?.ungrouped.length || data.plan.history?.decisions.length) ? `<li style="padding:0">${historyBlock()}</li>` : ""}
@@ -465,7 +478,7 @@ function drawPage() {
   $("#main").innerHTML = `
     <div class="top"><span>muninn ·</span>
       <label class="vh" for="repo">Repo</label>
-      <select id="repo"><option value="" ${repo ? "" : "selected"}>All repos</option>${[...new Set([HERE, repo].filter((r) => r && !repos.some((x) => x.id === r)))].map((r) => `<option value="${esc(r)}" ${r === repo ? "selected" : ""}>${esc(short(r))}${r === HERE ? " (this folder)" : ""}</option>`).join("")}${repos.map((r) => `<option value="${esc(r.id)}" ${r.id === repo ? "selected" : ""}>${esc(short(r.id))}</option>`).join("")}</select>
+      <select id="repo" class="picker"><option value="" ${repo ? "" : "selected"}>All repos</option>${[...new Set([HERE, repo].filter((r) => r && !repos.some((x) => x.id === r)))].map((r) => `<option value="${esc(r)}" ${r === repo ? "selected" : ""}>${esc(short(r))}${r === HERE ? " (this folder)" : ""}</option>`).join("")}${repos.map((r) => `<option value="${esc(r.id)}" ${r.id === repo ? "selected" : ""}>${esc(short(r.id))}</option>`).join("")}</select>
     </div>
     <h1>What your agents know</h1>
     <p class="lead">Switch a lesson on and Claude, Codex and Cursor are told it. Switch it off and they aren't.</p>
@@ -566,7 +579,6 @@ document.addEventListener("click", async (e) => {
       toast(action === "remove" ? "Removed the line. Put it back from here today if you need it." : action === "restore" ? "Put the line back." : "Kept. muninn won't ask about this line again.");
       return;
     }
-    if (el.dataset.planToggle) { planShow[el.dataset.planToggle] = !planShow[el.dataset.planToggle]; draw(); return; }
     if (el.dataset.planFile !== undefined) {
       const on = el.getAttribute("aria-checked") !== "true";
       const r = await api("/api/plan-file", { repo, on }); data.plan.fileOn = r.fileOn; draw();
