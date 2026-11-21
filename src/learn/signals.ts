@@ -4,7 +4,7 @@ import { redact } from "../privacy/redact.js";
 import { cosine, type Embed } from "../embed/model.js";
 import type { Session } from "../logs/types.js";
 
-export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned" | "explained" | "loop" | "refetch" | "stopped" | "confused" | "friction" | "wrong_path" | "big_file" | "skimmed";
+export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned" | "explained" | "loop" | "refetch" | "stopped" | "confused" | "friction" | "wrong_path" | "big_file" | "skimmed" | "stated";
 export type Moment = {
   signal: Signal; text: string; quotes: { tool: string; session: string; ts: string; quote: string }[];
   sessions: number; days: number; wordings: number; tools: string[]; last: string; vector?: Float32Array;
@@ -120,7 +120,7 @@ export async function findMoments(sessions: Session[], embed: Embed, opts: { cut
     if (kept) moments.push(m);
     opts.trace?.({ signal: "correction", texts: c.items.map((i) => `${i.text}   ⟵ after: ${i.before?.slice(0, 100) ?? ""}`), times: c.items.length, sessions: m.sessions, wordings: m.wordings, days: m.days, hours: spanHours(c), kept });
   }
-  moments.push(...commandMoments(sessions), ...explainedMoments(sessions), ...intentMoments(sessions), ...pathMoments(sessions), ...skimMoments(sessions));
+  moments.push(...commandMoments(sessions), ...explainedMoments(sessions), ...intentMoments(sessions), ...pathMoments(sessions), ...skimMoments(sessions), ...statedMoments(sessions));
   return moments;
 }
 
@@ -456,3 +456,31 @@ function skimMoments(sessions: Session[]): Moment[] {
 
 /** Wasted effort without the embedding model: failing, looping and re-run commands, stops, and wrong paths. For insights. */
 export function effortMoments(sessions: Session[]): Moment[] { return [...commandMoments(sessions), ...pathMoments(sessions)]; }
+
+/**
+ * A standing instruction said outright: "from now on…", "let's branch and merge for features with PRs",
+ * "always run the tests first". Said once is enough: you were telling the agent a rule, not repeating yourself.
+ * Wording about the future or about a kind of work marks it; a one-off request ("merge it") doesn't match.
+ */
+const FUTURE = /\b(from now on|going forward|moving forward|from here on|in (the )?future|by default|as a rule|every time|each time|whenever|always|never|for (all |every |each |any |new |future )?(features?|changes?|prs?|pull requests?|commits?|branches|repos?|projects?|tasks?|releases?|work)\b)/i;
+const DIRECTIVE = /\b(let'?s|lets|we (want|need|should|'ll|will|must)|i (want|need|prefer|'d like|would like)|please|make sure|you should|you must|don'?t|do not|stop|use|keep|start)\b/i;
+/** Phrases that make a rule by themselves; weaker ones ("always", "for features") also need an instruction word. */
+const RULE = /\b(from now on|going forward|moving forward|from here on( out)?|by default|as a rule)\b/i;
+export function isStanding(sentence: string): boolean {
+  const t = sentence.trim();
+  return t.length >= 15 && t.length <= 300 && !t.endsWith("?") && (RULE.test(t) || (FUTURE.test(t) && DIRECTIVE.test(t)));
+}
+/** The standing instructions in something typed, as sentences. */
+export const standingIn = (text: string) => sentences(text).flatMap((x) => x.split(/(?<=[A-Za-z0-9)][.!])\s+(?=[a-z])/)).filter(isStanding);
+
+function statedMoments(sessions: Session[]): Moment[] {
+  const out: Moment[] = [];
+  for (const s of sessions) for (const e of s.events) {
+    if (e.k !== "typed") continue;
+    for (const x of standingIn(e.text)) {
+      const quote = redact(x).slice(0, 240);
+      out.push({ signal: "stated", text: redact(x), quotes: [{ tool: s.tool, session: s.id, ts: e.ts, quote }], sessions: 1, days: 1, wordings: 1, tools: [s.tool], last: e.ts });
+    }
+  }
+  return out;
+}
