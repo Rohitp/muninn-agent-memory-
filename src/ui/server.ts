@@ -233,6 +233,20 @@ const routes: Record<string, Handler> = {
   // Scans: when the last one finished, whether one is running, and "Check now".
   "GET /api/scan": async (db) => ({ running: scanRunning(), needsModel: !modelCached(), lastLearn: String((await db.execute("SELECT value FROM meta WHERE key='last_learn'")).rows[0]?.value ?? "") || null }),
   "POST /api/scan": async () => ({ started: startAutoScan({ force: true }), running: true }),
+  // What a run of autonomous work shows: kept findings for runs the page lists, or one call to your Claude for a run.
+  "POST /api/run-findings": async (db, _q, b) => {
+    const m = await import("../commands/run-findings.js");
+    if (b.action === "find") {
+      const run = b.run as import("../commands/run-findings.js").Run;
+      if (!run?.id || !Array.isArray(run.sessions) || !Array.isArray(run.handoffs)) throw new Error("That run is missing its sessions.");
+      const runner = pickRunner("judge"); if (!runner) throw new Error("Finding what a run shows needs Claude Code or Codex on this machine.");
+      try { return await m.findRunFindings(db, run, runner); } finally { await saveUsage(db, runner, "run findings"); }
+    }
+    // The runs the page shows: their numbers, and findings kept from an earlier look.
+    const runs = (Array.isArray(b.runs) ? b.runs : []).filter((r: { sessions?: unknown; handoffs?: unknown }) => Array.isArray(r?.sessions) && Array.isArray(r?.handoffs)) as import("../commands/run-findings.js").Run[];
+    const saved = await m.savedFindings(db, runs);
+    return Object.fromEntries(runs.map((r) => [r.id, { numbers: m.runNumbers(r), findings: saved[r.id] ?? null }]));
+  },
   "GET /api/schedule": async () => { const m = await import("../commands/schedule.js"); return { supported: m.scheduleSupported(), on: m.scheduleOn(), everyHours: m.EVERY_HOURS }; },
   "POST /api/schedule": async (_db, _q, b) => { const m = await import("../commands/schedule.js"); m.setSchedule(!!b.on); return { supported: true, on: m.scheduleOn(), everyHours: m.EVERY_HOURS }; },
 };

@@ -40,6 +40,23 @@ h2 { margin: 0 0 8px 4px; font-size: 13px; font-weight: 600; letter-spacing: .4p
 .row .warnline { font-size: 13px; color: var(--warn); margin-top: 2px; }
 .row.off .title { color: var(--faint); }
 .note { margin: 8px 4px 0; font-size: 13px; color: var(--muted); }
+/* Autonomous runs: cost per role as bars, then what happened in order, then what your Claude found. */
+.rundetail { padding: 4px 18px 18px; }
+.rundetail h3 { margin: 16px 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.rolebar { display: grid; grid-template-columns: minmax(90px, 140px) 1fr; gap: 4px 12px; align-items: center; font-size: 14px; padding: 4px 0; }
+.rolebar .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.rolebar .bar span { display: block; height: 100%; background: var(--link); border-radius: 4px; }
+.rolebar .what { grid-column: 2; font-size: 12px; color: var(--muted); }
+.timeline { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.timeline li { display: grid; grid-template-columns: 48px 1fr; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+.timeline li:first-child { border-top: 0; }
+.timeline time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; padding-top: 1px; }
+.timeline .said { display: block; font-size: 13px; color: var(--muted); }
+.timeline .back, .finding .back { color: var(--warn); font-weight: 500; }
+.timeline .idle { color: var(--muted); font-style: italic; }
+.finding { padding: 6px 0; font-size: 14px; }
+.finding .kind { font-size: 12px; font-weight: 600; color: var(--muted); margin-right: 6px; }
+.rolechip { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: var(--chip); color: var(--link); margin-right: 6px; }
 .more { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 14px 18px; color: var(--link); font-weight: 500; cursor: pointer; }
 .add { height: 34px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--chip); color: var(--link); font-size: 14px; font-weight: 600; cursor: pointer; flex: none; }
 .x { width: 34px; height: 34px; border: 0; border-radius: 999px; background: none; color: var(--faint); cursor: pointer; flex: none; font-size: 18px; line-height: 1; }
@@ -519,8 +536,60 @@ async function load() {
   ]);
   const [plan, memory, lessonFile, proposals, threads, askSuggestions, rules] = await Promise.all([repo ? api("/api/plan?" + q({ repo, branch: planBranch })) : null, api("/api/memory?" + q({ repo })), repo ? api("/api/lesson-file?" + q({ repo })) : null, api("/api/proposals?" + q({ repo })), api("/api/threads?" + q({ repo })), api("/api/ask-suggestions?" + q({ repo })).catch(() => []), repo ? api("/api/rules?" + q({ repo })).catch(() => null) : null]);
   const schedule = await api("/api/schedule").catch(() => null);
-  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions, rules, schedule };
+  // Autonomous runs come from the data side's /api/runs; until it's there, the section stays hidden.
+  const runs = repo ? await api("/api/runs?" + q({ repo })).catch(() => []) : [];
+  const runInfo = Array.isArray(runs) && runs.length ? await api("/api/run-findings", { runs }).catch(() => ({})) : {};
+  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions, rules, schedule, runs: Array.isArray(runs) ? runs : [], runInfo };
 }
+
+/* Autonomous runs: a session that handed work to other agents (subagents, or agents in their own worktrees), with
+   what each role cost, what happened in order, and, on request, what your Claude makes of it. */
+let runOpen = null, runFinding = null;
+const clock = (iso) => new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+const dur = (m) => (m >= 60 ? `${Math.floor(m / 60)}h ${Math.round(m % 60)}m` : `${Math.round(m)}m`);
+const usd = (n) => `$${(n || 0).toFixed(2)}`;
+const FINDING_LABEL = { cost: "Cost", stall: "Waiting", bounce: "Sent back", handoff: "Handoff", low_yield: "Low yield", other: "Also" };
+function runsSection() {
+  if (!repo || !data.runs.length) return "";
+  return `<section aria-labelledby="rn">
+    <h2 id="rn">Autonomous runs · ${data.runs.length}</h2>
+    <ul class="group">${data.runs.map(runRow).join("")}</ul>
+    <p class="note">A run is a session that handed work to other agents, such as a builder, a reviewer and qa, with everything they did. Tap one to see where time and money went.</p>
+  </section>`;
+}
+function runRow(r) {
+  const info = data.runInfo[r.id]; const n = info?.numbers; const isOpen = runOpen === r.id;
+  const facts = [n ? dur(n.minutes) : "", n ? usd(n.costUsd) : "", `${r.roles.filter((x) => x !== "main").length} roles`,
+    n?.sentBack ? `<span class="back">sent back ${n.sentBack === 1 ? "once" : `${n.sentBack} times`}</span>` : "",
+    n?.stalls.length ? `waiting ${dur(n.stalls.reduce((a, s) => a + s.minutes, 0))}` : ""].filter(Boolean).join(" · ");
+  return `<li><div class="row"><button class="main" data-run-open="${esc(r.id)}" aria-expanded="${isOpen}">
+      <div class="title">${esc(shortDate(r.started_at))}, ${esc(clock(r.started_at))}–${esc(clock(r.ended_at))}</div>
+      <div class="sub">${facts}</div>
+      ${info?.findings?.items?.[0] ? `<div class="sub why">${esc(info.findings.items[0].text)}</div>` : ""}
+    </button></div>${isOpen && n ? runDetail(r, info) : ""}</li>`;
+}
+function runDetail(r, info) {
+  const n = info.numbers; const top = Math.max(...n.roles.map((x) => x.costUsd), 0.0001);
+  const bars = n.roles.map((x) => `<div class="rolebar"><span>${x.role === "main" ? "main session" : esc(x.role)}</span><div class="bar"><span style="width:${Math.max(2, Math.round((x.costUsd / top) * 100))}%"></span></div>
+    <div class="what">${usd(x.costUsd)} (${Math.round(x.share * 100)}%) · ${dur(x.minutes)} · ${x.sessions} session${x.sessions === 1 ? "" : "s"}${x.typed ? ` · you typed ${x.typed}` : ""}${x.sentBack ? ` · <span class="back" style="color:var(--warn)">sent back ${x.sentBack}×, redoing it cost ${usd(x.reworkCostUsd)}</span>` : ""}</div></div>`).join("");
+  // What happened, in order: handoffs and the gaps when no agent was working.
+  const events = [
+    ...r.handoffs.map((h) => ({ at: h.at, html: `${h.kind === "handoff" ? `${esc(h.from_role)} handed to ${esc(h.to_role)}` : `<span class="back">${esc(h.from_role)} sent it back to ${esc(h.to_role)}${h.kind === "rework" ? " for rework" : ""}</span>`}${h.evidence ? `<span class="said">"${esc(h.evidence)}"</span>` : ""}` })),
+    ...n.stalls.map((s) => ({ at: s.from, html: `<span class="idle">No agent working for ${dur(s.minutes)}${s.after ? ` after ${esc(s.after)} finished` : ""}${s.before ? `, until ${esc(s.before)} started` : ""}</span>` })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+  const f = info.findings;
+  const findings = f?.items?.length ? f.items.map((x) => `<div class="finding"><span class="kind">${esc(FINDING_LABEL[x.kind] || "Also")}${x.role ? ` · ${esc(x.role)}` : ""}</span>${esc(x.text)}</div>`).join("") + `<p class="note" style="margin-left:0">Your Claude looked at this run ${esc(ago(f.at))}. <button class="linkbtn" data-run-find="${esc(r.id)}">Look again</button></p>`
+    : f ? `<p class="note" style="margin-left:0">Your Claude found nothing that stood out. <button class="linkbtn" data-run-find="${esc(r.id)}">Look again</button></p>`
+    : runFinding === r.id ? `<p class="note" style="margin-left:0"><span class="spin" aria-hidden="true"></span> Your Claude is looking at this run…</p>`
+    : `<p class="note" style="margin-left:0"><button class="linkbtn" data-run-find="${esc(r.id)}">Find what this run shows</button>: where it stalled, what was sent back and why, and roles that cost a lot for little. One call to your Claude.</p>`;
+  return `<div class="rundetail">
+    <h3>Cost by role · ${usd(n.costUsd)} in all${r.wasted_tokens ? `, about ${Math.round(r.wasted_tokens / 1000)}k tokens wasted` : ""}</h3>${bars}
+    <h3>What happened</h3>${events.length ? `<ol class="timeline">${events.map((e) => `<li><time datetime="${esc(e.at)}">${esc(clock(e.at))}</time><div>${e.html}</div></li>`).join("")}</ol>` : `<p class="note" style="margin-left:0">No handoffs recorded.</p>`}
+    <h3>What it shows</h3>${findings}
+  </div>`;
+}
+/** A lesson meant for one role only (a reviewer, say) says so; lessons for everyone show nothing. */
+const roleChip = (l) => (l.role ? `<span class="rolechip">For ${esc(l.role)}</span>` : "");
 
 /* muninn checks your sessions on its own after they end. This line shows when it last did, and lets you ask now. */
 function scanLine() {
@@ -570,7 +639,7 @@ function suggestionRow(l) {
   const ev = (l.evidence || []).slice(0, 3).map((e) => runs ? `<div class="mono run">${esc(e.quote)}</div>` : `<div>"${esc(e.quote)}"</div>`).join("");
   return `<li data-id="${esc(l.id)}">
     <div class="row">
-      <button class="main" data-open="${esc(l.id)}" aria-expanded="${isOpen}"><div class="title">${esc(l.plain || l.text)}</div><div class="sub">${esc(l.origin)}</div>${l.why ? `<div class="sub why">Why: ${esc(l.why)}</div>` : ""}${l.worth ? `<div class="sub">${esc(l.worth)}</div>` : ""}</button>
+      <button class="main" data-open="${esc(l.id)}" aria-expanded="${isOpen}"><div class="title">${esc(l.plain || l.text)}</div><div class="sub">${roleChip(l)}${esc(l.origin)}</div>${l.why ? `<div class="sub why">Why: ${esc(l.why)}</div>` : ""}${l.worth ? `<div class="sub">${esc(l.worth)}</div>` : ""}</button>
       <button class="x" data-dismiss="${esc(l.id)}" aria-label="Don't suggest this" title="Don't suggest this">×</button>
       <button class="add" data-add="${esc(l.id)}">Add</button>
     </div>
@@ -593,7 +662,7 @@ function lessonRow(l) {
     <div class="row ${l.off ? "off" : ""}">
       <button class="main" data-open="${esc(l.id)}" aria-expanded="${isOpen}">
         <div class="title">${esc(l.plain || l.text)}</div>
-        <div class="sub">${l.off ? "Off · agents aren't told this" : esc(whenText(l)) + (last ? ` · last told ${esc(ago(last))}` : "")}</div>
+        <div class="sub">${roleChip(l)}${l.off ? "Off · agents aren't told this" : esc(whenText(l)) + (last ? ` · last told ${esc(ago(last))}` : "")}</div>
         ${l.missing?.length ? `<div class="warnline">Names ${l.missing.map((f) => `<code>${esc(f)}</code>`).join(", ")}, which ${l.missing.length === 1 ? "is" : "are"} no longer in the repo. The lesson may be out of date: edit it or switch it off.</div>` : ""}
         ${c && !l.off ? `<div class="warnline">The problem came back. ${esc(c.verdict.replace(/ Make it always-on\?$/, ""))}</div>` : ""}
       </button>
@@ -651,6 +720,8 @@ function drawPage() {
     ${changesSection()}
 
     ${weekSection()}
+
+    ${runsSection()}
 
     ${memorySection()}
 
@@ -801,6 +872,14 @@ document.addEventListener("click", async (e) => {
       await api("/api/thread-delete", { id: el.dataset.threadDelete }); data.threads = data.threads.filter((t) => t.id !== el.dataset.threadDelete);
       if (askThreadId === el.dataset.threadDelete) { askThread = []; askThreadId = null; }
       drawAsk(); toast("Deleted that chat."); return;
+    }
+    if (el.dataset.runOpen) { runOpen = runOpen === el.dataset.runOpen ? null : el.dataset.runOpen; draw(); return; }
+    if (el.dataset.runFind) {
+      const run = data.runs.find((r) => r.id === el.dataset.runFind); if (!run) return;
+      runFinding = run.id; if (data.runInfo[run.id]) data.runInfo[run.id].findings = null; draw();
+      try { const f = await api("/api/run-findings", { action: "find", run }); if (data.runInfo[run.id]) data.runInfo[run.id].findings = f; }
+      catch (e) { toast(e.message || String(e)); }
+      runFinding = null; draw(); return;
     }
     if (el.dataset.week !== undefined) {
       weekLoading = true; draw();
