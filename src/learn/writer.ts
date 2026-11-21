@@ -13,7 +13,7 @@ export type Writer = { name: string; write: (moments: Moment[]) => Promise<Writt
 const Out = z.array(z.object({ i: z.number().int(), lesson: z.string().max(1000).nullable(), scope: z.enum(["repo", "global"]).optional(), keywords: z.array(z.string().max(40)).max(5).optional(), why: z.string().max(400).nullable().optional() }));
 
 export function buildPrompt(moments: Moment[]): string {
-  const items = moments.map((m, i) => ({ i, kind: m.signal, seen: m.text, context: m.context, sessions: m.sessions, days: m.days, quotes: m.quotes.map((q) => q.quote) }));
+  const items = moments.map((m, i) => ({ i, kind: m.signal, seen: m.text, context: m.context, ...(m.role ? { role: m.role } : {}), sessions: m.sessions, days: m.days, quotes: m.quotes.map((q) => q.quote) }));
   return `${OWN_RUN_MARK}
 You turn moments from a coding agent's session logs into short lessons for future agents working in the same repo.
 
@@ -34,6 +34,8 @@ Items of kind "wrong_path" are paths agents looked for that weren't there, match
 Items of kind "stated" are something the engineer said once that reads like a standing instruction. Return a lesson only if it says how work should be done from now on, in this repo or in general (for example "Put each feature on its own branch and merge it through a pull request"), not a request about the task at hand ("merge it", "let's fix this now"). Keep the engineer's meaning and specifics; don't widen it. Scope is "repo" unless it is plainly about how to work anywhere.
 
 Items of kind "promised" come from the agent's own messages, not the engineer's: a promise about how it will work from now on ("From now on I delete a branch only after checking the merge happened"), or a mistake it owned up to. "context" holds what the engineer last asked and the agent's whole message. Return a lesson only if the agent made a real mistake or a real promise that would help a future agent in a different session avoid the same problem. Prefer a mechanical fix the context supports (a safer command or flag) over "be careful". Return null for apologies about wording, promises about the task at hand ("next time I run the scan it will…"), plans for the current work, or things the engineer did not care about. Most items should be null. Scope is "global" when the mistake could happen in any repo (git, shell, how to report).
+
+Items of kind "sent_back" come from a team of agents: one role's work was sent back by another (a reviewer, checker or qa agent), or the role later fixed something it had missed ("follow-up"). "context" names the role. Write the lesson as an instruction to that role ("Before opening a PR, run the migrations against a real database"), from what the quotes show was missed. Return null if the quotes don't share a cause. Scope is "repo".
 
 Items of kind "skimmed" count long answers the engineer replied to faster than they could have read, or stopped while being written. "context" shows how each answer began and what the engineer said next. Look at what they replied to: if they acted on the first lines and skipped the rest, return a lesson about the shape of answers (put the result and the next step first, in a line or two, and keep the rest short). Do not tell agents to explain less or drop plain-language explanations; the engineer may want those and still skim. Return null if the quick replies were to questions answered in the first line, or don't share a pattern. This lesson is usually "global".
 

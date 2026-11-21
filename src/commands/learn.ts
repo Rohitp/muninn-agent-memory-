@@ -57,11 +57,15 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
       if (n && !opts.auto) console.log(`${repo}: ${n} line(s) in CLAUDE.md may be out of date. See them in muninn ui, or run "muninn memory".`);
     } catch { /* a repo muninn can't read shouldn't stop the scan */ }
     const folded = await foldDuplicates(db, repo);
-    // Workflow runs: sessions that worked together, with their subagents and roles.
-    try { const w = await import("../workflow/runs.js"); await w.saveRuns(db, w.buildRuns(repo, sessions)); } catch { /* runs are a view, not needed to learn */ }
+    // Workflow runs: sessions that worked together, with their subagents and roles. Agents sending each other's work back become moments.
+    let extra: import("../learn/signals.js").Moment[] = [];
+    try {
+      const w = await import("../workflow/runs.js"); const runs = w.buildRuns(repo, sessions); await w.saveRuns(db, runs);
+      extra = (await import("../workflow/feedback.js")).feedbackMoments(repo, sessions, runs);
+    } catch { /* runs are a view, not needed to learn */ }
     // Subagents learn too: their failed commands, loops and wrong paths. They never typed anything, so your-words signals skip them.
     const withSubs = [...sessions, ...sessions.flatMap((s) => s.subagents ?? [])];
-    const r = await learnRepo(db, repo, withSubs, { embed, writer, cutoff: cfg.similarityCutoff, minSessions: cfg.minSessions, notesPerRun: cfg.notesPerRun });
+    const r = await learnRepo(db, repo, withSubs, { embed, writer, cutoff: cfg.similarityCutoff, minSessions: cfg.minSessions, notesPerRun: cfg.notesPerRun, extra });
     await saveUsage(db, writer?.runner ?? null, "lesson writing");
     // Long sessions read in chunks by your Claude: what you steered toward, and what the session showed.
     if (writer) {

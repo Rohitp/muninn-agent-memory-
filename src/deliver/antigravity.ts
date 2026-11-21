@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { cursorRules, type RuleFile } from "./cursor.js";
 import { keepOutOfGit, repoRoot } from "./local-file.js";
 
@@ -33,17 +34,37 @@ export async function enabled(db: Client): Promise<string[]> {
 const setEnabled = (db: Client, repos: string[]) => db.execute({ sql: "INSERT OR REPLACE INTO meta (key,value) VALUES ('antigravity_repos',?)", args: [JSON.stringify([...new Set(repos)].sort())] });
 
 /** Writes a repo's rules files, removes muninn's that are no longer needed, and keeps them out of git. */
-export async function writeAntigravityRules(db: Client, repo: string): Promise<{ root: string; files: string[] } | null> {
-  const root = await repoRoot(db, repo);
-  if (!root) return null;
-  const dir = join(root, DIR);
+/** Writes muninn's rules files into one folder, removing muninn's files that are no longer needed. */
+async function writeInto(db: Client, repo: string, folder: string, role: string | null): Promise<string[]> {
+  const dir = join(folder, DIR);
   mkdirSync(dir, { recursive: true });
-  try { keepOutOfGit(root, `${DIR}/${PREFIX}*.md`, "lessons for Antigravity on this machine"); } catch { /* not a git repo */ }
-  const files = (await cursorRules(db, repo, root)).map(toAntigravity);
+  const files = (await cursorRules(db, repo, folder, role)).map(toAntigravity);
   for (const f of files) writeFileSync(join(dir, f.name), f.body);
   const keep = new Set(files.map((f) => f.name));
   for (const f of readdirSync(dir)) if (f.startsWith(PREFIX) && f.endsWith(".md") && !keep.has(f)) rmSync(join(dir, f));
-  return { root, files: [...keep] };
+  return [...keep];
+}
+/** The repo's linked worktrees: an agent team often gives each role its own (.worktrees/builder, .worktrees/reviewer). */
+function linkedWorktrees(root: string): string[] {
+  try {
+    return execFileSync("git", ["-C", root, "worktree", "list", "--porcelain"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+      .split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9)).filter((p) => p !== root && existsSync(p));
+  } catch { return []; }
+}
+
+/**
+ * Writes a repo's rules files, removes muninn's that are no longer needed, and keeps them out of git. Each linked
+ * worktree gets its own copy, since files git ignores aren't in a worktree: the lessons for every agent, plus the
+ * lessons for the role named like the worktree.
+ */
+export async function writeAntigravityRules(db: Client, repo: string): Promise<{ root: string; files: string[]; worktrees: string[] } | null> {
+  const root = await repoRoot(db, repo);
+  if (!root) return null;
+  try { keepOutOfGit(root, `${DIR}/${PREFIX}*.md`, "lessons for Antigravity on this machine"); } catch { /* not a git repo */ }
+  const files = await writeInto(db, repo, root, null);
+  const worktrees = linkedWorktrees(root);
+  for (const wt of worktrees) { try { await writeInto(db, repo, wt, basename(wt)); } catch { /* a worktree being removed */ } }
+  return { root, files, worktrees };
 }
 export async function enableAntigravity(db: Client, repo: string) {
   await setEnabled(db, [...(await enabled(db)), repo]);
@@ -52,7 +73,7 @@ export async function enableAntigravity(db: Client, repo: string) {
 export async function disableAntigravity(db: Client, repo: string) {
   const root = await repoRoot(db, repo);
   const dir = root ? join(root, DIR) : null;
-  if (dir && existsSync(dir)) for (const f of readdirSync(dir)) if (f.startsWith(PREFIX) && f.endsWith(".md")) rmSync(join(dir, f));
+  for (const d of [dir, ...(root ? linkedWorktrees(root).map((w) => join(w, DIR)) : [])]) if (d && existsSync(d)) for (const f of readdirSync(d)) if (f.startsWith(PREFIX) && f.endsWith(".md")) rmSync(join(d, f));
   await setEnabled(db, (await enabled(db)).filter((r) => r !== repo));
 }
 /** Rewrites the files for every repo that has Antigravity on. Called after lessons change. */
