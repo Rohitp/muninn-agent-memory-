@@ -644,7 +644,9 @@ function runName(r) {
 /** Cost, when the data side could price it: "about $7.09", or why not. */
 const runCost = (r) => (typeof r.cost_usd === "number" && r.cost_usd > 0 ? `about $${r.cost_usd.toFixed(2)}${r.cost_unpriced ? " and some unpriced" : ""}` : "price unknown");
 /** A run's state in one label: fixes after approval or send-backs first, else approvals. */
-function runStatus(n) {
+function runStatus(n, r) {
+  const left = (r?.workflows || []).reduce((a, w) => a + (w.blocking_left || 0), 0);
+  if (left) return `<span class="status warn">${left} blocking issue${left === 1 ? "" : "s"} left open</span>`;
   if (!n) return "";
   if (n.rework) return `<span class="status warn">${n.rework} fix${n.rework === 1 ? "" : "es"} after approval</span>`;
   if (n.sentBack) return `<span class="status warn">sent back ${n.sentBack === 1 ? "once" : `${n.sentBack} times`}</span>`;
@@ -658,7 +660,7 @@ function runsTable() {
     <tbody>${data.runs.map((r) => { const n = data.runInfo[r.id]?.numbers; return `<tr>
       <td><button class="rowlink" data-run-open="${esc(r.id)}">${esc(runName(r))}</button>${data.runInfo[r.id]?.findings?.items?.[0] ? `<div style="font-size:12px;line-height:17px;color:var(--muted);margin-top:2px">${esc(data.runInfo[r.id].findings.items[0].text.slice(0, 140))}${data.runInfo[r.id].findings.items[0].text.length > 140 ? "…" : ""}</div>` : ""}</td>
       <td class="num">${n ? dur(n.minutes) : ""}</td><td class="num">${n ? tok(n.tokens) : ""}</td>
-      <td style="color:var(--muted);white-space:nowrap">${esc(runCost(r))}</td><td>${runStatus(n)}</td></tr>`; }).join("")}</tbody>
+      <td style="color:var(--muted);white-space:nowrap">${esc(runCost(r))}</td><td>${runStatus(n, r)}</td></tr>`; }).join("")}</tbody>
   </table></div></div></section>`;
 }
 /** One handoff in words: who handed to whom, approved, sent back, or asked for a follow-up fix. */
@@ -795,15 +797,34 @@ function wavesView(r) {
       <div style="font-size:12px;color:var(--muted);margin-top:auto">${tok(written)} written</div></div>`;
   }).join("")}</div><p class="note" style="margin:0 16px 12px">Subagents started within a few minutes of each other form a wave. All were started by the main session; fix waves are orange.</p>`;
 }
+/** A workflow that finished with review blockers still open, in words; empty when none were left. */
+const blockersLeft = (w) => (w.blocking_left ? `${w.status === "completed" ? "Completed" : "Ended"} with ${w.blocking_left} blocking issue${w.blocking_left === 1 ? "" : "s"} still open` : "");
 function phasesView(r) {
-  return (r.workflows || []).map((w) => {
+  const fix = /fix/i;
+  return (r.workflows || []).map((w, i) => {
     const rounds = w.logs.filter((l) => /round/i.test(l));
-    return `<div style="padding:14px 16px;border-top:1px solid var(--line)">
-      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap"><b style="font-weight:600">${esc(w.name)}</b><span class="status ${w.status === "completed" ? "good" : ""}">${esc(w.status)}</span><span style="font-size:12px;color:var(--muted)">${w.agents} agents · ${tok(w.tokens)} tokens</span></div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px">${w.phases.map((p) => `<span class="kind">${esc(p)}</span>`).join('<span style="color:var(--faint)">→</span>')}</div>
-      ${rounds.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${rounds.map((l) => `<span class="status ${/\b0 blocking/.test(l) ? "good" : "warn"}">${esc(l)}</span>`).join("")}</div>` : ""}
+    const agents = r.sessions.filter((s) => s.workflow_id === w.id);
+    // The agents of each phase, by role, with what they took. Rounds belong to the Check phase.
+    const cols = w.phases.map((p) => {
+      const in_ = agents.filter((s) => s.phase === p);
+      const byRole = {}; for (const s of in_) byRole[s.role] = (byRole[s.role] || 0) + 1;
+      const tokens = in_.reduce((a, s) => a + s.tokens_in + s.tokens_out, 0);
+      const checkRounds = /check|review/i.test(p) ? rounds : [];
+      return `<div style="min-width:0;border:1px solid ${fix.test(p) ? "var(--warn)" : "var(--line)"};background:${fix.test(p) ? "var(--warn-bg)" : "var(--group)"};border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px">
+        <div style="font-weight:600">${esc(p)}</div>
+        ${in_.length ? Object.entries(byRole).map(([role, c]) => `<div style="font-size:13px;line-height:18px">${esc(roleName(role))}${c > 1 ? ` ×${c}` : ""}</div>`).join("") : `<div style="font-size:12px;color:var(--muted)">no agent recorded</div>`}
+        ${tokens ? `<div style="font:500 12px/18px var(--mono);color:var(--muted)">${tok(tokens)}</div>` : ""}
+        ${checkRounds.map((l) => `<span class="status ${/\b0 blocking/.test(l) ? "good" : "warn"}" style="align-self:flex-start;white-space:normal">${esc(l)}</span>`).join("")}
+      </div>`;
+    }).join("");
+    const left = blockersLeft(w);
+    return `<div style="padding:14px 16px;${i ? "border-top:1px solid var(--line)" : ""}">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><b style="font-weight:600">${esc(w.name)}</b>
+        <span class="status ${left ? "warn" : w.status === "completed" ? "good" : ""}">${esc(left || w.status)}</span>
+        <span style="font-size:12px;color:var(--muted)">${w.agents} agents · ${tok(w.tokens)} tokens</span></div>
+      <div style="display:grid;grid-template-columns:repeat(${Math.max(1, w.phases.length)},minmax(120px,1fr));gap:8px;overflow-x:auto">${cols}</div>
     </div>`;
-  }).join("").replace('border-top:1px solid var(--line)', "border-top:0") || `<div class="empty">No workflow in this run.</div>`;
+  }).join("") || `<div class="empty">No workflow in this run.</div>`;
 }
 /** A run's own page: its figures, what happened in order, what your Claude found, and tokens by role. */
 function runPageView() {

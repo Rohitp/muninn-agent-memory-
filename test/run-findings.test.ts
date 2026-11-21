@@ -68,3 +68,17 @@ describe("runs in your week", () => {
     expect(insightsText(await insightsData(await openDb(), "github.com/rohitp/dartboard", 7, [], []))).not.toContain("Autonomous runs");
   });
 });
+
+describe("workflows that finish with blockers left open", () => {
+  const withWorkflow = { ...factory, ended_at: new Date().toISOString(), workflows: [{ id: "wf1", name: "factory-step", status: "completed", agents: 11, tokens: 2_000_000, phases: ["Spec", "Build", "Check", "Ship"], logs: ["Round 1: 7 blocking", "Round 3: 4 blocking"], blocking_left: 4 }] };
+  it("go to your Claude with their rounds, and are always reported", () => {
+    const p = findingsPrompt(withWorkflow, runNumbers(withWorkflow), []);
+    expect(p).toContain('"blocking_left": 4');
+    expect(p).toContain("Round 3: 4 blocking");
+    expect(p).toContain("shipped with review blockers still open");
+  });
+  it("are counted in your week", async () => {
+    const text = insightsText(await insightsData(await openDb(), "github.com/rohitp/dartboard", 7, [], [withWorkflow]));
+    expect(text).toContain("1 workflow(s) finished with 4 blocking review issue(s) still open.");
+  });
+});

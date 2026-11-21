@@ -90,6 +90,8 @@ export function findingsPrompt(run: Run, n: RunNumbers, noticed: string[]): stri
     // Approvals are many and alike: send the others in full, and approvals only as a count above.
     handoffs: run.handoffs.filter((h) => h.kind !== "approved").slice(0, 40).map((h) => ({ from: h.from_role, to: h.to_role, kind: h.kind, said: h.note ? redact(h.note).slice(0, 200) : undefined, handed_over: h.evidence && h.evidence !== h.note ? redact(h.evidence).slice(0, 200) : undefined })),
     noticed_in_these_sessions: noticed.slice(0, 10),
+    // Scripted workflows: their phases, check rounds, and blocking issues the last round left open.
+    workflows: (run.workflows ?? []).map((w) => ({ name: w.name, status: w.status, phases: w.phases, rounds: w.logs.filter((l) => /round/i.test(l)), blocking_left: w.blocking_left ?? 0 })),
   };
   return `${OWN_RUN_MARK}
 You look at one run of autonomous coding work: sessions working together in one repo, each in a role (for example a main session and the subagents it started, or a product-manager, builder, checker, reviewer and qa each in their own worktree). Say what the engineer should know about how the run went, so they can change the setup.
@@ -103,6 +105,7 @@ Look for:
 - "handoff": information lost or unclear at a handoff, shown by what was said and what happened next.
 - "low_yield": a role that took a lot and found or changed little (for example a checker or reviewer that approved everything while fixes were still needed afterwards).
 - "other": anything else the data clearly shows, such as many subagents doing similar work.
+- A workflow whose status is completed but whose blocking_left is above 0 shipped with review blockers still open: always report it, as "bounce", with the rounds that led there.
 
 Rules:
 - Use only numbers and quotes in the data. Don't guess causes the data doesn't show; say "the data doesn't show why" if needed. Don't talk about money.
