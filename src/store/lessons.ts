@@ -36,9 +36,10 @@ export async function getLesson(db: Client, id: string): Promise<Lesson | null> 
   const r = await db.execute({ sql: `SELECT ${COLS} FROM lessons WHERE id=? OR id LIKE ?`, args: [id, `${id}%`] });
   return (r.rows[0] as unknown as Lesson) ?? null;
 }
-export async function listLessons(db: Client, f: { repo?: string | null; status?: string } = {}): Promise<Lesson[]> {
+/** Lessons by repo and status. With `withAllRepos`, a repo's list also has the lessons kept for every repo, wherever they were learned. */
+export async function listLessons(db: Client, f: { repo?: string | null; status?: string; withAllRepos?: boolean } = {}): Promise<Lesson[]> {
   const where: string[] = []; const args: string[] = [];
-  if (f.repo) { where.push("repo_id=?"); args.push(f.repo); }
+  if (f.repo) { where.push(f.withAllRepos ? "(repo_id=? OR scope='global')" : "repo_id=?"); args.push(f.repo); }
   if (f.status) { where.push("status=?"); args.push(f.status); }
   const r = await db.execute({ sql: `SELECT ${COLS} FROM lessons ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY sessions DESC, last_seen DESC`, args });
   return r.rows as unknown as Lesson[];

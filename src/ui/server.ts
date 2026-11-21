@@ -70,7 +70,8 @@ const routes: Record<string, Handler> = {
   "GET /api/repos": async (db) => (await db.execute("SELECT r.id, (SELECT count(*) FROM lessons l WHERE l.repo_id=r.id AND l.status='proposed') waiting, (SELECT count(*) FROM lessons l WHERE l.repo_id=r.id AND l.status='live') live FROM repos r ORDER BY live+waiting DESC, r.id")).rows,
   "GET /api/lessons": async (db, q) => {
     const repo = q.get("repo") || null; const status = q.get("status") || "proposed";
-    const rows = await listLessons(db, { repo, status });
+    // Kept lessons for every repo are told here too, wherever they were learned, so they're listed here.
+    const rows = await listLessons(db, { repo, status, withAllRepos: status === "live" });
     const out = [];
     for (const l of rows.slice(0, 200)) out.push(await lessonDetail(db, l.id));
     return out;

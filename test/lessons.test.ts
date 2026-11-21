@@ -36,3 +36,17 @@ describe("lessons", () => {
     expect(await listLessons(await openDb())).toEqual([]);
   });
 });
+
+describe("lessons kept for every repo", () => {
+  it("are listed in every repo's kept lessons, not only the repo they were learned in", async () => {
+    const { openDb } = await import("../src/store/db.js");
+    const { createLesson, listLessons } = await import("../src/store/lessons.js");
+    const db = await openDb();
+    for (const r of ["github.com/x/a", "github.com/x/b"]) await db.execute({ sql: "INSERT OR IGNORE INTO repos (id,paths) VALUES (?,'[]')", args: [r] });
+    await createLesson(db, { repo_id: "github.com/x/a", scope: "global", text: "Explain new terms in plain words", source: "manual", status: "live", by: "t" });
+    await createLesson(db, { repo_id: "github.com/x/a", text: "Only for repo A", source: "manual", status: "live", by: "t" });
+    const inB = (withAllRepos: boolean) => listLessons(db, { repo: "github.com/x/b", status: "live", withAllRepos }).then((ls) => ls.map((l) => l.text));
+    expect(await inB(true)).toEqual(["Explain new terms in plain words"]);
+    expect(await inB(false)).toEqual([]);
+  });
+});
