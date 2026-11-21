@@ -42,24 +42,36 @@ export function plist(node: string, cli: string, log: string): string {
 }
 
 export const scheduleOn = () => existsSync(plistPath());
+/** The job is a macOS LaunchAgent; elsewhere scans start only when a session ends, or when you ask. */
+export const scheduleSupported = () => process.platform === "darwin" || !!process.env.MUNINN_LAUNCH_AGENTS;
 
-export function schedule(sub: string) {
-  if (process.platform !== "darwin") { console.log("The background job is for macOS. Elsewhere, scans start when a Claude Code or Codex session ends, or with muninn learn."); return; }
+/** Installs or removes the job without printing, for the command and the page. Returns whether it changed anything. */
+export function setSchedule(on: boolean): boolean {
+  if (!scheduleSupported()) throw new Error("The background job is for macOS only.");
   const file = plistPath();
-  if (sub === "off") {
-    if (!existsSync(file)) { console.log("The background job isn't installed."); return; }
+  if (!on) {
+    if (!existsSync(file)) return false;
     try { launchctl("bootout", `gui/${process.getuid?.()}`, file); } catch { /* not loaded */ }
     rmSync(file);
-    console.log("Removed muninn's background job. Scans start again only when a Claude Code or Codex session ends, or when you ask.");
+    return true;
+  }
+  const cli = join(dirname(fileURLToPath(import.meta.url)), "..", "cli.js");
+  mkdirSync(dirname(file), { recursive: true });
+  if (existsSync(file)) { try { launchctl("bootout", `gui/${process.getuid?.()}`, file); } catch { /* not loaded */ } }
+  writeFileSync(file, plist(process.execPath, cli, join(ensureHome(), "background.log")));
+  launchctl("bootstrap", `gui/${process.getuid?.()}`, file);
+  return true;
+}
+
+export function schedule(sub: string) {
+  if (!scheduleSupported()) { console.log("The background job is for macOS. Elsewhere, scans start when a Claude Code or Codex session ends, or with muninn learn."); return; }
+  if (sub === "off") {
+    console.log(setSchedule(false) ? "Removed muninn's background job. Scans start again only when a Claude Code or Codex session ends, or when you ask." : "The background job isn't installed.");
     return;
   }
   if (sub === "on") {
-    const cli = join(dirname(fileURLToPath(import.meta.url)), "..", "cli.js");
-    mkdirSync(dirname(file), { recursive: true });
-    if (existsSync(file)) { try { launchctl("bootout", `gui/${process.getuid?.()}`, file); } catch { /* not loaded */ } }
-    writeFileSync(file, plist(process.execPath, cli, join(ensureHome(), "background.log")));
-    launchctl("bootstrap", `gui/${process.getuid?.()}`, file);
-    console.log(`Installed muninn's background job (${file}). Every ${EVERY_HOURS} hours it checks whether a scan is due, so Antigravity and Cursor sessions are scanned even on days without Claude Code. Remove it with "muninn schedule off".`);
+    setSchedule(true);
+    console.log(`Installed muninn's background job (${plistPath()}). Every ${EVERY_HOURS} hours it checks whether a scan is due, so Antigravity and Cursor sessions are scanned even on days without Claude Code. Remove it with "muninn schedule off".`);
     return;
   }
   console.log(scheduleOn() ? `On: every ${EVERY_HOURS} hours muninn checks whether a scan is due. "muninn schedule off" removes it.` : `Off. "muninn schedule on" adds a macOS background job that checks every ${EVERY_HOURS} hours whether a scan is due.`);

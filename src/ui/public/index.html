@@ -510,7 +510,8 @@ async function load() {
     api("/api/repos"), api("/api/lessons?" + q({ repo, status: "proposed" })), api("/api/lessons?" + q({ repo, status: "live" })), api("/api/home?" + q({ repo })), api("/api/scan"),
   ]);
   const [plan, memory, lessonFile, proposals, threads, askSuggestions, rules] = await Promise.all([repo ? api("/api/plan?" + q({ repo, branch: planBranch })) : null, api("/api/memory?" + q({ repo })), repo ? api("/api/lesson-file?" + q({ repo })) : null, api("/api/proposals?" + q({ repo })), api("/api/threads?" + q({ repo })), api("/api/ask-suggestions?" + q({ repo })).catch(() => []), repo ? api("/api/rules?" + q({ repo })).catch(() => null) : null]);
-  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions, rules };
+  const schedule = await api("/api/schedule").catch(() => null);
+  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions, rules, schedule };
 }
 
 /* muninn checks your sessions on its own after they end. This line shows when it last did, and lets you ask now. */
@@ -518,7 +519,7 @@ function scanLine() {
   const s = data.scan;
   if (s.running) return `<span class="spin" aria-hidden="true"></span> Checking your sessions for new lessons. New suggestions appear here when it's done.`;
   if (s.needsModel) return `muninn can't check your sessions until its local model is downloaded (about 33 MB). Run <code>muninn learn --all-repos</code> once in a terminal.`;
-  return `${s.lastLearn ? `muninn checked your sessions ${esc(ago(s.lastLearn))}` : "muninn hasn't checked your sessions yet"}, and checks again on its own after you work. <button class="linkbtn" data-scan>Check now</button>`;
+  return `${s.lastLearn ? `muninn checked your sessions ${esc(ago(s.lastLearn))}` : "muninn hasn't checked your sessions yet"}, and checks again on its own after you work${data.schedule?.on ? ` and every ${data.schedule.everyHours} hours in the background` : ""}. <button class="linkbtn" data-scan>Check now</button>`;
 }
 let scanPoll = null;
 /** Follows a running scan, then refreshes and says what it found. Also used when a scan started on its own. */
@@ -668,7 +669,19 @@ function drawPage() {
         ${rulesRow("cursor", "Cursor", ".cursor/rules")}
       </ul>
       ${dial === "quiet" ? `<p class="note">Both off: muninn tells agents nothing unless they ask with muninn ask.</p>` : ""}
-    </section>` : ""}`;
+    </section>` : ""}
+    ${machineSettings()}`;
+}
+/* The background job covers every repo, so it sits apart from one repo's settings. */
+function machineSettings() {
+  const s = data.schedule; if (!s?.supported) return "";
+  return `<section aria-labelledby="mac">
+      <h2 id="mac">Settings for this Mac</h2>
+      <ul class="group">
+        <li><div class="row"><div class="main" style="cursor:default"><div class="title">Check for new sessions in the background</div><div class="sub">Scans otherwise start only when a Claude Code or Codex session ends, so days spent only in Antigravity or Cursor would wait. With this on, a macOS background job asks every ${s.everyHours} hours whether a scan is due: a day since the last one, or 5 new sessions. Most of the time it does nothing.</div></div>
+          <button class="switch" role="switch" aria-checked="${s.on}" aria-label="Check for new sessions in the background" data-schedule></button></div></li>
+      </ul>
+    </section>`;
 }
 /** Cursor and Antigravity hear lessons only through rules files in the repo. Says when muninn turned them on by itself. */
 function rulesRow(tool, name, dir) {
@@ -796,6 +809,12 @@ document.addEventListener("click", async (e) => {
       const on = el.getAttribute("aria-checked") !== "true";
       data.rules = await api("/api/rules", { repo, tool: el.dataset.rules, on }); draw();
       toast(on ? "Rules files written. Its agent gets your lessons." : "Rules files removed. muninn won't turn them back on here.");
+      return;
+    }
+    if (el.dataset.schedule !== undefined) {
+      const on = el.getAttribute("aria-checked") !== "true";
+      try { data.schedule = await api("/api/schedule", { on }); } catch (e) { toast(e.message || String(e)); return; }
+      draw(); toast(on ? `Background checks on. muninn looks every ${data.schedule.everyHours} hours.` : "Background checks off. Scans start when a Claude Code or Codex session ends, or with Check now.");
       return;
     }
     if (el.dataset.lessonFile !== undefined) {

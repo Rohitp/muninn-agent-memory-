@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { countLogs } from "../src/commands/auto.js";
-import { plistPath, schedule } from "../src/commands/schedule.js";
+import { plistPath, schedule, scheduleOn, setSchedule } from "../src/commands/schedule.js";
 import { tmp, useHome, write } from "./helpers.js";
 
 beforeEach(() => { useHome(); process.env.MUNINN_LAUNCH_AGENTS = join(tmp(), "LaunchAgents"); });
@@ -23,5 +23,12 @@ describe("scans without Claude Code", () => {
     expect(p).toMatch(/<key>PATH<\/key><string>[^<]*\/usr\/bin/);
     schedule("off");
     expect(existsSync(plistPath())).toBe(false);
+  });
+  it("switches on and off from the page, saying whether anything changed", () => {
+    expect(setSchedule(true)).toBe(true);
+    expect(scheduleOn()).toBe(true);
+    expect(setSchedule(false)).toBe(true);
+    expect(scheduleOn()).toBe(false);
+    expect(setSchedule(false)).toBe(false);
   });
 });

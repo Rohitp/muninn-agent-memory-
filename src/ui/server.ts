@@ -233,6 +233,8 @@ const routes: Record<string, Handler> = {
   // Scans: when the last one finished, whether one is running, and "Check now".
   "GET /api/scan": async (db) => ({ running: scanRunning(), needsModel: !modelCached(), lastLearn: String((await db.execute("SELECT value FROM meta WHERE key='last_learn'")).rows[0]?.value ?? "") || null }),
   "POST /api/scan": async () => ({ started: startAutoScan({ force: true }), running: true }),
+  "GET /api/schedule": async () => { const m = await import("../commands/schedule.js"); return { supported: m.scheduleSupported(), on: m.scheduleOn(), everyHours: m.EVERY_HOURS }; },
+  "POST /api/schedule": async (_db, _q, b) => { const m = await import("../commands/schedule.js"); m.setSchedule(!!b.on); return { supported: true, on: m.scheduleOn(), everyHours: m.EVERY_HOURS }; },
 };
 
 const readBody = (req: IncomingMessage) => new Promise<string>((ok, fail) => {
