@@ -3,47 +3,110 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>muninn</title>
+<title>secondnature</title>
 <style>
-/* Design C, "Switches": one screen, like phone settings. Suggestions with Add, your lessons with on/off switches,
-   two settings. See docs/design-language.md. No web fonts, so the page makes no requests off this machine. */
+/* The secondnature design system (its tokens, layout rules and components live in a Claude Design artifact):
+   a sidebar, four tabs, and a 12-column grid of panels with rows. The older names below (--group, --on, --link…)
+   map onto its tokens so every part of the page shares them. No web fonts are loaded, so the page makes no
+   requests off this machine: Geist is used where it's installed, else the system font. */
 :root {
-  --bg: #F5F5F3; --group: #FFFFFF; --line: #EDEDEA; --line-strong: #DADAD6;
-  --ink: #1C1D21; --muted: #6B6E76; --faint: #9A9CA3;
-  --on: #1F7A45; --off: #D9D9D5; --link: #2B3AB8; --chip: #EDEFFE; --warn: #B23E06; --warn-bg: #FDF1EA;
-  --fill: #F0F0EC; --diff-add: #067647; --diff-del: #B42318;
-  --sans: Inter, "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --bg: #f6f6f4; --sidebar: #eeeeeb; --group: #ffffff; --fill: #f1f1ee; --line: #e3e3df; --line-strong: #cbcbc6;
+  --ink: #17181b; --muted: #5c5e66; --faint: #71747c;
+  --link: #2b3ab8; --chip: #edeffe; --on: #1b6e3e; --on-bg: #e4f3ea; --off: #cbcbc6;
+  --warn: #b23e06; --warn-bg: #fdf0e8; --on-warn: #ffffff; --caution: #7a5200; --caution-bg: #fff4d6;
+  --diff-add: #067647; --diff-del: #b42318;
+  --sans: "Geist", -apple-system, "SF Pro Text", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sidebar-width: 232px; --radius-sm: 5px; --radius-md: 8px; --radius-lg: 12px;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #111214; --group: #1C1D21; --line: #2A2C31; --line-strong: #3A3C43; --ink: #ECECEF; --muted: #A1A3AB; --faint: #74767E;
-    --on: #3DBB72; --off: #3A3C43; --link: #A9B1FF; --chip: #262B4D; --warn: #FF9C6E; --warn-bg: #2A1E17;
-    --fill: #24262B; --diff-add: #6CD49A; --diff-del: #FF8A80; }
+  :root { --bg: #111214; --sidebar: #151618; --group: #1a1b1e; --fill: #0e0f11; --line: #2a2c30; --line-strong: #3b3e43;
+    --ink: #ededef; --muted: #a2a5ad; --faint: #83868e;
+    --link: #8d98ff; --chip: #20244a; --on: #58c88a; --on-bg: #13281c; --off: #3b3e43;
+    --warn: #ff9a66; --warn-bg: #33200f; --on-warn: #1a0d05; --caution: #e8b54a; --caution-bg: #2e2410;
+    --diff-add: #6cd49a; --diff-del: #ff8a80; color-scheme: dark; }
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; } /* a class that sets display mustn't bring back something hidden */
-body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--sans); }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/21px var(--sans); }
 button, input, textarea, select { font: inherit; color: inherit; }
 a { color: var(--link); }
+:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-main { max-width: 680px; margin: 0 auto; padding: 36px 20px 72px; }
-.top { font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-h1 { margin: 4px 0 0; font-size: 30px; font-weight: 600; letter-spacing: -.4px; line-height: 1.2; }
-.lead { margin: 6px 0 0; color: var(--muted); }
-section { margin-top: 30px; }
-h2 { margin: 0 0 8px 4px; font-size: 13px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; color: var(--muted); }
-.group { list-style: none; margin: 0; padding: 0; background: var(--group); border-radius: 14px; overflow: hidden; }
+/* The shell: sidebar, then the page on a 12-column grid. */
+.shell { display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); min-height: 100vh; }
+.side { background: var(--sidebar); border-right: 1px solid var(--line); padding: 14px 12px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; height: 100vh; overflow: auto; }
+.wordmark { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; padding: 4px 8px; }
+.repopick { display: flex; flex-direction: column; gap: 2px; padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-md); background: var(--group); }
+.repopick small { font-size: 10px; line-height: 14px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.repopick select { border: 0; background: none; padding: 0; font-weight: 500; cursor: pointer; width: 100%; }
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav button { all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; border-radius: var(--radius-md); color: var(--muted); font-weight: 500; cursor: pointer; }
+.nav button:hover { background: var(--fill); color: var(--ink); }
+.nav button[aria-current="page"] { background: var(--group); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+.nav button:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.count { font: 600 11px/16px var(--mono); padding: 1px 7px; border-radius: 999px; background: var(--warn); color: var(--on-warn); }
+.sidefoot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding: 0 8px; font-size: 12px; line-height: 17px; color: var(--muted); }
+.sidefoot .linkbtn { font-size: 12px; }
+main { min-width: 0; padding: 28px clamp(16px, 3vw, 40px) 72px; }
+.grid { max-width: 1440px; margin: 0 auto; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 24px; align-items: start; }
+.s12 { grid-column: span 12; } .s8 { grid-column: span 8; } .s7 { grid-column: span 7; } .s6 { grid-column: span 6; } .s5 { grid-column: span 5; } .s4 { grid-column: span 4; }
+.stack { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+@media (max-width: 1100px) { .s8, .s7, .s6, .s5, .s4 { grid-column: 1 / -1; } }
+@media (max-width: 860px) { .shell { grid-template-columns: 1fr; } .side { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); } .nav { flex-direction: row; flex-wrap: wrap; } .sidefoot { margin-top: 0; } }
+.pagehead { grid-column: 1 / -1; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.crumb { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 32px; text-wrap: balance; }
+.lead { margin: 4px 0 0; color: var(--muted); max-width: 72ch; }
+section { min-width: 0; }
+h2 { margin: 0 0 8px 2px; font-size: 11px; line-height: 16px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.group { list-style: none; margin: 0; padding: 0; background: var(--group); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
 .group > li { border-top: 1px solid var(--line); }
 .group > li:first-child { border-top: 0; }
-.row { display: flex; align-items: center; gap: 14px; padding: 13px 18px; }
+.row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; min-height: 44px; }
 .row .main { flex: 1; min-width: 0; text-align: left; border: 0; background: none; padding: 0; cursor: pointer; }
-.row .sub { font-size: 13px; color: var(--muted); }
-.row .warnline { font-size: 13px; color: var(--warn); margin-top: 2px; }
+.row .title { color: var(--ink); }
+.row .sub { font-size: 12px; line-height: 17px; color: var(--muted); margin-top: 2px; }
+.row .warnline { font-size: 12px; color: var(--warn); margin-top: 2px; }
 .row.off .title { color: var(--faint); }
-.note { margin: 8px 4px 0; font-size: 13px; color: var(--muted); }
+.note { margin: 8px 2px 0; font-size: 12px; line-height: 17px; color: var(--muted); }
+/* Status labels: always a word. Helping/approved green, still happening/sent back orange, not reaching amber. */
+.status { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; line-height: 18px; font-weight: 600; white-space: nowrap; background: var(--fill); color: var(--muted); }
+.status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.status.good { background: var(--on-bg); color: var(--on); } .status.warn { background: var(--warn-bg); color: var(--warn); } .status.caution { background: var(--caution-bg); color: var(--caution); }
+.tag { display: inline-block; padding: 0 7px; border-radius: var(--radius-sm); background: var(--chip); color: var(--link); font: 500 12px/18px var(--mono); }
+.kind { display: inline-block; padding: 0 7px; border-radius: var(--radius-sm); background: var(--fill); font-size: 12px; line-height: 18px; font-weight: 600; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); background: var(--group); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+.stat { padding: 12px 16px; border-left: 1px solid var(--line); } .stat:first-child { border-left: 0; }
+.stat b { display: block; font: 500 22px/28px var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.stat b.warn { color: var(--warn); }
+.stat span { font-size: 12px; line-height: 17px; color: var(--muted); }
+.panelhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); min-height: 44px; }
+.panelhead h2 { margin: 0; }
+.panel { background: var(--group); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; min-width: 0; }
+.panelbody { padding: 14px 16px; }
+.tablewrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 19px; }
+table.data th { text-align: left; font-size: 11px; line-height: 16px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 9px 16px; background: var(--fill); border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.data td { padding: 10px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.data tr:last-child td { border-bottom: 0; }
+table.data .num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.data .rowlink { all: unset; cursor: pointer; font-weight: 500; color: var(--ink); }
+table.data .rowlink:hover { text-decoration: underline; }
+table.data .rowlink:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--radius-md); background: var(--fill); border: 1px solid var(--line); }
+.seg button { border: 0; background: none; color: var(--muted); font-size: 13px; line-height: 18px; font-weight: 500; padding: 5px 12px; border-radius: var(--radius-sm); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--group); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
 /* Autonomous runs: cost per role as bars, then what happened in order, then what your Claude found. */
 .rundetail { padding: 4px 18px 18px; }
 .rundetail h3 { margin: 16px 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .rolebar { display: grid; grid-template-columns: minmax(90px, 140px) 1fr; gap: 4px 12px; align-items: center; font-size: 14px; padding: 4px 0; }
+/* A share of a total: the name and figure on one line, the bar under them, details below. */
+.meter { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; font-size: 13px; }
+.meter .val { font: 500 12px/18px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.meter .bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--fill); overflow: hidden; }
+.meter .bar span { display: block; height: 100%; background: var(--link); border-radius: 3px; }
+.meter .what { grid-column: 1 / -1; font-size: 12px; line-height: 17px; color: var(--muted); }
 .rolebar .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
 .rolebar .bar span { display: block; height: 100%; background: var(--link); border-radius: 4px; }
 .rolebar .what { grid-column: 2; font-size: 12px; color: var(--muted); }
@@ -59,13 +122,14 @@ h2 { margin: 0 0 8px 4px; font-size: 13px; font-weight: 600; letter-spacing: .4p
 .finding .kind { font-size: 12px; font-weight: 600; color: var(--muted); margin-right: 6px; }
 .rolechip { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: var(--chip); color: var(--link); margin-right: 6px; }
 .more { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 14px 18px; color: var(--link); font-weight: 500; cursor: pointer; }
-.add { height: 34px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--chip); color: var(--link); font-size: 14px; font-weight: 600; cursor: pointer; flex: none; }
-.x { width: 34px; height: 34px; border: 0; border-radius: 999px; background: none; color: var(--faint); cursor: pointer; flex: none; font-size: 18px; line-height: 1; }
-.x:hover { background: var(--bg); color: var(--muted); }
-.switch { width: 46px; height: 28px; border-radius: 999px; border: 0; padding: 0; background: var(--off); position: relative; cursor: pointer; flex: none; transition: background .15s; }
-.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: left .15s; }
+.add { height: 32px; padding: 0 14px; border: 1px solid var(--ink); border-radius: var(--radius-md); background: var(--ink); color: var(--group); font-size: 14px; font-weight: 500; cursor: pointer; flex: none; }
+.x { height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-md); background: none; color: var(--muted); cursor: pointer; flex: none; font-size: 14px; }
+.x.icon { width: 32px; padding: 0; font-size: 16px; color: var(--faint); }
+.x:hover { background: var(--fill); color: var(--ink); }
+.switch { width: 36px; height: 20px; border-radius: 999px; border: 0; padding: 0; background: var(--off); position: relative; cursor: pointer; flex: none; transition: background .15s; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: left .15s; }
 .switch[aria-checked="true"] { background: var(--on); }
-.switch[aria-checked="true"]::after { left: 21px; }
+.switch[aria-checked="true"]::after { left: 18px; }
 .switch:disabled { opacity: .5; cursor: default; }
 .detail { padding: 4px 18px 18px; }
 .detail label, .detail .lbl { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 6px; }
@@ -82,8 +146,10 @@ input[type=text] { width: 100%; height: 40px; border: 1px solid var(--line-stron
 .replaylist .mono { font-size: 12px; margin-top: 2px; }
 .replaylist li, .replaylist .sub { font-size: 12px; font-weight: 400; color: var(--muted); padding: 0; }
 .btns { display: flex; gap: 10px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
-.btn { height: 38px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--group); cursor: pointer; font-size: 14px; }
-.btn.primary { background: var(--ink); border-color: var(--ink); color: var(--group); font-weight: 600; }
+.btn { height: 34px; padding: 0 14px; border-radius: var(--radius-md); border: 1px solid var(--line-strong); background: var(--group); cursor: pointer; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.btn:hover { background: var(--fill); }
+.btn.primary { background: var(--ink); border-color: var(--ink); color: var(--group); }
+.btn.ask { border-color: transparent; background: var(--chip); color: var(--link); }
 .btn.textbtn { border: 0; background: none; padding: 0; height: auto; color: var(--warn); margin-left: auto; }
 .fix { height: 30px; padding: 0 12px; border-radius: 999px; border: 0; background: var(--warn-bg); color: var(--warn); font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 6px; }
 .evidence { font-size: 13px; color: var(--muted); margin-top: 12px; }
@@ -118,7 +184,7 @@ pre code { background: none; padding: 0; }
 /* Ask secondnature: a panel on the right; the page moves over on wide screens and it covers the page on narrow ones. */
 .askbtn { margin-left: auto; height: 32px; padding: 0 14px; border-radius: 999px; border: 0; background: var(--chip); color: var(--link); font-size: 14px; font-weight: 600; cursor: pointer; }
 .askpanel { position: fixed; top: 0; right: 0; bottom: 0; width: 440px; max-width: 100%; background: var(--group); border-left: 1px solid var(--line-strong); display: flex; flex-direction: column; z-index: 5; }
-@media (min-width: 1100px) { body.ask-open main { margin-right: 440px; margin-left: max(20px, calc((100vw - 440px - 680px) / 2)); } }
+@media (min-width: 1100px) { body.ask-open .shell { margin-right: 440px; } }
 .askhead { display: flex; align-items: center; gap: 8px; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--line); }
 .askttl { flex: 1; margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink); }
 .btn.sm { height: 32px; padding: 0 12px; font-size: 13px; }
@@ -203,7 +269,7 @@ pre code { background: none; padding: 0; }
 </style>
 </head>
 <body>
-<main id="main" aria-live="polite"></main>
+<div class="shell"><aside id="side" class="side" aria-label="secondnature"></aside><main id="main" aria-live="polite"></main></div>
 <aside id="askPanel" class="askpanel" aria-label="Ask secondnature" hidden></aside>
 <div class="toast" id="toast" role="status"></div>
 <script>
@@ -227,10 +293,16 @@ const WHEN_HINT = {
 /* The repo and branch you picked live in the address, so the page's own reloads (after muninn is rebuilt) and your refreshes keep them. */
 const picked = new URLSearchParams(location.search);
 let repo = picked.has("repo") ? picked.get("repo") : HERE || "";
+/* Which tab is open (review, lessons, plan, activity, settings), and which run when one is open. No tab in the
+   address opens To review when something's waiting, else Lessons. */
+let tab = picked.get("tab") || null;
+let runPage = picked.get("run") || null;
 function rememberPick() {
   const u = new URL(location.href);
   u.searchParams.set("repo", repo);
   if (planBranch) u.searchParams.set("branch", planBranch); else u.searchParams.delete("branch");
+  if (tab) u.searchParams.set("tab", tab); else u.searchParams.delete("tab");
+  if (runPage) u.searchParams.set("run", runPage); else u.searchParams.delete("run");
   history.replaceState(null, "", u);
 }
 let showAll = false;
@@ -343,10 +415,10 @@ function memorySection() {
       : `<li><div class="row"><div class="main" style="cursor:default"><div class="title mono">${esc(r.text)}</div><div class="sub">${esc(MEMORY_WHY[r.reason] || "")}: ${esc(r.detail.replace(/\`/g, ""))}. ${esc(r.file)}${!repo ? ` in ${esc(short(r.repo_id))}` : ""}, line ${r.line}.</div></div>
           <button class="btn" data-mem-keep="${esc(r.id)}">Keep</button>
           <button class="btn" data-mem-remove="${esc(r.id)}">Remove</button></div></li>`).join("")}</ul>
-    <p class="note">Agents read these files at the start of every session, so an out-of-date line costs tokens each time and can send them the wrong way. Remove takes the line out of the file; Keep leaves it and stops muninn asking.</p>
+    <p class="note">Agents read these files at the start of every session, so an out-of-date line costs tokens each time and can send them the wrong way. Remove takes the line out of the file; Keep leaves it and stops secondnature asking.</p>
   </section>`;
 }
-/* Changes muninn proposes to files agents read: ask-first rules, new skills, edits to CLAUDE.md. Nothing is written until Apply. */
+/* Changes secondnature proposes to files agents read: ask-first rules, new skills, edits to CLAUDE.md. Nothing is written until Apply. */
 const PROP_KIND = { guard: "Ask-first rule", skill: "New skill", instruction: "Instruction edit" };
 let proposing = false;
 function propPreview(p) {
@@ -374,7 +446,7 @@ function changesSection() {
         <button class="x" data-prop-dismiss="${esc(p.id)}" aria-label="Dismiss" title="Dismiss">×</button>
         <button class="add" data-prop-apply="${esc(p.id)}">Apply</button></div></li>`).join("")}
       ${applied.map((p) => `<li><div class="row"><div class="main" style="cursor:default"><div class="title" style="color:var(--muted)">Applied: ${esc(p.title)}</div><div class="sub">${esc(shortDate(p.decided_at))}</div></div><button class="btn" data-prop-undo="${esc(p.id)}">Undo</button></div></li>`).join("")}
-      ${!waiting.length && !applied.length ? `<li class="empty">Nothing waiting. muninn proposes "ask first" rules from commands you keep stopping, and skills from steps that repeat, as it reads your sessions.</li>` : ""}
+      ${!waiting.length && !applied.length ? `<li class="empty">Nothing waiting. secondnature proposes "ask first" rules from commands you keep stopping, and skills from steps that repeat, as it reads your sessions.</li>` : ""}
     </ul>
     ${repo ? `<p class="note">${proposing ? `<span class="spin" aria-hidden="true"></span> Your Claude is reviewing this repo's CLAUDE.md, AGENTS.md and skills…` : `<button class="linkbtn" data-propose>Review CLAUDE.md, AGENTS.md and skills</button> against your sessions and propose edits. One call to your Claude.`}</p>` : ""}
   </section>`;
@@ -497,24 +569,30 @@ function planSection() {
       <button class="check" role="checkbox" aria-checked="false" aria-label="Mark done: ${esc(o.text)}" data-plan-close="${esc(o.id)}"></button>
       <button class="main" data-plan-edit="${esc(o.id)}"><div class="title">${esc(o.text)}</div><div class="sub">${movedBack.has(o.id) ? "Moved back from Done just now" : o.by_person ? "added by you" : `from a session on ${shortDate(o.created_at)}`}</div></button>
       <button class="x" data-plan-remove="${esc(o.id)}" aria-label="Remove" title="Remove">×</button></div></li>`;
-  return `<section aria-labelledby="pl">
-    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap">
-      <h2 id="pl">Plan for this branch</h2>
-      <span style="font-size:14px;color:var(--muted)"><label class="vh" for="planBranch">Branch</label>
-        <select id="planBranch" class="picker">${data.plan.branches.map((b) => `<option value="${esc(b.name)}" ${b.name === data.plan.branch ? "selected" : ""}>${esc(b.name)}${b.name === data.plan.checkedOut ? " (checked out)" : b.merged ? " (merged)" : ""}</option>`).join("")}</select></span>
+  const hasHist = !!(data.plan.history?.outcomes.length || data.plan.history?.ungrouped.length || data.plan.history?.decisions.length);
+  const merged = data.plan.branches.find((b) => b.name === data.plan.branch)?.merged;
+  // Runs on this branch: any of their sessions worked on it.
+  const branchRuns = data.runs.filter((r) => r.sessions.some((s) => s.branch === data.plan.branch));
+  return `<div class="pagehead"><div>
+      <h1>Plan for <label class="vh" for="planBranch">Branch</label><select id="planBranch" class="picker" style="font:inherit;border-bottom:2px solid var(--ink)">${data.plan.branches.map((b) => `<option value="${esc(b.name)}" ${b.name === data.plan.branch ? "selected" : ""}>${esc(b.name)}${b.name === data.plan.checkedOut ? " (checked out)" : b.merged ? " (merged)" : ""}</option>`).join("")}</select></h1>
+      <p class="lead">${merged ? "This branch is merged, so its work is finished. " : ""}${empty ? "Each branch is its own piece of work. secondnature builds its plan from the sessions on it, and you can write your own." : "Rewritten as your sessions go and checked against the branch's commits. Agents on this branch get it when a session starts; anything you write stays as you wrote it."}</p>
+    </div><button class="btn" data-ask-open>Ask about this branch</button></div>
+    <div class="stack s7">
+      <ul class="group">
+        ${planEdit === "goal" ? `<li>${planEditor("goal", "", p.goal?.text ?? "", "What this project is trying to do")}</li>`
+          : `<li><div class="row"><button class="main" data-plan-edit="goal"><div class="sub" style="margin:0 0 2px">Goal</div><div class="title" style="font-size:16px;line-height:23px;font-weight:600">${p.goal ? esc(p.goal.text) : '<span style="color:var(--link)">Add a goal</span>'}</div></button></div></li>`}
+        ${planEdit === "status" ? `<li>${planEditor("status", "", p.status?.text ?? "", "Where things stand, in a few sentences")}</li>`
+          : `<li><div class="row"><button class="main" data-plan-edit="status"><div class="sub" style="margin:0 0 2px">Where it stands${p.status ? ` · ${p.status.by_person ? "written by you" : `updated ${esc(shortDate(p.status.at))}`}` : ""}</div><div class="title">${p.status ? esc(p.status.text) : '<span style="color:var(--link)">Add a summary</span>'}</div></button></div></li>`}
+      </ul>
+      <section><h2>Next · ${p.open.length}</h2><ul class="group">
+        ${p.open.map(openRow).join("")}
+        ${planEdit === "new" ? `<li>${planEditor("open", "", "", "A next step or open question")}</li>` : `<li><button class="more" data-plan-new>+ Add a next step</button></li>`}
+      </ul></section>
     </div>
-    <ul class="group">
-      ${planEdit === "goal" ? `<li>${planEditor("goal", "", p.goal?.text ?? "", "What this project is trying to do")}</li>`
-        : `<li><div class="row"><button class="main" data-plan-edit="goal"><div class="sub">Goal</div><div class="title">${p.goal ? esc(p.goal.text) : '<span style="color:var(--link)">Add a goal</span>'}</div></button></div></li>`}
-      ${planEdit === "status" ? `<li>${planEditor("status", "", p.status?.text ?? "", "Where things stand, in a few sentences")}</li>`
-        : `<li><div class="row"><button class="main" data-plan-edit="status"><div class="sub">Where it stands${p.status ? ` · ${p.status.by_person ? "written by you" : `updated ${esc(shortDate(p.status.at))}`}` : ""}</div><div class="title" style="font-weight:400">${p.status ? esc(p.status.text) : '<span style="color:var(--link)">Add a summary</span>'}</div></button></div></li>`}
-      ${p.open.length ? `<li><div class="rowlabel">Next</div></li>` : ""}
-      ${p.open.map(openRow).join("")}
-      ${planEdit === "new" ? `<li>${planEditor("open", "", "", "A next step or open question")}</li>` : `<li><button class="more" data-plan-new>+ Add a next step</button></li>`}
-      ${(data.plan.history?.outcomes.length || data.plan.history?.ungrouped.length || data.plan.history?.decisions.length) ? `<li style="padding:0">${historyBlock()}</li>` : ""}
-    </ul>
-    <p class="note">${data.plan.branches.find((b) => b.name === data.plan.branch)?.merged ? "This branch is merged, so its work is finished. " : ""}${empty ? "Each branch is its own piece of work. muninn builds its plan from the sessions on it: a short summary of where things stand, the next few steps, and the decisions that still hold. You can also write your own." : "Rewritten as your sessions go, and checked against the branch's commits and pull requests. Agents working on this branch get it when a session starts. Anything you write yourself stays as you wrote it."}</p>
-  </section>`;
+    <div class="stack s5">
+      ${branchRuns.length ? `<section><h2>Activity on ${esc(data.plan.branch)}</h2><ul class="group">${branchRuns.slice(0, 3).map((r) => { const n = data.runInfo[r.id]?.numbers; return `<li><div class="row"><button class="main" data-run-open="${esc(r.id)}"><div class="title" style="font-weight:500">${esc(runName(r))}</div><div class="sub">Run · ${esc(shortDate(r.started_at))}, ${esc(clock(r.started_at))} · ${r.roles.filter((x) => x !== "main").length} roles${n?.rework ? ` · <span class="status warn">${n.rework} fix${n.rework === 1 ? "" : "es"} after approval</span>` : ""}</div></button></div></li>`; }).join("")}</ul></section>` : ""}
+      ${hasHist ? `<section><h2>Done and decided</h2><div class="group">${historyBlock()}</div></section>` : `<section><h2>Done and decided</h2><ul class="group"><li class="empty">Nothing finished on this branch yet. Done steps and the decisions that still hold show here.</li></ul></section>`}
+    </div>`;
 }
 async function planDo(body) { const r = await api("/api/plan", { repo, branch: data.plan.branch, ...body }); data.plan = r; planEdit = null; draw(); }
 
@@ -540,7 +618,9 @@ async function load() {
   // Autonomous runs come from the data side's /api/runs; until it's there, the section stays hidden.
   const runs = repo ? await api("/api/runs?" + q({ repo })).catch(() => []) : [];
   const runInfo = Array.isArray(runs) && runs.length ? await api("/api/run-findings", { runs }).catch(() => ({})) : {};
-  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions, rules, schedule, runs: Array.isArray(runs) ? runs : [], runInfo };
+  // Whether each role lesson is helping, from the data side's /api/role-effects.
+  const effects = repo ? await api("/api/role-effects?" + q({ repo })).catch(() => []) : [];
+  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions, rules, schedule, runs: Array.isArray(runs) ? runs : [], runInfo, effects: Array.isArray(effects) ? effects : [] };
 }
 
 /* Autonomous runs: sessions working together in a repo, each in a role (subagents, or agents in their own worktrees),
@@ -554,27 +634,32 @@ const roleName = (r) => (r === "main" ? "main session" : r);
 const FINDING_LABEL = { cost: "Effort", stall: "Waiting", bounce: "Sent back", handoff: "Handoff", low_yield: "Low yield", other: "Also" };
 /** Steps shown before "Show all": send-backs, follow-up fixes and gaps always show. */
 const RUN_STEPS = 8;
-function runsSection() {
-  if (!repo || !data.runs.length) return "";
-  return `<section aria-labelledby="rn">
-    <h2 id="rn">Autonomous runs · ${data.runs.length}</h2>
-    <ul class="group">${data.runs.map(runRow).join("")}</ul>
-    <p class="note">A run is agents working together: a session and the subagents it started, or agents in their own worktrees such as a builder, a reviewer and qa. Tap one to see where the effort went. Effort is in tokens, since the logs don't record cost.</p>
-  </section>`;
-}
-function runRow(r) {
-  const info = data.runInfo[r.id]; const n = info?.numbers; const isOpen = runOpen === r.id;
+/** Text cut to a length at a word, with an ellipsis. */
+const clip = (s, n) => { const t = String(s ?? "").replace(/\s+/g, " ").trim(); return t.length <= n ? t : t.slice(0, t.lastIndexOf(" ", n) > n * 0.6 ? t.lastIndexOf(" ", n) : n) + "…"; };
+/** A run's name: when it started, and who took part. */
+function runName(r) {
   const agents = r.roles.filter((x) => x !== "main");
-  const facts = [n ? dur(n.minutes) : "", n ? `${tok(n.tokens)} tokens` : "", agents.length <= 3 ? agents.map(esc).join(", ") : `${agents.length} roles`,
-    n?.approvals ? `approved ${n.approvals}×` : "",
-    n?.sentBack ? `<span class="back">sent back ${n.sentBack === 1 ? "once" : `${n.sentBack} times`}</span>` : "",
-    n?.rework ? `<span class="back">${n.rework} follow-up fix${n.rework === 1 ? "" : "es"}</span>` : "",
-    n?.stalls.length ? `waiting ${dur(n.stalls.reduce((a, s) => a + s.minutes, 0))}` : ""].filter(Boolean).join(" · ");
-  return `<li><div class="row"><button class="main" data-run-open="${esc(r.id)}" aria-expanded="${isOpen}">
-      <div class="title">${esc(shortDate(r.started_at))}, ${esc(clock(r.started_at))}–${esc(clock(r.ended_at))}</div>
-      <div class="sub">${facts}</div>
-      ${info?.findings?.items?.[0] ? `<div class="sub why">${esc(info.findings.items[0].text)}</div>` : ""}
-    </button></div>${isOpen && n ? runDetail(r, info) : ""}</li>`;
+  return `${shortDate(r.started_at)}, ${clock(r.started_at)} · ${agents.length <= 3 ? agents.map(roleName).join(", ") : `${agents.length} roles`}`;
+}
+/** Cost, when the data side could price it: "about $7.09", or why not. */
+const runCost = (r) => (typeof r.cost_usd === "number" && r.cost_usd > 0 ? `about $${r.cost_usd.toFixed(2)}${r.cost_unpriced ? " and some unpriced" : ""}` : "price unknown");
+/** A run's state in one label: fixes after approval or send-backs first, else approvals. */
+function runStatus(n) {
+  if (!n) return "";
+  if (n.rework) return `<span class="status warn">${n.rework} fix${n.rework === 1 ? "" : "es"} after approval</span>`;
+  if (n.sentBack) return `<span class="status warn">sent back ${n.sentBack === 1 ? "once" : `${n.sentBack} times`}</span>`;
+  if (n.approvals) return `<span class="status good">${n.approvals} approvals</span>`;
+  return "";
+}
+function runsTable() {
+  if (!data.runs.length) return `<section><h2>Runs · 0</h2><ul class="group"><li class="empty">No runs yet. A run is a session and the agents it started, or agents in their own worktrees, like a builder, a reviewer and qa. They show here after one finishes.</li></ul></section>`;
+  return `<section><h2>Runs · ${data.runs.length}</h2><div class="panel"><div class="tablewrap"><table class="data">
+    <thead><tr><th>Run</th><th class="num">Length</th><th class="num">Tokens</th><th>Cost</th><th>Status</th></tr></thead>
+    <tbody>${data.runs.map((r) => { const n = data.runInfo[r.id]?.numbers; return `<tr>
+      <td><button class="rowlink" data-run-open="${esc(r.id)}">${esc(runName(r))}</button>${data.runInfo[r.id]?.findings?.items?.[0] ? `<div style="font-size:12px;line-height:17px;color:var(--muted);margin-top:2px">${esc(data.runInfo[r.id].findings.items[0].text.slice(0, 140))}${data.runInfo[r.id].findings.items[0].text.length > 140 ? "…" : ""}</div>` : ""}</td>
+      <td class="num">${n ? dur(n.minutes) : ""}</td><td class="num">${n ? tok(n.tokens) : ""}</td>
+      <td style="color:var(--muted);white-space:nowrap">${esc(runCost(r))}</td><td>${runStatus(n)}</td></tr>`; }).join("")}</tbody>
+  </table></div></div></section>`;
 }
 /** One handoff in words: who handed to whom, approved, sent back, or asked for a follow-up fix. */
 function handoffLine(h) {
@@ -584,32 +669,53 @@ function handoffLine(h) {
   if (h.kind === "review_rejected") return `<span class="back">${from} sent it back${to ? ` to ${esc(to)}` : ""}</span>`;
   // A follow-up posted to the board is the agent's own fix; one aimed at a role asks that role for it.
   if (h.kind === "rework") return `<span class="back">${to ? `${from} asked ${esc(to)} for a follow-up fix` : `${from} posted a follow-up fix`}</span>`;
+  if (h.kind === "started") return `${from} started ${to ? esc(to) : "an agent"}`;
   return to ? `${from} handed to ${esc(to)}` : `${from} posted to the board`;
 }
-function runDetail(r, info) {
-  const n = info.numbers; const top = Math.max(...n.roles.map((x) => x.tokens), 1);
-  const bars = n.roles.map((x) => `<div class="rolebar"><span>${esc(roleName(x.role))}</span><div class="bar"><span style="width:${Math.max(2, Math.round((x.tokens / top) * 100))}%"></span></div>
-    <div class="what">${tok(x.tokens)} tokens (${Math.round(x.share * 100)}%): read ${tok(x.tokensIn)}, wrote ${tok(x.tokensOut)} · ${dur(x.minutes)} · ${x.sessions} session${x.sessions === 1 ? "" : "s"}${x.commands ? ` · ${x.commands} command${x.commands === 1 ? "" : "s"}${x.failed ? `, ${x.failed} failed` : ""}` : ""}${x.approvals ? ` · approved ${x.approvals}×` : ""}${x.typed ? ` · you typed ${x.typed} message${x.typed === 1 ? "" : "s"}` : ""}${x.sentBack ? ` · <span class="back">sent back ${x.sentBack}×${x.reworkTokens ? `, the redo took ${tok(x.reworkTokens)} tokens` : ""}</span>` : ""}</div></div>`).join("");
-  // What happened, in order: handoffs and the gaps when no agent was working. Long runs show the steps that matter first.
-  const events = [
-    ...r.handoffs.map((h) => ({ at: h.at, key: h.kind !== "handoff" && h.kind !== "approved", html: `${handoffLine(h)}${h.note || h.evidence ? `<span class="said">"${esc(h.note || h.evidence)}"</span>` : ""}` })),
+/** A run's own page: its figures, what happened in order, what your Claude found, and tokens by role. */
+function runPageView() {
+  const r = data.runs.find((x) => x.id === runPage);
+  if (!r) return `<div class="pagehead"><div><div class="crumb"><button class="linkbtn" data-tab="activity">Activity</button> › Run</div><h1>This run isn't here any more</h1><p class="lead">Runs are rebuilt on every scan. Pick one from Activity.</p></div></div>`;
+  const info = data.runInfo[r.id] || {}; const n = info.numbers;
+  const top = n ? Math.max(...n.roles.map((x) => x.tokens), 1) : 1;
+  const events = n ? [
+    ...r.handoffs.map((h) => ({ at: h.at, key: h.kind !== "handoff" && h.kind !== "approved" && h.kind !== "started", html: `${handoffLine(h)}${h.note || h.evidence ? `<span class="said">"${esc(clip(h.note || h.evidence, 180))}"</span>` : ""}` })),
     ...n.stalls.map((s) => ({ at: s.from, key: true, html: `<span class="idle">No agent working for ${dur(s.minutes)}${s.after ? ` after ${esc(roleName(s.after))} finished` : ""}${s.before ? `, until ${esc(roleName(s.before))} started` : ""}</span>` })),
-  ].sort((a, b) => a.at.localeCompare(b.at));
+  ].sort((a, b) => a.at.localeCompare(b.at)) : [];
   const all = runAll.has(r.id) || events.length <= RUN_STEPS;
   let plain = 0;
   const shown = all ? events : events.filter((e) => e.key || plain++ < RUN_STEPS - events.filter((x) => x.key).length);
   const f = info.findings;
-  const findings = f?.items?.length ? f.items.map((x) => `<div class="finding"><span class="kind">${esc(FINDING_LABEL[x.kind] || "Also")}${x.role ? ` · ${esc(roleName(x.role))}` : ""}</span>${esc(x.text)}</div>`).join("") + `<p class="note" style="margin-left:0">Your Claude looked at this run ${esc(ago(f.at))}. <button class="linkbtn" data-run-find="${esc(r.id)}">Look again</button></p>`
-    : f ? `<p class="note" style="margin-left:0">Your Claude found nothing that stood out. <button class="linkbtn" data-run-find="${esc(r.id)}">Look again</button></p>`
-    : runFinding === r.id ? `<p class="note" style="margin-left:0"><span class="spin" aria-hidden="true"></span> Your Claude is looking at this run…</p>`
-    : `<p class="note" style="margin-left:0"><button class="linkbtn" data-run-find="${esc(r.id)}">Find what this run shows</button>: where effort went, where it stalled, what was sent back and why, and roles that took a lot for little. One call to your Claude.</p>`;
-  return `<div class="rundetail">
-    <h3>Tokens by role · ${tok(n.tokens)} in all${r.wasted_tokens ? `, about ${tok(r.wasted_tokens)} on failed retries and re-reads` : ""}</h3>${bars}
-    <h3>What happened · ${events.length} step${events.length === 1 ? "" : "s"}</h3>${events.length ? `<ol class="timeline">${shown.map((e) => `<li><time datetime="${esc(e.at)}">${esc(clock(e.at))}</time><div>${e.html}</div></li>`).join("")}</ol>
-      ${events.length > RUN_STEPS ? `<button class="linkbtn" data-run-all="${esc(r.id)}">${all ? "Show fewer" : `Show all ${events.length} steps`}</button>` : ""}` : `<p class="note" style="margin-left:0">No handoffs recorded.</p>`}
-    <h3>What it shows</h3>${findings}
-  </div>`;
+  const findings = f?.items?.length ? f.items.map((x) => `<li><div class="row" style="align-items:flex-start"><div class="main" style="cursor:default"><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px"><span class="status ${x.kind === "bounce" || x.kind === "low_yield" || x.kind === "stall" ? "warn" : ""}">${esc(FINDING_LABEL[x.kind] || "Also")}</span>${x.role ? `<span class="tag">${esc(roleName(x.role))}</span>` : ""}</div><div class="title">${esc(x.text)}</div></div></div></li>`).join("")
+      + `<li><div class="row"><span class="sub" style="margin:0">Your Claude looked at this run ${esc(ago(f.at))}.</span><button class="btn" style="margin-left:auto;height:28px;font-size:13px" data-run-find="${esc(r.id)}">Look again</button></div></li>`
+    : f ? `<li class="empty">Your Claude found nothing that stood out. <button class="linkbtn" data-run-find="${esc(r.id)}">Look again</button></li>`
+    : runFinding === r.id ? `<li class="empty"><span class="spin" aria-hidden="true" style="display:inline-block;vertical-align:-2px"></span> Your Claude is looking at this run…</li>`
+    : `<li class="empty"><button class="btn primary" data-run-find="${esc(r.id)}">Find what this run shows</button><div class="note" style="margin:8px 0 0">Where effort went, where it stalled, what was sent back and why, and roles that took a lot for little. One call to your Claude.</div></li>`;
+  return `<div class="pagehead"><div>
+      <div class="crumb"><button class="linkbtn" data-tab="activity">Activity</button> › Run</div>
+      <h1>${esc(runName(r))}</h1>
+      <p class="lead">${esc(shortDate(r.started_at))}, ${esc(clock(r.started_at))}–${esc(clock(r.ended_at))}. A run is a session and the agents it started, or agents in their own worktrees.</p>
+    </div><button class="btn" data-ask-open>Ask about this run</button></div>
+    ${n ? `<div class="stats s12">
+      <div class="stat"><b>${dur(n.minutes)}</b><span>from start to end</span></div>
+      <div class="stat"><b>${tok(n.tokens)}</b><span>tokens · ${esc(runCost(r))}</span></div>
+      <div class="stat"><b>${n.approvals}</b><span>approvals</span></div>
+      <div class="stat"><b${n.sentBack ? ' class="warn"' : ""}>${n.sentBack}</b><span>sent back by a reviewer</span></div>
+      <div class="stat"><b${n.rework ? ' class="warn"' : ""}>${n.rework}</b><span>fixes after approval</span></div>
+    </div>` : ""}
+    <div class="stack s8">
+      <section><h2>What it shows · from your Claude</h2><ul class="group">${findings}</ul></section>
+      <section><h2>What happened · ${events.length} step${events.length === 1 ? "" : "s"}</h2><div class="panel">${events.length ? `<ol class="timeline" style="padding:4px 16px">${shown.map((e) => `<li><time datetime="${esc(e.at)}">${esc(clock(e.at))}</time><div>${e.html}</div></li>`).join("")}</ol>
+        ${events.length > RUN_STEPS ? `<div style="padding:10px 16px;border-top:1px solid var(--line)"><button class="btn" style="height:28px;font-size:13px" data-run-all="${esc(r.id)}">${all ? "Show fewer" : `Show all ${events.length} steps`}</button></div>` : ""}` : `<div class="empty">No handoffs recorded.</div>`}</div></section>
+    </div>
+    <div class="stack s4">
+      ${n ? `<section><h2>Tokens by role</h2><div class="panel panelbody" style="display:grid;gap:12px">${n.roles.map((x) => `<div class="meter"><span>${esc(roleName(x.role))}</span><span class="val">${tok(x.tokens)} · ${Math.round(x.share * 100)}%</span><div class="bar"><span style="width:${Math.max(2, Math.round((x.tokens / top) * 100))}%"></span></div>
+        <div class="what">${x.sessions} session${x.sessions === 1 ? "" : "s"}${x.commands ? ` · ${x.commands} commands${x.failed ? `, ${x.failed} failed` : ""}` : ""}${x.approvals ? ` · approved ${x.approvals}×` : ""}${x.typed ? ` · you typed ${x.typed}` : ""}${x.sentBack ? ` · <span class="back">sent back ${x.sentBack}×</span>` : ""}</div></div>`).join("")}
+        <div class="note" style="margin:0">Most is reading: context taken in, not code written.${r.wasted_tokens ? ` About ${tok(r.wasted_tokens)} went on failed retries and re-reads.` : ""}</div></div></section>` : ""}
+    </div>`;
 }
+/** Whether a role lesson is helping, in one word. Not reaching is a setup problem, so it's amber, not orange. */
+const VERDICT = { working: ["Helping", "good"], not_working: ["Still happening", "warn"], not_told: ["Not reaching the {role}", "caution"], too_early: ["Too early", ""], no_runs_yet: ["Waiting for a run", ""] };
 /** A lesson meant for one role only (a reviewer, say) says so; lessons for everyone show nothing. */
 const roleChip = (l) => (l.role ? `<span class="rolechip">For the ${esc(l.role === "main" ? "main session" : l.role)}</span>` : "");
 /** Under the timing choices: who hears a role lesson, since "every session" then means that role's sessions only. */
@@ -619,8 +725,8 @@ const roleNote = (l) => (l.role ? `<p class="note" style="margin-left:0">Only ag
 function scanLine() {
   const s = data.scan;
   if (s.running) return `<span class="spin" aria-hidden="true"></span> Checking your sessions for new lessons. New suggestions appear here when it's done.`;
-  if (s.needsModel) return `muninn can't check your sessions until its local model is downloaded (about 33 MB). Run <code>muninn learn --all-repos</code> once in a terminal.`;
-  return `${s.lastLearn ? `muninn checked your sessions ${esc(ago(s.lastLearn))}` : "muninn hasn't checked your sessions yet"}, and checks again on its own after you work${data.schedule?.on ? ` and every ${data.schedule.everyHours} hours in the background` : ""}. <button class="linkbtn" data-scan>Check now</button>`;
+  if (s.needsModel) return `secondnature can't check your sessions until its local model is downloaded (about 33 MB). Run <code>muninn learn --all-repos</code> once in a terminal.`;
+  return `${s.lastLearn ? `secondnature checked your sessions ${esc(ago(s.lastLearn))}` : "secondnature hasn't checked your sessions yet"}, and checks again on its own after you work${data.schedule?.on ? ` and every ${data.schedule.everyHours} hours in the background` : ""}. <button class="linkbtn" data-scan>Check now</button>`;
 }
 let scanPoll = null;
 /** Follows a running scan, then refreshes and says what it found. Also used when a scan started on its own. */
@@ -664,8 +770,9 @@ function suggestionRow(l) {
   return `<li data-id="${esc(l.id)}">
     <div class="row">
       <button class="main" data-open="${esc(l.id)}" aria-expanded="${isOpen}"><div class="title">${esc(l.plain || l.text)}</div><div class="sub">${roleChip(l)}${esc(l.origin)}</div>${l.why ? `<div class="sub why">Why: ${esc(l.why)}</div>` : ""}${l.worth ? `<div class="sub">${esc(l.worth)}</div>` : ""}</button>
-      <button class="x" data-dismiss="${esc(l.id)}" aria-label="Don't suggest this" title="Don't suggest this">×</button>
-      <button class="add" data-add="${esc(l.id)}">Add</button>
+      <button class="x" data-dismiss="${esc(l.id)}" title="Don't suggest this again">Dismiss</button>
+      <button class="btn" data-open="${esc(l.id)}">Edit</button>
+      <button class="add" data-add="${esc(l.id)}">Keep</button>
     </div>
     ${isOpen ? `<div class="detail">
       <label for="t-${esc(l.id)}">What agents are told</label>
@@ -673,7 +780,7 @@ function suggestionRow(l) {
       ${whenChoices(d.route, (d.keywords.length ? d.keywords : l.suggested || []).join(", "))}${roleNote(l)}
       ${l.scope !== "global" ? `<label class="checkline"><input type="checkbox" data-f="global" ${d.global ? "checked" : ""}> Tell agents in all my repos, not just this one</label>` : ""}
       ${ev ? `<div class="evidence">${runs ? "What ran in your session:" : ["repeat", "correction", "explained", "confused", "friction", "stated", "steered"].includes(l.signal) ? "You said:" : l.signal === "promised" ? "The agent said:" : l.signal === "sent_back" || l.signal === "missed" ? "What the agents said:" : "From your session:"} ${ev}</div>` : ""}
-      <div class="btns"><button class="btn primary" data-add="${esc(l.id)}" data-custom="1">Add</button><button class="btn" data-open="${esc(l.id)}">Cancel</button></div>
+      <div class="btns"><button class="btn primary" data-add="${esc(l.id)}" data-custom="1">Keep</button><button class="btn" data-open="${esc(l.id)}">Cancel</button></div>
     </div>` : ""}
   </li>`;
 }
@@ -687,6 +794,7 @@ function lessonRow(l) {
       <button class="main" data-open="${esc(l.id)}" aria-expanded="${isOpen}">
         <div class="title">${esc(l.plain || l.text)}</div>
         <div class="sub">${roleChip(l)}${l.off ? "Off · agents aren't told this" : esc(whenText(l)) + (last ? ` · last told ${esc(ago(last))}` : "")}</div>
+        ${(() => { const fx = !l.off && data.effects.find((x) => x.id === l.id); if (!fx) return ""; const [word, cls] = VERDICT[fx.verdict] || ["", ""]; return word ? `<div class="sub" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px"><span class="status ${cls}">${esc(word.replace("{role}", fx.role))}</span><span>${esc(fx.summary)}</span></div>` : ""; })()}
         ${l.missing?.length ? `<div class="warnline">Names ${l.missing.map((f) => `<code>${esc(f)}</code>`).join(", ")}, which ${l.missing.length === 1 ? "is" : "are"} no longer in the repo. The lesson may be out of date: edit it or switch it off.</div>` : ""}
         ${c && !l.off ? `<div class="warnline">The problem came back. ${esc(c.verdict.replace(/ Make it always-on\?$/, ""))}</div>` : ""}
       </button>
@@ -715,50 +823,118 @@ function draw() {
   if (inHist) { const h = $("#histQ"); if (h) { h.focus(); h.setSelectionRange(h.value.length, h.value.length); } }
   if (!asking) drawAsk();
 }
+/* How many things wait for a yes or no in this repo: suggestions, proposed file changes, out-of-date CLAUDE.md lines. */
+const waitingCount = () => data.suggested.length + (data.proposals?.waiting?.length || 0) + (data.memory || []).filter((m) => m.status === "open").length;
+/* The tab open now: the one picked, or To review when something's waiting, else Lessons. */
+const currentTab = () => tab || (waitingCount() ? "review" : "lessons");
+function drawSide() {
+  const { repos } = data;
+  const t = currentTab(); const n = waitingCount();
+  const othersWaiting = repo ? repos.some((r) => r.id !== repo && r.waiting) : false;
+  const tabBtn = (id, label, extra = "") => `<button data-tab="${id}" ${t === id ? 'aria-current="page"' : ""}>${label}${extra}</button>`;
+  $("#side").innerHTML = `
+    <div class="wordmark">secondnature</div>
+    <div class="repopick"><label for="repo"><small>Repo${othersWaiting ? ' · <span style="color:var(--warn)">others waiting</span>' : ""}</small></label>
+      <select id="repo"><option value="" ${repo ? "" : "selected"}>All repos</option>${[...new Set([HERE, repo].filter((r) => r && !repos.some((x) => x.id === r)))].map((r) => `<option value="${esc(r)}" ${r === repo ? "selected" : ""}>${esc(short(r))}${r === HERE ? " (this folder)" : ""}</option>`).join("")}${repos.map((r) => `<option value="${esc(r.id)}" ${r.id === repo ? "selected" : ""}>${esc(short(r.id))}${r.waiting && r.id !== repo ? ` (${r.waiting} waiting)` : ""}</option>`).join("")}</select></div>
+    <nav class="nav" aria-label="Sections">
+      ${tabBtn("review", "To review", n ? `<span class="count">${n}</span>` : "")}
+      ${tabBtn("lessons", "Lessons")}
+      ${repo ? tabBtn("plan", "Plan") : ""}
+      ${tabBtn("activity", "Activity")}
+    </nav>
+    <button class="btn ask" data-ask-open ${askOpen ? "hidden" : ""}>Ask about ${repo ? esc(short(repo)) : "your repos"}</button>
+    <div class="sidefoot"><span>${scanLine()}</span>${tabBtn("settings", "Settings").replace("<button", '<button class="linkbtn" style="text-align:left"')}</div>`;
+}
 function drawPage() {
-  const { repos, suggested, kept, home } = data;
-  const shown = showAll ? suggested : suggested.slice(0, 3);
-  const dial = home.dial;
-  $("#main").innerHTML = `
-    <div class="top"><span>muninn ·</span><button class="askbtn" data-ask-open ${askOpen ? "hidden" : ""}>Ask secondnature</button>
-      <label class="vh" for="repo">Repo</label>
-      <select id="repo" class="picker"><option value="" ${repo ? "" : "selected"}>All repos</option>${[...new Set([HERE, repo].filter((r) => r && !repos.some((x) => x.id === r)))].map((r) => `<option value="${esc(r)}" ${r === repo ? "selected" : ""}>${esc(short(r))}${r === HERE ? " (this folder)" : ""}</option>`).join("")}${repos.map((r) => `<option value="${esc(r.id)}" ${r.id === repo ? "selected" : ""}>${esc(short(r.id))}</option>`).join("")}</select>
+  drawSide();
+  const t = currentTab();
+  const body = t === "review" ? reviewView() : t === "lessons" ? lessonsView() : t === "plan" ? (repo && data.plan ? planSection() : lessonsView())
+    : t === "activity" ? (runPage ? runPageView() : activityView()) : settingsView();
+  $("#main").innerHTML = `<div class="grid">${body}</div>`;
+}
+/* To review: everything waiting for a yes or no, one queue. */
+function reviewView() {
+  const { suggested, kept, repos } = data;
+  const n = waitingCount();
+  const shown = showAll ? suggested : suggested.slice(0, 6);
+  const others = repo ? repos.filter((r) => r.id !== repo && r.waiting) : [];
+  const first = !suggested.length && !kept.length;
+  return `<div class="pagehead"><div><h1>${n ? `${n} thing${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} you` : first ? "secondnature hasn't found anything yet" : "Nothing needs you"}</h1>
+      <p class="lead">${first ? "It reads the logs your coding agents keep on this machine, finds what you keep telling them and what goes wrong, and suggests lessons for you to keep. Short, redacted excerpts go to your own Claude to write them." : "Nothing changes for your agents until you decide. Each one says where it came from and who it affects."}</p></div></div>
+    <div class="stack s8">
+      ${first ? `<div class="panel panelbody"><button class="btn primary" data-scan ${data.scan.running ? "disabled" : ""}>${data.scan.running ? "Checking…" : "Find lessons in my sessions"}</button><p class="note" style="margin:10px 0 0">Takes a few minutes. Suggestions appear here as each repo finishes.</p></div>` : ""}
+      ${suggested.length ? `<section aria-labelledby="sg"><h2 id="sg">Told to agents · ${suggested.length}</h2>
+        <ul class="group">${shown.map(suggestionRow).join("")}
+          ${suggested.length > 6 ? `<li><button class="more" data-more>${showAll ? "Show fewer" : `See all ${suggested.length}`}</button></li>` : ""}</ul>
+        <p class="note">Keep tells your agents from their next session. Edit to change the wording or when it's told first.</p></section>` : ""}
+      ${data.proposals?.waiting?.length || data.proposals?.applied?.length ? changesSection() : ""}
+      ${memorySection()}
+      ${!n && !first ? `<ul class="group"><li class="empty">All caught up. New suggestions appear here as secondnature reads your sessions.</li></ul>` : ""}
     </div>
-    <h1>What your agents know</h1>
-    <p class="lead">Switch a lesson on and Claude, Codex and Cursor are told it. Switch it off and they aren't.</p>
-    <p class="scan">${scanLine()}</p>
-
-    ${(() => {
-      // Suggestions waiting in other repos are easy to miss, since the page opens on the repo it was started from.
-      const others = repo ? repos.filter((r) => r.id !== repo && r.waiting) : [];
-      return others.length ? `<p class="scan" style="margin-top:14px">Also waiting in other repos: ${others.map((r) => `<button class="linkbtn" data-repo="${esc(r.id)}">${esc(short(r.id))} (${r.waiting})</button>`).join(", ")}</p>` : "";
-    })()}
-    ${suggested.length ? `<section aria-labelledby="sg">
-      <h2 id="sg">Suggested from your sessions · ${suggested.length}</h2>
-      <ul class="group">${shown.map(suggestionRow).join("")}
-        ${suggested.length > 3 ? `<li><button class="more" data-more>${showAll ? "Show fewer" : `See all ${suggested.length} suggestions`}</button></li>` : ""}
-      </ul>
-      <p class="note">Tap a suggestion to change its wording or when it's told before adding it.</p>
-    </section>` : ""}
-
-    ${changesSection()}
-
-    ${weekSection()}
-
-    ${runsSection()}
-
-    ${memorySection()}
-
-    ${planSection()}
-
-    <section aria-labelledby="ls">
-      <h2 id="ls">Your lessons · ${kept.length}</h2>
-      ${kept.length ? `<ul class="group">${kept.map(lessonRow).join("")}</ul><p class="note">Tap a lesson to change its wording or when it's told.</p>`
-        : `<ul class="group"><li class="empty">${suggested.length ? "Add a suggestion above and it shows here." : `Nothing yet. muninn looks through your past Claude Code, Codex and Cursor sessions and suggests lessons here.<div style="margin-top:12px"><button class="btn primary" data-scan ${data.scan.running ? "disabled" : ""}>${data.scan.running ? "Checking…" : "Find lessons in my sessions"}</button></div>`}</li></ul>`}
-    </section>
-
+    <div class="stack s4">
+      ${others.length ? `<section><h2>Waiting in other repos</h2><ul class="group">${others.map((r) => `<li><div class="row"><button class="main" data-repo="${esc(r.id)}"><div class="title" style="font-weight:500">${esc(short(r.id))}</div></button><span class="count">${r.waiting}</span></div></li>`).join("")}</ul></section>` : ""}
+      ${repo ? `<section><h2>Instruction files</h2><div class="panel panelbody">${proposing ? `<span class="spin" aria-hidden="true" style="display:inline-block;vertical-align:-2px"></span> Your Claude is reviewing this repo's CLAUDE.md, AGENTS.md and skills…` : `<button class="btn" data-propose>Review CLAUDE.md and skills</button><p class="note" style="margin:10px 0 0">Checks CLAUDE.md, AGENTS.md and skills against your sessions and proposes edits here. One call to your Claude.</p>`}</div></section>` : ""}
+      <section><h2>How these are found</h2><div class="panel panelbody" style="color:var(--muted);font-size:13px;line-height:19px">secondnature reads your agents' logs on this machine after each session${data.schedule?.on ? ` and every ${data.schedule.everyHours} hours` : ""}. It suggests a lesson when you say something more than once, state a rule, correct an agent, or when work keeps going wrong the same way.</div></section>
+    </div>`;
+}
+/* Lessons: what agents are told, grouped by who hears it. */
+function lessonsView() {
+  const { kept, suggested } = data;
+  const on = kept.filter((l) => !l.off), off = kept.filter((l) => l.off);
+  const roles = on.filter((l) => l.role).sort((a, b) => a.role.localeCompare(b.role));
+  const all = on.filter((l) => !l.role && l.scope === "global");
+  const here = on.filter((l) => !l.role && l.scope !== "global");
+  const group = (title, list, empty) => `<section><h2>${title} · ${list.length}</h2><ul class="group">${list.length ? list.map(lessonRow).join("") : `<li class="empty">${empty}</li>`}</ul></section>`;
+  return `<div class="pagehead"><div><h1>What agents are told${repo ? ` in ${esc(short(repo))}` : ""}</h1>
+      <p class="lead">Switch a lesson on and your Claude Code, Codex, Cursor and Antigravity agents are told it. Switch it off and they aren't. Tap one to change its wording or when it's told.</p></div></div>
+    <div class="stack s8">
+      ${!kept.length ? `<ul class="group"><li class="empty">${suggested.length ? `Nothing kept yet. ${suggested.length} suggestion${suggested.length === 1 ? " is" : "s are"} waiting in <button class="linkbtn" data-tab="review">To review</button>.` : "Nothing kept yet. Keep a suggestion and your agents are told it from their next session."}</li></ul>` : ""}
+      ${roles.length ? group("One role only", roles, "") : ""}
+      ${kept.length && repo ? group("This repo", here, `None yet. A lesson you keep for every agent in ${esc(short(repo))} shows here.`) : ""}
+      ${kept.length ? group(repo ? "All repos" : "Kept", repo ? all : on.filter((l) => !l.role), "None yet.") : ""}
+      ${off.length ? group("Switched off", off, "") : ""}
+    </div>
+    <div class="stack s4">
+      <section><h2>When agents are told</h2><ul class="group">
+        <li><div class="row"><div class="main" style="cursor:default"><div class="title" style="font-weight:500">Every session</div><div class="sub">At the start, before any work.</div></div></div></li>
+        <li><div class="row"><div class="main" style="cursor:default"><div class="title" style="font-weight:500">When a word comes up</div><div class="sub">Mid-task, in your prompt or a failed command.</div></div></div></li>
+        <li><div class="row"><div class="main" style="cursor:default"><div class="title" style="font-weight:500">On request</div><div class="sub">Only when an agent runs muninn ask.</div></div></div></li>
+      </ul></section>
+      ${roles.length ? `<section><h2>Is it helping?</h2><div class="panel panelbody" style="color:var(--muted);font-size:13px;line-height:19px">A role lesson is compared with how that role did before you kept it. After its runs it shows Helping, Still happening, or Not reaching the role, with the numbers.</div></section>` : ""}
+    </div>`;
+}
+/* Activity: the week, runs and what they showed. */
+function activityView() {
+  const totals = data.runs.reduce((a, r) => { const n = data.runInfo[r.id]?.numbers; if (n) { a.tokens += n.tokens; a.approvals += n.approvals; a.rework += n.rework + n.sentBack; } return a; }, { tokens: 0, approvals: 0, rework: 0 });
+  const byRole = new Map();
+  for (const r of data.runs) for (const x of data.runInfo[r.id]?.numbers?.roles || []) byRole.set(x.role, (byRole.get(x.role) || 0) + x.tokens);
+  const roles = [...byRole.entries()].sort((a, b) => b[1] - a[1]);
+  const top = roles[0]?.[1] || 1;
+  return `<div class="pagehead"><div><h1>Activity${repo ? ` in ${esc(short(repo))}` : ""}</h1><p class="lead">What your agents did, what it took, and what went wrong.</p></div></div>
+    ${data.runs.length ? `<div class="stats s12">
+      <div class="stat"><b>${data.runs.length}</b><span>run${data.runs.length === 1 ? "" : "s"} with more than one agent</span></div>
+      <div class="stat"><b>${tok(totals.tokens)}</b><span>tokens across them</span></div>
+      <div class="stat"><b>${totals.approvals}</b><span>approvals between agents</span></div>
+      <div class="stat"><b${totals.rework ? ' class="warn"' : ""}>${totals.rework}</b><span>sent back or fixed after approval</span></div>
+    </div>` : ""}
+    <div class="stack s8">
+      ${repo ? runsTable() : `<ul class="group"><li class="empty">Pick a repo to see its runs.</li></ul>`}
+      <section aria-labelledby="wk"><h2 id="wk">Your last 7 days</h2>
+        ${week ? `<div class="panel"><pre style="white-space:pre-wrap;font:12px/1.6 var(--mono);margin:0;padding:14px 16px">${esc(week)}</pre></div>`
+          : `<div class="panel panelbody">${weekLoading ? `<span class="spin" aria-hidden="true" style="display:inline-block;vertical-align:-2px"></span> Reading the last 7 days of sessions…` : `<button class="btn" data-week>Show your last 7 days</button><p class="note" style="margin:10px 0 0">Where agents wasted effort, whether lessons helped, and what's waiting. Also <code>muninn insights</code>.</p>`}</div>`}
+      </section>
+    </div>
+    <div class="stack s4">
+      ${roles.length ? `<section><h2>Tokens by role</h2><div class="panel panelbody" style="display:grid;gap:10px">${roles.map(([role, t]) => `<div class="meter"><span>${esc(roleName(role))}</span><span class="val">${tok(t)}</span><div class="bar"><span style="width:${Math.max(2, Math.round((t / top) * 100))}%"></span></div></div>`).join("")}<div class="note" style="margin:0">Most is reading: context taken in, not code written.</div></div></section>` : ""}
+    </div>`;
+}
+/* Settings: this repo's delivery and files, and this Mac's background checks. */
+function settingsView() {
+  const dial = data.home.dial;
+  return `<div class="pagehead"><div><h1>Settings</h1><p class="lead">How lessons reach your agents${repo ? ` in ${esc(short(repo))}` : ""}, and what secondnature does on this Mac.</p></div></div>
+    <div class="stack s8">
     ${repo ? `<section aria-labelledby="st">
-      <h2 id="st">Settings for ${esc(short(repo))}</h2>
+      <h2 id="st">${esc(short(repo))}</h2>
       <ul class="group">
         <li><div class="row"><div class="main" style="cursor:default"><div class="title">Tell agents when a session starts</div><div class="sub">Lessons told every session, and where you left off last time.</div></div>
           <button class="switch" role="switch" aria-checked="${dial !== "quiet"}" aria-label="Tell agents when a session starts" data-dial="start"></button></div></li>
@@ -766,14 +942,15 @@ function drawPage() {
           <button class="switch" role="switch" aria-checked="${dial === "anytime"}" aria-label="Tell agents mid-task too" data-dial="mid"></button></div></li>
         <li><div class="row"><div class="main" style="cursor:default"><div class="title">Keep a copy of the plan in PLAN.md</div><div class="sub">Written at the root of this repo with the plan of the branch checked out, so each branch carries its own in git.</div></div>
           <button class="switch" role="switch" aria-checked="${!!data.plan?.fileOn}" aria-label="Keep a copy of the plan in PLAN.md" data-plan-file></button></div></li>
-        <li><div class="row"><div class="main" style="cursor:default"><div class="title">Keep always-on lessons in CLAUDE.local.md</div><div class="sub">For this machine only: Claude Code reads that file at the start of every session here, even without muninn's hooks. git is told to ignore it, so it's never committed, and the rest of the file is left as it is.</div></div>
+        <li><div class="row"><div class="main" style="cursor:default"><div class="title">Keep always-on lessons in CLAUDE.local.md</div><div class="sub">For this machine only: Claude Code reads that file at the start of every session here, even without secondnature's hooks. git is told to ignore it, so it's never committed, and the rest of the file is left as it is.</div></div>
           <button class="switch" role="switch" aria-checked="${data.lessonFile?.mode === "local"}" aria-label="Keep always-on lessons in CLAUDE.local.md" data-lesson-file></button></div></li>
         ${rulesRow("antigravity", "Antigravity", ".agents/rules")}
         ${rulesRow("cursor", "Cursor", ".cursor/rules")}
       </ul>
-      ${dial === "quiet" ? `<p class="note">Both off: muninn tells agents nothing unless they ask with muninn ask.</p>` : ""}
-    </section>` : ""}
-    ${machineSettings()}`;
+      ${dial === "quiet" ? `<p class="note">Both off: agents are told nothing unless they ask with muninn ask.</p>` : ""}
+    </section>` : `<ul class="group"><li class="empty">Pick a repo to change how its agents are told.</li></ul>`}
+    </div>
+    <div class="stack s4">${machineSettings()}</div>`;
 }
 /* The background job covers every repo, so it sits apart from one repo's settings. */
 function machineSettings() {
@@ -790,7 +967,7 @@ function machineSettings() {
 function rulesRow(tool, name, dir) {
   const r = data.rules?.[tool]; if (!r) return "";
   const when = r.auto ? new Date(r.auto).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "";
-  return `<li><div class="row"><div class="main" style="cursor:default"><div class="title">Give ${name}'s agent your lessons</div><div class="sub">${name} has no way for muninn to step in during a session, so lessons go in rules files in ${dir}, which its agent reads. git is told to ignore them.${r.auto ? ` Turned on by muninn on ${esc(when)}, because you used ${name} in this repo.` : ` muninn turns this on by itself once you use ${name} here, unless you've turned it off.`}</div></div>
+  return `<li><div class="row"><div class="main" style="cursor:default"><div class="title">Give ${name}'s agent your lessons</div><div class="sub">${name} has no way for muninn to step in during a session, so lessons go in rules files in ${dir}, which its agent reads. git is told to ignore them.${r.auto ? ` Turned on by secondnature on ${esc(when)}, because you used ${name} in this repo.` : ` secondnature turns this on by itself once you use ${name} here, unless you've turned it off.`}</div></div>
     <button class="switch" role="switch" aria-checked="${r.on}" aria-label="Give ${name}'s agent your lessons" data-rules="${tool}"></button></div></li>`;
 }
 async function refresh() { rememberPick(); await load(); draw(); if (data.scan.running) followScan(data.suggested.length); }
@@ -846,7 +1023,7 @@ document.addEventListener("click", async (e) => {
     if (el.dataset.unlink) {
       const [decision, outcome] = el.dataset.unlink.split("|");
       await api("/api/link", { decision, outcome, action: "remove" });
-      data.plan = await api("/api/plan?" + q({ repo, branch: data.plan.branch })); draw(); toast("Unlinked. muninn won't link them again."); return;
+      data.plan = await api("/api/plan?" + q({ repo, branch: data.plan.branch })); draw(); toast("Unlinked. secondnature won't link them again."); return;
     }
     if (el.dataset.histTab) { hist.tab = el.dataset.histTab; hist.area = "All"; draw(); return; }
     if (el.dataset.histArea) { hist.area = el.dataset.histArea; draw(); return; }
@@ -856,7 +1033,7 @@ document.addEventListener("click", async (e) => {
       const action = el.dataset.memRemove ? "remove" : el.dataset.memRestore ? "restore" : "keep";
       await api("/api/memory", { action, id: el.dataset.memRemove || el.dataset.memRestore || el.dataset.memKeep });
       data.memory = await api("/api/memory?" + q({ repo })); draw();
-      toast(action === "remove" ? "Removed the line. Put it back from here today if you need it." : action === "restore" ? "Put the line back." : "Kept. muninn won't ask about this line again.");
+      toast(action === "remove" ? "Removed the line. Put it back from here today if you need it." : action === "restore" ? "Put the line back." : "Kept. secondnature won't ask about this line again.");
       return;
     }
     if (el.dataset.planFile !== undefined) {
@@ -869,7 +1046,7 @@ document.addEventListener("click", async (e) => {
       try {
         const r = await api("/api/proposals", { id: el.dataset.propApply || el.dataset.propDismiss || el.dataset.propUndo, action });
         data.proposals = await api("/api/proposals?" + q({ repo })); draw();
-        toast(action === "apply" ? `Applied. Changed ${(r.files || []).map((f) => f.split("/").slice(-2).join("/")).join(", ")}. Undo is below.` : action === "dismiss" ? "Dismissed. muninn won't propose it again." : "Undone: the file is back as it was.");
+        toast(action === "apply" ? `Applied. Changed ${(r.files || []).map((f) => f.split("/").slice(-2).join("/")).join(", ")}. Undo is below.` : action === "dismiss" ? "Dismissed. secondnature won't propose it again." : "Undone: the file is back as it was.");
       } catch (e) { toast(e.message || String(e)); }
       return;
     }
@@ -897,7 +1074,8 @@ document.addEventListener("click", async (e) => {
       if (askThreadId === el.dataset.threadDelete) { askThread = []; askThreadId = null; }
       drawAsk(); toast("Deleted that chat."); return;
     }
-    if (el.dataset.runOpen) { runOpen = runOpen === el.dataset.runOpen ? null : el.dataset.runOpen; draw(); return; }
+    if (el.dataset.tab) { tab = el.dataset.tab; runPage = null; open = null; rememberPick(); draw(); window.scrollTo(0, 0); return; }
+    if (el.dataset.runOpen) { runPage = el.dataset.runOpen; tab = "activity"; rememberPick(); draw(); window.scrollTo(0, 0); return; }
     if (el.dataset.runAll) { const id = el.dataset.runAll; if (runAll.has(id)) runAll.delete(id); else runAll.add(id); draw(); return; }
     if (el.dataset.runFind) {
       const run = data.runs.find((r) => r.id === el.dataset.runFind); if (!run) return;
@@ -920,22 +1098,22 @@ document.addEventListener("click", async (e) => {
     if (el.dataset.rules) {
       const on = el.getAttribute("aria-checked") !== "true";
       data.rules = await api("/api/rules", { repo, tool: el.dataset.rules, on }); draw();
-      toast(on ? "Rules files written. Its agent gets your lessons." : "Rules files removed. muninn won't turn them back on here.");
+      toast(on ? "Rules files written. Its agent gets your lessons." : "Rules files removed. secondnature won't turn them back on here.");
       return;
     }
     if (el.dataset.schedule !== undefined) {
       const on = el.getAttribute("aria-checked") !== "true";
       try { data.schedule = await api("/api/schedule", { on }); } catch (e) { toast(e.message || String(e)); return; }
-      draw(); toast(on ? `Background checks on. muninn looks every ${data.schedule.everyHours} hours.` : "Background checks off. Scans start when a Claude Code or Codex session ends, or with Check now.");
+      draw(); toast(on ? `Background checks on. secondnature looks every ${data.schedule.everyHours} hours.` : "Background checks off. Scans start when a Claude Code or Codex session ends, or with Check now.");
       return;
     }
     if (el.dataset.lessonFile !== undefined) {
       const on = el.getAttribute("aria-checked") !== "true";
       const r = await api("/api/lesson-file", { repo, mode: on ? "local" : "off" }); data.lessonFile = r; draw();
-      toast(r.mode === "local" ? (r.written ? "Always-on lessons are in CLAUDE.local.md at the root of this repo, and kept up to date." : "Turned on, but muninn couldn't find this repo's folder. It writes the file the next time you work here.") : "Took muninn's lessons out of CLAUDE.local.md. Anything else in the file is left as it was."); return;
+      toast(r.mode === "local" ? (r.written ? "Always-on lessons are in CLAUDE.local.md at the root of this repo, and kept up to date." : "Turned on, but secondnature couldn't find this repo's folder. It writes the file the next time you work here.") : "Took muninn's lessons out of CLAUDE.local.md. Anything else in the file is left as it was."); return;
     }
     if (el.dataset.scan !== undefined) { await startScan(el); return; }
-    if (el.dataset.repo) { week = null; repo = el.dataset.repo; open = null; showAll = false; await refresh(); window.scrollTo(0, 0); return; }
+    if (el.dataset.repo) { week = null; repo = el.dataset.repo; open = null; showAll = false; runPage = null; await refresh(); window.scrollTo(0, 0); return; }
     if (el.dataset.replay !== undefined) {
       const box = el.closest(".detail"); const li = el.closest("li[data-id]");
       const l = [...data.suggested, ...data.kept].find((x) => x.id === li?.dataset.id);
@@ -962,9 +1140,9 @@ document.addEventListener("click", async (e) => {
         const g = box.querySelector("[data-f=global]");
         body = { id: l.id, action: "keep", text: box.querySelector("[data-f=text]").value, route, keywords: kws, ...(g ? { global: g.checked } : {}) };
       }
-      el.disabled = true; await api("/api/decide", body); open = null; toast("Added. Agents are told it from their next session."); await refresh(); return;
+      el.disabled = true; await api("/api/decide", body); open = null; toast("Kept. Agents are told it from their next session."); await refresh(); return;
     }
-    if (el.dataset.dismiss) { el.disabled = true; await api("/api/decide", { id: el.dataset.dismiss, action: "reject" }); toast("muninn won't suggest that again."); await refresh(); return; }
+    if (el.dataset.dismiss) { el.disabled = true; await api("/api/decide", { id: el.dataset.dismiss, action: "reject" }); toast("secondnature won't suggest that again."); await refresh(); return; }
     if (el.dataset.toggle) {
       const l = data.kept.find((x) => x.id === el.dataset.toggle); const turnOff = !l.off;
       el.setAttribute("aria-checked", String(!turnOff));
@@ -989,14 +1167,14 @@ document.addEventListener("click", async (e) => {
       // Two switches, three settings: both off = only when asked; start only; start and mid-task.
       const next = el.dataset.dial === "start" ? (startOn ? "quiet" : midOn ? "anytime" : "start") : (midOn ? (startOn ? "start" : "quiet") : "anytime");
       await api("/api/dial", { repo, dial: next });
-      toast({ quiet: "muninn won't tell agents anything here unless they ask.", start: "muninn tells agents only when a session starts.", anytime: "muninn tells agents at the start, and mid-task when relevant." }[next]);
+      toast({ quiet: "secondnature won't tell agents anything here unless they ask.", start: "secondnature tells agents only when a session starts.", anytime: "secondnature tells agents at the start, and mid-task when relevant." }[next]);
       await refresh(); return;
     }
   } catch (err) { toast(err.message); el.disabled = false; }
 });
 document.addEventListener("change", (e) => {
   if (e.target.id === "histRoutine") { hist.routine = e.target.checked; $("#histList").innerHTML = histList(); return; }
-  if (e.target.id === "repo") { repo = e.target.value; week = null; if (!asking) { askThread = []; askThreadId = null; } open = null; showAll = false; planBranch = null; refresh(); }
+  if (e.target.id === "repo") { repo = e.target.value; runPage = null; if (!repo && tab === "plan") tab = null; week = null; if (!asking) { askThread = []; askThreadId = null; } open = null; showAll = false; planBranch = null; refresh(); }
   if (e.target.id === "planBranch") { planBranch = e.target.value; planEdit = null; Object.assign(hist, { area: "All", q: "", open: {}, limit: 8 }); refresh(); }
 });
 refresh().catch((e) => { $("#main").innerHTML = `<p class="lead">${esc(e.message)}</p>`; });
