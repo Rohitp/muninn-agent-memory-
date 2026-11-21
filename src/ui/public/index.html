@@ -216,7 +216,7 @@ function histItems() {
   const words = hist.q.toLowerCase().split(/\s+/).filter(Boolean);
   const has = (t) => words.every((w) => t.toLowerCase().includes(w));
   const outcomes = [
-    ...(h.ungrouped.length ? [{ id: "new", title: "New steps", result: "Finished since muninn last grouped this branch's history. They're grouped into outcomes on the next check.", kind: "new", area: null, ref: null, at: h.ungrouped.map((s) => s.at).sort().at(-1), steps: h.ungrouped }] : []),
+    ...(h.ungrouped.length ? [{ id: "new", title: `Just finished: ${h.ungrouped.length} step${h.ungrouped.length === 1 ? "" : "s"} not grouped yet`, result: "muninn groups finished steps into outcomes as your sessions go. These came in since it last did, and join an outcome within a few minutes, or at the next check.", kind: "new", area: null, ref: null, at: h.ungrouped.map((s) => s.at).sort().at(-1), steps: h.ungrouped }] : []),
     ...h.outcomes,
   ];
   return {
