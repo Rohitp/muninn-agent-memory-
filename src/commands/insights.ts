@@ -5,6 +5,7 @@ import type { Session } from "../logs/types.js";
 import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
 import { reportData } from "./report.js";
+import { listQueries } from "../store/queries.js";
 import { loadRuns, runNumbers, savedFindings, STALL_MIN, type Run } from "./run-findings.js";
 
 const TOOL: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity" };
@@ -20,6 +21,8 @@ export type Insights = {
   skills: { name: string; uses: number }[];
   waiting: { suggestions: number; changes: number };
   spend: { calls: number; costUsd: number };
+  /** Questions agents asked secondnature (MCP tools or muninn ask; a person's terminal questions left out). */
+  asked: { count: number; found: number; bySurface: { surface: string; count: number }[]; nothing: string[] };
   /** Autonomous runs (a main session and the agents it handed work to) that ended in the window. */
   runs: { count: number; minutes: number; tokens: number; sentBack: number; rework: number; reworkTokens: number; stallMinutes: number; blockersLeft: { workflows: number; issues: number }; byRole: { role: string; tokens: number; share: number }[]; findings: string[] };
 };
@@ -56,6 +59,8 @@ export async function insightsData(db: Client, repo: string | null, days = 7, se
   for (const n of nums) for (const r of n.roles) roleTokens.set(r.role, (roleTokens.get(r.role) ?? 0) + r.tokens);
   const runTokens = nums.reduce((a, n) => a + n.tokens, 0);
   const found = await savedFindings(db, runs);
+  const qs = (await listQueries(db, { repo, days })).filter((x) => x.tool !== "terminal");
+  const surfaces = new Map<string, number>(); for (const x of qs) surfaces.set(x.surface, (surfaces.get(x.surface) ?? 0) + 1);
 
   return {
     days, repo,
@@ -73,6 +78,11 @@ export async function insightsData(db: Client, repo: string | null, days = 7, se
     },
     skills, waiting: { suggestions: waitingSug, changes: waitingCh },
     spend: { calls: Number(spend.n ?? 0), costUsd: Number(spend.c ?? 0) },
+    asked: {
+      count: qs.length, found: qs.filter((x) => x.results > 0).length,
+      bySurface: [...surfaces.entries()].map(([surface, count]) => ({ surface, count })).sort((a, b) => b.count - a.count),
+      nothing: [...new Set(qs.filter((x) => !x.results && x.query).map((x) => x.query))].slice(0, 3),
+    },
     runs: {
       count: runs.length, minutes: nums.reduce((a, n) => a + n.minutes, 0), tokens: runTokens,
       sentBack: nums.reduce((a, n) => a + n.sentBack, 0), rework: nums.reduce((a, n) => a + n.rework, 0), reworkTokens: nums.reduce((a, n) => a + n.reworkTokens, 0),
@@ -89,7 +99,7 @@ export function insightsText(i: Insights): string {
   const out: string[] = [];
   const where = i.repo ? i.repo.split("/").pop() : "all repos";
   out.push(`Your last ${i.days} days with coding agents (${where})`, "");
-  if (!i.sessions.total && !i.runs.count) return `${out.join("\n")}No sessions in this time.`;
+  if (!i.sessions.total && !i.runs.count && !i.asked.count) return `${out.join("\n")}No sessions in this time.`;
   out.push(`Sessions: ${i.sessions.total} (${Object.entries(i.sessions.byTool).map(([t, n]) => `${TOOL[t] ?? t} ${n}`).join(", ")})${i.repo ? "" : `, in ${Object.keys(i.sessions.byRepo).length} repo(s)`}.`);
   out.push("", "Where effort went to waste");
   if (!i.effort.byKind.length) out.push("  Nothing stood out: no loops, repeated failures or wrong paths.");
@@ -99,6 +109,11 @@ export function insightsText(i: Insights): string {
   out.push("", "Lessons");
   out.push(`  Told ${i.lessons.told} time(s) in ${i.lessons.toldSessions} session(s). Of ${i.lessons.kept} kept, ${i.lessons.working} were told and haven't come back.`);
   for (const c of i.lessons.cameBack) out.push(`  Came back: "${c.text.slice(0, 90)}${c.text.length > 90 ? "…" : ""}". ${c.verdict}`);
+  if (i.asked.count) {
+    out.push("", "What agents asked");
+    out.push(`  ${i.asked.count} question(s), ${i.asked.found} found something (${Math.round((i.asked.found / i.asked.count) * 100)}%). Most used: ${i.asked.bySurface.slice(0, 3).map((x) => `${x.surface} ${x.count}`).join(", ")}.`);
+    for (const q of i.asked.nothing) out.push(`  Found nothing: "${q.length > 90 ? q.slice(0, 89) + "…" : q}"`);
+  }
   if (i.runs.count) {
     const r = i.runs;
     const hm = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`);
