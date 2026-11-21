@@ -168,7 +168,12 @@ async function main() {
       const about = args.filter((x) => !x.startsWith("--")).join(" ").trim();
       if (!about) { console.error('Usage: muninn related "a decision or piece of work" [--all-repos]'); process.exitCode = 1; return; }
       const [{ openDb }, { repoIdentity }, { loadEmbedder }, { relatedText }] = await Promise.all([import("./store/db.js"), import("./repo/identity.js"), import("./embed/model.js"), import("./links/links.js")]);
-      console.log(await relatedText(await openDb(), about, args.includes("--all-repos") ? null : repoIdentity(process.cwd()), await loadEmbedder()));
+      const db = await openDb(); const repo = args.includes("--all-repos") ? null : repoIdentity(process.cwd()); const t0 = Date.now();
+      const text = await relatedText(db, about, repo, await loadEmbedder());
+      const [{ recordQuery, whoIsAsking }, { currentBranch }] = await Promise.all([import("./store/queries.js"), import("./handoff/handoff.js")]);
+      const who = whoIsAsking(); const hit = !text.startsWith("Found no");
+      await recordQuery(db, { repo, branch: repo ? currentBranch(process.cwd()) : null, session: who.session, tool: who.tool, surface: "related", query: about, results: hit ? 1 : 0, result_ids: hit ? [{ kind: "link", id: about.slice(0, 80) }] : [], ms: Date.now() - t0 });
+      console.log(text);
       return;
     }
     case "links": {
