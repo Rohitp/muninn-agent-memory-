@@ -59,6 +59,18 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
     const folded = await foldDuplicates(db, repo);
     const r = await learnRepo(db, repo, sessions, { embed, writer, cutoff: cfg.similarityCutoff, minSessions: cfg.minSessions, notesPerRun: cfg.notesPerRun });
     await saveUsage(db, writer?.runner ?? null, "lesson writing");
+    // Long sessions read in chunks by your Claude: what you steered toward, and what the session showed.
+    if (writer) {
+      try {
+        const { reviewSessions } = await import("../learn/session-review.js");
+        const reviewer = pickRunner("background");
+        if (reviewer) {
+          const rv = await reviewSessions(db, repo, sessions, reviewer, embed, { cutoff: cfg.similarityCutoff });
+          await saveUsage(db, reviewer, "session review");
+          if (rv.calls && !opts.auto) console.log(`  Read ${rv.calls} part(s) of ${rv.sessions} long session(s): ${rv.added} new suggestion(s)${rv.known ? `, ${rv.known} already known (evidence added)` : ""}.`);
+        }
+      } catch (e) { if (!opts.auto) console.log(`  Couldn't read long sessions this time: ${e instanceof Error ? e.message : String(e)}`); }
+    }
     // Changes to propose: "ask first" rules from commands you keep stopping, and skills from steps that repeat.
     try {
       const p = await import("../propose/index.js");
