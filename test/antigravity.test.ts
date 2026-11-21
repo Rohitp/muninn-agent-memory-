@@ -54,6 +54,14 @@ describe("Antigravity transcripts", () => {
     expect(s.events.find((e) => e.k === "cmd")).toMatchObject({ cmd: "ls -la" });
     expect(s.cwd).toBe(execFileSync("git", ["-C", root, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim());
   });
+  it("finds the repo from a file the agent read, with no folder given anywhere", () => {
+    const f = join(tmp(), "antigravity", "brain", "conv-3", ".system_generated", "logs", "transcript.jsonl");
+    write(f, [
+      { step_index: 0, source: "USER_EXPLICIT", type: "USER_INPUT", status: "DONE", content: "<USER_REQUEST>read the spec</USER_REQUEST>" },
+      { step_index: 1, source: "MODEL", type: "PLANNER_RESPONSE", status: "DONE", tool_calls: [{ name: "run_command", args: { CommandLine: '"ls -la"' } }, { name: "read_file", args: { Path: JSON.stringify(join(root, "src", "app.ts")) } }] },
+    ]);
+    expect(readAntigravity(f).cwd).toBe(execFileSync("git", ["-C", root, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim());
+  });
   it("is found by scans in the app, IDE and command-line folders", () => {
     const logs = tmp(); process.env.MUNINN_LOG_ROOT = logs;
     transcript(join(logs, "antigravity"));

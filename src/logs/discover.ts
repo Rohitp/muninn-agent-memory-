@@ -74,6 +74,8 @@ export function reposInLogs(): Map<string, string> {
   for (const [tool, files] of [["claude", f.claude], ["codex", f.codex], ["cursor", f.cursor]] as const) {
     for (const file of files) { const d = folderOf(file, tool, f.roots.cursor); if (d) folders.add(d); }
   }
+  // Antigravity logs don't record a folder: it's worked out from the files the agent touched.
+  for (const file of f.antigravity) { try { const d = readAntigravity(file).cwd; if (d) folders.add(d); } catch { /* unreadable log */ } }
   const repos = new Map<string, string>();
   for (const d of folders) { const r = repoIdentity(d); if (r && !repos.has(r)) repos.set(r, d); }
   return repos;

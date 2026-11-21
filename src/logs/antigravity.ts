@@ -28,6 +28,8 @@ function gitTop(path: string): string | null {
   let dir = path;
   while (dir !== "/" && !existsSync(dir)) dir = dirname(dir);
   if (dir === "/") return null;
+  // git -C needs a folder: for a file the agent viewed or edited, ask about the folder it's in.
+  try { if (!statSync(dir).isDirectory()) dir = dirname(dir); } catch { return null; }
   if (tops.has(dir)) return tops.get(dir)!;
   let top: string | null = null;
   try { top = execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 2000 }).trim() || null; } catch { /* not in a repo */ }
