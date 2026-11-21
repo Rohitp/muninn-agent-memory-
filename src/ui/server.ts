@@ -90,6 +90,8 @@ const routes: Record<string, Handler> = {
         ...(typeof b.text === "string" && b.text.trim() ? { text: b.text.trim() } : {}),
         ...(typeof b.news === "boolean" ? { news: b.news } : {}),
         ...(typeof b.global === "boolean" ? { global: b.global } : {}),
+        // Which role hears it: a role name, or "" for every agent.
+        ...(typeof b.role === "string" ? { role: b.role } : {}),
         alwaysOn: route === "always",
         triggers: route === "keyword" ? keywords : [],
       });
