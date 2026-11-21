@@ -38,3 +38,26 @@ export function scanSummary(scan: Scan, here: string | null, ignored: Set<string
   if (noRepo) lines.push(noRepo.trim());
   return lines;
 }
+
+/** What one repo's scan found, gathered while it runs so it prints as one block. */
+export type RepoReport = {
+  repo: string; sessions: number; minSessions: number;
+  /** Moments from repeats, corrections, failed commands and the other signals, and what became of them. */
+  moments: number; known: number; newLessons: number; noise: number;
+  /** Long sessions read in parts by your Claude, if it ran. */
+  review: { calls: number; sessions: number; added: number; known: number } | null;
+  /** Anything else worth saying about this repo, already in words. */
+  notes: string[];
+};
+
+const matched = (n: number) => (n === 1 ? "1 matched a lesson you already have" : `${n} matched lessons you already have`);
+/** One repo's block: what's new first, then how it was found, then anything to look at. */
+export function repoBlock(r: RepoReport): string[] {
+  const added = r.newLessons + (r.review?.added ?? 0);
+  const lines = [`${repoLabel(r.repo)} (${plural(r.sessions, "session")}): ${added ? `${plural(added, "new suggestion")}, waiting in muninn ui.` : "nothing new."}`];
+  if (r.moments) lines.push(`  Spotted ${plural(r.moments, "moment")}: ${list([matched(r.known), `${r.newLessons} new`, r.noise ? `${r.noise} judged noise by your Claude` : ""].filter(Boolean))}.`);
+  if (r.review?.calls) lines.push(`  Read ${plural(r.review.calls, "part")} of ${plural(r.review.sessions, "long session")}: ${plural(r.review.added, "new suggestion")}${r.review.known ? `, ${matched(r.review.known)}` : ""}.`);
+  if (r.sessions < r.minSessions) lines.push(`  Only ${plural(r.sessions, "session")} so far. Something you say again counts once it's in ${r.minSessions} sessions.`);
+  for (const n of r.notes) lines.push(`  ${n}`);
+  return lines;
+}
