@@ -9,7 +9,8 @@ const lockFile = () => join(ensureHome(), "auto.lock");
 
 export function countLogs(): number {
   const r = logRoots();
-  return globSync("*/*.jsonl", { cwd: r.claude }).length + globSync("**/rollout-*.jsonl", { cwd: r.codex }).length + globSync("*/agent-transcripts/**/*.jsonl", { cwd: r.cursor }).length;
+  return globSync("*/*.jsonl", { cwd: r.claude }).length + globSync("**/rollout-*.jsonl", { cwd: r.codex }).length + globSync("*/agent-transcripts/**/*.jsonl", { cwd: r.cursor }).length
+    + globSync("{antigravity,antigravity-ide,antigravity-cli}/brain/*/.system_generated/logs/transcript.jsonl", { cwd: r.antigravity }).length;
 }
 /** Whether a scan is due: at most once a day, or after enough new sessions. */
 export function scanDue(now = Date.now()): boolean {

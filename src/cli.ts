@@ -42,6 +42,7 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn pr [--apply]           Write the "why" for this branch's pull request from your sessions
   muninn insights [--days 7] [--all-repos]  Your week with coding agents: what went well, what didn't
   muninn status                 What muninn has learned and sent, and any problems
+  muninn schedule [on|off]      A macOS background job that scans every few hours, for days without Claude Code
   muninn install [--learn]      Add Claude Code and Codex hooks (--learn: only automatic scans)
   muninn uninstall              Remove muninn's hooks
   muninn pause | resume         Stop or restart delivery and automatic scans
@@ -233,6 +234,7 @@ async function main() {
       return;
     }
     case "status": return (await import("./commands/status.js")).status();
+    case "schedule": return (await import("./commands/schedule.js")).schedule(args[0] ?? "");
     case "keywords": return (await import("./commands/status.js")).keywords();
     case "pause": writeFileSync(join(ensureHome(), "paused"), ""); console.log("Paused."); return;
     case "resume": rmSync(join(ensureHome(), "paused"), { force: true }); console.log("Resumed."); return;
