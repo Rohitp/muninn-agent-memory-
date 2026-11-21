@@ -35,10 +35,34 @@ export async function gatherSources(db: Client, q: string, repo: string | null, 
     })),
     ...(handoff ? [{ id: String(handoff.id), kind: "handoff" as const, text: `Where the last session on ${handoff.branch} left off: ${handoff.text}`, where: short(repo), date: day(String(handoff.created_at)), repo, branch: handoff.branch ? String(handoff.branch) : null }] : []),
   ];
-  // A decision found carries what it led to, so answers can say what it affected.
-  for (const s of out) if (s.kind === "decision" && s.id.startsWith("plan:")) {
-    const led = (await db.execute({ sql: "SELECT o.title FROM links l JOIN plan_outcomes o ON o.id=l.dst_id WHERE l.rel='motivates' AND l.src_id=? ORDER BY l.score DESC LIMIT 3", args: [s.id.slice(5)] }).catch(() => ({ rows: [] }))).rows.map((r) => String(r.title));
-    if (led.length) s.text += ` (Led to: ${led.join("; ")})`;
+  // Each item found carries what it links to, so an answer can say what a decision affected, why work was done,
+  // what replaced what, and what changed outside the repo.
+  const sel = async (sql: string, args: string[]) => { try { return (await db.execute({ sql, args })).rows; } catch { return []; } };
+  const list = (rows: Record<string, unknown>[], k: string) => rows.map((r) => String(r[k]));
+  for (const s of out) {
+    const notes: string[] = [];
+    if (s.id.startsWith("plan:") && s.kind === "decision") {
+      const id = s.id.slice(5);
+      const led = list(await sel("SELECT o.title FROM live_links l JOIN plan_outcomes o ON o.id=l.dst_id WHERE l.rel='motivates' AND l.src_id=? ORDER BY l.score DESC LIMIT 3", [id]), "title");
+      const by = list(await sel("SELECT coalesce(p.what,p.text) t FROM live_links l JOIN plan_items p ON p.id=l.src_id WHERE l.rel='supersedes' AND l.dst_id=?", [id]), "t");
+      const replaces = list(await sel("SELECT coalesce(p.what,p.text) t FROM live_links l JOIN plan_items p ON p.id=l.dst_id WHERE l.rel='supersedes' AND l.src_id=?", [id]), "t");
+      if (led.length) notes.push(`Led to: ${led.join("; ")}`);
+      if (by.length) notes.push(`Replaced later by: ${by.join("; ")}`);
+      if (replaces.length) notes.push(`Replaced the earlier decision: ${replaces.join("; ")}`);
+    } else if (s.id.startsWith("plan:")) {
+      const o = (await sel("SELECT o.id, o.title, o.ref FROM plan_items p JOIN plan_outcomes o ON o.id=p.outcome_id WHERE p.id=?", [s.id.slice(5)]))[0];
+      if (o) {
+        notes.push(`Part of: ${o.title}${o.ref ? ` (${o.ref})` : ""}`);
+        const because = list(await sel("SELECT coalesce(p.what,p.text) t FROM live_links l JOIN plan_items p ON p.id=l.src_id WHERE l.rel='motivates' AND l.dst_id=?", [String(o.id)]), "t");
+        const outside = list(await sel("SELECT dst_id FROM live_links WHERE src_id=? AND rel='affects'", [String(o.id)]), "dst_id");
+        if (because.length) notes.push(`Because of: ${because.join("; ")}`);
+        if (outside.length) notes.push(`Changed outside the repo: ${outside.join(", ")}`);
+      }
+    } else if (s.kind === "lesson" || s.kind === "note") {
+      const missing = list(await sel("SELECT dst_id FROM links WHERE src_id=? AND rel='applies_to' AND how='missing'", [s.id]), "dst_id");
+      if (missing.length) notes.push(`Names ${missing.join(", ")}, no longer in the repo`);
+    }
+    if (notes.length) s.text += ` (${notes.join(". ")})`;
   }
   return out.map((s, i) => ({ n: i + 1, ...s }));
 }

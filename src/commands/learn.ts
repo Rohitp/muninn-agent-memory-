@@ -120,7 +120,14 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
       await saveUsage(db, runner, "plan history");
     } catch { /* the history is a convenience */ }
     // How things relate: decisions to the outcomes they led to, outcomes to sessions and commits, sessions to files.
-    try { const { buildLinks } = await import("../links/links.js"); await buildLinks(db, repos.flatMap((r) => scan.byRepo.get(r)!)); } catch { /* links are a convenience */ }
+    try {
+      const { buildLinks } = await import("../links/links.js");
+      await buildLinks(db, repos.flatMap((r) => scan.byRepo.get(r)!));
+      // Your Claude checks the links muninn can only guess at, a few batches per scan.
+      const { confirmLinks } = await import("../links/confirm.js");
+      for (let i = 0; i < 3; i++) { const c = await confirmLinks(db, runner); if (!c.motivates && !c.supersedes && !c.outside) break; }
+      await saveUsage(db, runner, "link checks");
+    } catch { /* links are a convenience */ }
     // Questions worth asking muninn, written from each repo's recent work, for the page's Ask box.
     try {
       const { refreshSuggestions } = await import("./suggestions.js");

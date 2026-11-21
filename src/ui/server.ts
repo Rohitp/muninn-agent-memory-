@@ -49,7 +49,9 @@ async function lessonDetail(db: Client, id: string) {
   const fromWriter = l.suggested_keywords ? (JSON.parse(l.suggested_keywords) as string[]).filter(usefulKeyword) : [];
   const suggested = fromWriter.length ? fromWriter : [suggestKeyword(l.text)].filter(Boolean);
   const origin = await originOf(db, { id: l.id, source: l.source, signal: l.signal });
-  return { ...l, worth: worthSentence(l as any, defaultRoute(l).route), preference: isPreference(l), defaults: defaultRoute(l), repo_short: shortRepo(l.repo_id), origin, evidence, triggers, suggested, similar: sim ? { id: sim.lesson.id, text: sim.lesson.text, plain: sim.lesson.plain, status: sim.lesson.status, score: sim.score } : null };
+  // Files or folders the lesson names that are no longer in the repo: the lesson may be out of date.
+  const missing = (await db.execute({ sql: "SELECT dst_id FROM links WHERE src_id=? AND rel='applies_to' AND how='missing'", args: [l.id] }).catch(() => ({ rows: [] }))).rows.map((r) => String(r.dst_id));
+  return { ...l, missing, worth: worthSentence(l as any, defaultRoute(l).route), preference: isPreference(l), defaults: defaultRoute(l), repo_short: shortRepo(l.repo_id), origin, evidence, triggers, suggested, similar: sim ? { id: sim.lesson.id, text: sim.lesson.text, plain: sim.lesson.plain, status: sim.lesson.status, score: sim.score } : null };
 }
 
 /** A branch's plan for the page, defaulting to the branch checked out in the repo's folder, plus the other branches with plans. */
@@ -154,6 +156,11 @@ const routes: Record<string, Handler> = {
   },
   "GET /api/insights": async (db, q) => { const { insightsData, insightsText } = await import("../commands/insights.js"); return { text: insightsText(await insightsData(db, q.get("repo") || null, Number(q.get("days")) || 7)) }; },
   "GET /api/recall": async (db, q) => (await import("../commands/recall.js")).recallData(db, q.get("q") ?? "", q.get("repo") || null, { embed: await embed().catch(() => undefined), limit: 8 }),
+  "POST /api/link": async (db, _q, b) => {
+    const { setLink } = await import("../links/links.js");
+    await setLink(db, ["decision", String(b.decision ?? "")], "motivates", ["outcome", String(b.outcome ?? "")], b.action === "add");
+    return { ok: true };
+  },
   "GET /api/proposals": async (db, q) => {
     const repo = q.get("repo") || null;
     const since = new Date(Date.now() - 14 * 86_400_000).toISOString();

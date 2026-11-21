@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client";
 import { execFileSync } from "node:child_process";
-import { relative } from "node:path";
+import { existsSync } from "node:fs";
+import { join, relative } from "node:path";
 import { cosine } from "../embed/model.js";
 import type { Session } from "../logs/types.js";
 import { repoIdentity } from "../repo/identity.js";
@@ -15,12 +16,15 @@ import { unvec } from "../store/sessions.js";
  *   outcome   ships_in   commit    the commit, PR or version it names
  *   decision  made_in    session   the session the decision was recorded from
  *   decision  motivates  outcome   work on the same branch, close in meaning, at or after the decision
+ *   decision  supersedes decision  a newer decision that replaces an older one (judged by your Claude)
+ *   outcome   affects    external  something outside the repo it changed: npm, GitHub, a settings file (from your Claude)
  *   lesson    comes_from session   the sessions its evidence was seen in
+ *   lesson    applies_to file      a file or folder the lesson names (flagged when it no longer exists)
  *   outcome   changes    file      files its commit changed, from git (precise, unlike a long session's files)
  *   session   touches    file      files the agent read, edited or searched (path relative to the repo)
  */
-export type Kind = "step" | "outcome" | "decision" | "lesson" | "session" | "commit" | "file";
-export type Rel = "part_of" | "built_in" | "ships_in" | "changes" | "made_in" | "motivates" | "comes_from" | "touches";
+export type Kind = "step" | "outcome" | "decision" | "lesson" | "session" | "commit" | "file" | "external";
+export type Rel = "part_of" | "built_in" | "ships_in" | "changes" | "made_in" | "motivates" | "supersedes" | "affects" | "comes_from" | "applies_to" | "touches";
 export const RELS: Record<Rel, { from: Kind; to: Kind; label: string; back: string }> = {
   part_of: { from: "step", to: "outcome", label: "Part of", back: "Steps" },
   built_in: { from: "outcome", to: "session", label: "Built in", back: "Built" },
@@ -28,6 +32,9 @@ export const RELS: Record<Rel, { from: Kind; to: Kind; label: string; back: stri
   changes: { from: "outcome", to: "file", label: "Changed", back: "Changed by" },
   made_in: { from: "decision", to: "session", label: "Decided in", back: "Decisions made" },
   motivates: { from: "decision", to: "outcome", label: "Led to", back: "Because of" },
+  supersedes: { from: "decision", to: "decision", label: "Replaces", back: "Replaced by" },
+  affects: { from: "outcome", to: "external", label: "Changed outside the repo", back: "Changed by" },
+  applies_to: { from: "lesson", to: "file", label: "About", back: "Lessons about it" },
   comes_from: { from: "lesson", to: "session", label: "Learned in", back: "Lessons learned" },
   touches: { from: "session", to: "file", label: "Touched", back: "Touched in" },
 };
@@ -35,7 +42,9 @@ export const RELS: Record<Rel, { from: Kind; to: Kind; label: string; back: stri
 export const MOTIVATES_MIN = 0.66;
 const MOTIVATES_MAX = 3;
 
-type Link = { src: [Kind, string]; rel: Rel; dst: [Kind, string]; how: "known" | "meaning"; score?: number; repo: string | null };
+/** How muninn knows a link: recorded facts, similar meaning (a candidate), checked by your Claude, set by you, or rejected. */
+export type How = "known" | "meaning" | "confirmed" | "person" | "rejected" | "missing";
+type Link = { src: [Kind, string]; rel: Rel; dst: [Kind, string]; how: How; score?: number; repo: string | null };
 async function put(db: Client, l: Link) {
   await db.execute({ sql: "INSERT OR REPLACE INTO links (src_type,src_id,rel,dst_type,dst_id,how,score,repo_id,created_at) VALUES (?,?,?,?,?,?,?,?,?)", args: [l.src[0], l.src[1], l.rel, l.dst[0], l.dst[1], l.how, l.score ?? null, l.repo, new Date().toISOString()] });
 }
@@ -46,7 +55,7 @@ async function put(db: Client, l: Link) {
  */
 export async function buildLinks(db: Client, sessions: Session[] = []): Promise<Record<Rel, number>> {
   const count = Object.fromEntries(Object.keys(RELS).map((r) => [r, 0])) as Record<Rel, number>;
-  await db.execute("DELETE FROM links WHERE how IN ('known','meaning') AND rel != 'touches'");
+  await db.execute("DELETE FROM links WHERE how IN ('known','meaning','missing') AND rel != 'touches'");
   const add = async (l: Link) => { await put(db, l); count[l.rel]++; };
 
   // Steps, outcomes, sessions and commits, from the grouped plan history.
@@ -86,18 +95,36 @@ export async function buildLinks(db: Client, sessions: Session[] = []): Promise<
       for (const st of (await db.execute({ sql: "SELECT c.embedding FROM plan_items p JOIN chunks c ON c.id = 'plan:' || p.id WHERE p.outcome_id=? AND c.embedding IS NOT NULL", args: [o] })).rows) best = Math.max(best, cosine(dv, unvec(st.embedding)));
       if (best >= MOTIVATES_MIN) scored.push({ id: o, s: best });
     }
-    for (const o of scored.sort((a, b) => b.s - a.s).slice(0, MOTIVATES_MAX)) await add({ src: ["decision", id], rel: "motivates", dst: ["outcome", o.id], how: "meaning", score: Math.round(o.s * 1000) / 1000, repo });
+    const judged = new Set((await db.execute({ sql: "SELECT dst_id FROM links WHERE src_id=? AND rel='motivates' AND how IN ('confirmed','person','rejected')", args: [id] })).rows.map((r) => String(r.dst_id)));
+    for (const o of scored.filter((x) => !judged.has(x.id)).sort((a, b) => b.s - a.s).slice(0, MOTIVATES_MAX)) await add({ src: ["decision", id], rel: "motivates", dst: ["outcome", o.id], how: "meaning", score: Math.round(o.s * 1000) / 1000, repo });
   }
   // Lessons: the sessions their evidence came from.
   for (const e of (await db.execute("SELECT DISTINCT e.lesson_id, e.session, l.repo_id FROM evidence e JOIN lessons l ON l.id = e.lesson_id WHERE l.status IN ('live','proposed')")).rows) {
     await add({ src: ["lesson", String(e.lesson_id)], rel: "comes_from", dst: ["session", String(e.session)], how: "known", repo: e.repo_id ? String(e.repo_id) : null });
+  }
+  // Lessons: the files and folders they name, so a lesson about something deleted can be flagged.
+  for (const l of (await db.execute("SELECT id, repo_id, text FROM lessons WHERE status IN ('live','proposed') AND repo_id IS NOT NULL")).rows) {
+    const repo = String(l.repo_id);
+    if (!roots.has(repo)) roots.set(repo, await repoRoot(db, repo));
+    const root = roots.get(repo);
+    if (!root) continue;
+    // Flagged as missing only when it plainly names a file (it has an extension): "format/check/pytest" is words.
+    for (const p of pathsNamed(String(l.text))) {
+      const there = existsSync(join(root, p));
+      if (!there && !/\.[a-z0-9]{1,5}$/i.test(p)) continue;
+      await add({ src: ["lesson", String(l.id)], rel: "applies_to", dst: ["file", p], how: there ? "known" : "missing", repo });
+    }
   }
   // Files each session touched, relative to its repo. Only sessions read this time are redone.
   for (const s of sessions) {
     const repo = s.cwd ? repoIdentity(s.cwd) : null;
     if (!repo) continue;
     const files = new Set<string>();
-    for (const e of s.events) if (e.k === "file" && !e.failed && e.tool !== "skill") { const r = relative(s.cwd, e.path); if (r && !r.startsWith("..")) files.add(r); }
+    for (const e of s.events) {
+      if (e.k === "file" && !e.failed && e.tool !== "skill") { const r = relative(s.cwd, e.path); if (r && !r.startsWith("..")) files.add(r); }
+      // Files opened through the shell (cat, sed, head…): the paths a command names that exist in the repo.
+      if (e.k === "cmd" && !e.failed && !e.stopped) for (const p of pathsNamed(e.cmd)) if (existsSync(join(s.cwd, p))) files.add(p);
+    }
     if (!files.size) continue;
     await db.execute({ sql: "DELETE FROM links WHERE src_type='session' AND src_id=? AND rel='touches'", args: [s.id] });
     for (const f of files) await add({ src: ["session", s.id], rel: "touches", dst: ["file", f], how: "known", repo });
@@ -124,8 +151,8 @@ export type Related = { rel: Rel; label: string; items: Item[] }[];
 /** What a thing links to and what links to it, grouped by relationship, each described for reading. */
 export async function related(db: Client, kind: Kind, id: string, perRel = 8): Promise<Related> {
   const out: Related = [];
-  const fwd = (await db.execute({ sql: "SELECT rel, dst_type t, dst_id i, score FROM links WHERE src_type=? AND src_id=? ORDER BY score DESC", args: [kind, id] })).rows;
-  const back = (await db.execute({ sql: "SELECT rel, src_type t, src_id i, score FROM links WHERE dst_type=? AND dst_id=? ORDER BY score DESC", args: [kind, id] })).rows;
+  const fwd = (await db.execute({ sql: "SELECT rel, dst_type t, dst_id i, score FROM live_links WHERE src_type=? AND src_id=? ORDER BY score DESC", args: [kind, id] })).rows;
+  const back = (await db.execute({ sql: "SELECT rel, src_type t, src_id i, score FROM live_links WHERE dst_type=? AND dst_id=? ORDER BY score DESC", args: [kind, id] })).rows;
   for (const [rows, dir] of [[fwd, "label"], [back, "back"]] as const) {
     const byRel = new Map<Rel, string[][]>();
     for (const r of rows) { const rel = String(r.rel) as Rel; byRel.set(rel, [...(byRel.get(rel) ?? []), [String(r.t), String(r.i)]]); }
@@ -157,10 +184,11 @@ export async function relatedText(db: Client, about: string, repo: string | null
   if (hit.kind === "decision") { const why = (await db.execute({ sql: "SELECT why FROM plan_items WHERE id=?", args: [hit.id] })).rows[0]?.why; if (why) lines.push(`Because: ${why}`); }
   for (const g of await related(db, hit.kind, hit.id)) {
     if (g.rel === "part_of") { lines.push(`${g.label}: ${g.items.length} step(s)`); continue; }
+    if (g.rel === "changes" || g.rel === "touches") continue; // shown once, as files, below
     lines.push(`${g.label}:`, ...g.items.map((i) => `- ${i.title}${i.date ? ` (${i.date.slice(0, 10)})` : ""}`));
   }
   // Files: through the sessions this work (or the work this decision led to) was done in.
-  const outcomes = hit.kind === "outcome" ? [hit.id] : (await db.execute({ sql: "SELECT dst_id FROM links WHERE src_id=? AND rel='motivates'", args: [hit.id] })).rows.map((r) => String(r.dst_id));
+  const outcomes = hit.kind === "outcome" ? [hit.id] : (await db.execute({ sql: "SELECT dst_id FROM live_links WHERE src_id=? AND rel='motivates'", args: [hit.id] })).rows.map((r) => String(r.dst_id));
   if (outcomes.length) {
     const files = await filesFor(db, outcomes, 15);
     if (files.files.length) lines.push(files.fromGit ? "Files its commits changed:" : "Files its sessions worked on:", ...files.files.map((f) => `- ${f}`));
@@ -181,4 +209,39 @@ export async function filesFor(db: Client, outcomes: string[], max: number): Pro
   if (git.length) return { files: git, fromGit: true };
   const rows = (await db.execute({ sql: `SELECT t.dst_id f, count(*) n FROM links b JOIN links t ON t.src_type='session' AND t.src_id=b.dst_id AND t.rel='touches' WHERE b.rel='built_in' AND b.src_id IN (${ins}) AND (SELECT count(*) FROM links x WHERE x.src_id=b.dst_id AND x.rel='touches') <= ? GROUP BY t.dst_id ORDER BY n DESC LIMIT ?`, args: [...outcomes, FOCUSED_SESSION, max] })).rows;
   return { files: rows.map((r) => String(r.f)), fromGit: false };
+}
+
+/** Relative paths a text names: `src/app.ts`, docs/notes.md, scripts/ (not URLs, flags or absolute paths). */
+export function pathsNamed(text: string): string[] {
+  const out = new Set<string>();
+  for (const m of text.matchAll(/(?:^|[\s`'"(=])((?:\.?[\w@-]+\/)+[\w@.-]*|[\w@-]+\.(?:ts|tsx|js|mjs|json|md|py|sql|yml|yaml|toml|sh|html|css|go|rs|rb|java|kt|swift))(?=$|[\s`'"),:;])/g)) {
+    const p = m[1]!.replace(/^\.\//, "").replace(/\/$/, "");
+    if (p && !p.includes("://") && !p.startsWith(".git") && p.length <= 160) out.add(p);
+  }
+  return [...out].slice(0, 12);
+}
+
+/** You set a link (it stays through rebuilds) or removed one (it's never proposed again). */
+export async function setLink(db: Client, src: [Kind, string], rel: Rel, dst: [Kind, string], keep: boolean) {
+  const repo = String((await db.execute({ sql: "SELECT repo_id FROM plan_items WHERE id=? UNION SELECT repo_id FROM plan_outcomes WHERE id=? LIMIT 1", args: [src[1], src[1]] })).rows[0]?.repo_id ?? "") || null;
+  await db.execute({ sql: "INSERT OR REPLACE INTO links (src_type,src_id,rel,dst_type,dst_id,how,score,repo_id,created_at) VALUES (?,?,?,?,?,?,NULL,?,?)", args: [src[0], src[1], rel, dst[0], dst[1], keep ? "person" : "rejected", repo, new Date().toISOString()] });
+}
+
+/** muninn link|unlink "<decision>" "<work>": that decision did, or didn't, lead to that work. */
+export async function linkCmd(db: Client, keep: boolean, decisionAbout: string, workAbout: string, repo: string | null, embed: import("../embed/model.js").Embed): Promise<string> {
+  const { gatherSources } = await import("../commands/answer.js");
+  const find = async (about: string, want: "decision" | "outcome") => {
+    for (const s of (await gatherSources(db, about, repo, embed, { limit: 10 })).filter((x) => x.id.startsWith("plan:"))) {
+      const id = s.id.slice(5);
+      if (want === "decision" && s.kind === "decision") return id;
+      if (want === "outcome" && s.kind !== "decision") { const o = (await db.execute({ sql: "SELECT outcome_id FROM plan_items WHERE id=?", args: [id] })).rows[0]?.outcome_id; if (o) return String(o); }
+    }
+    return null;
+  };
+  const d = await find(decisionAbout, "decision"), o = await find(workAbout, "outcome");
+  if (!d) return `Found no decision about "${decisionAbout}".`;
+  if (!o) return `Found no finished work about "${workAbout}".`;
+  await setLink(db, ["decision", d], "motivates", ["outcome", o], keep);
+  const [dd, oo] = await Promise.all([describe(db, "decision", d), describe(db, "outcome", o)]);
+  return keep ? `Linked: "${dd.title}" led to "${oo.title}". It stays through rebuilds.` : `Unlinked: "${dd.title}" didn't lead to "${oo.title}". muninn won't link them again.`;
 }

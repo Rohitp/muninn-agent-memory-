@@ -16,6 +16,8 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn edit <id> [--text "..."] [--always-on|--not-always-on] [--trigger word] [--global|--repo-scope]
   muninn retire <id>
   muninn ask "question"         Search kept lessons and notes in every repo
+  muninn links check            Rebuild links, and have your Claude check the ones muninn guessed
+  muninn link|unlink "decision" "work"  Say a decision did (or didn't) lead to some finished work
   muninn related "what" [--all-repos]  What a decision or piece of work led to, and where it was done
   muninn recall "what" [--all-repos] [--days N] [--full]
                                 Search your past sessions: what was asked, said and run
@@ -164,6 +166,30 @@ async function main() {
       if (!about) { console.error('Usage: muninn related "a decision or piece of work" [--all-repos]'); process.exitCode = 1; return; }
       const [{ openDb }, { repoIdentity }, { loadEmbedder }, { relatedText }] = await Promise.all([import("./store/db.js"), import("./repo/identity.js"), import("./embed/model.js"), import("./links/links.js")]);
       console.log(await relatedText(await openDb(), about, args.includes("--all-repos") ? null : repoIdentity(process.cwd()), await loadEmbedder()));
+      return;
+    }
+    case "links": {
+      // muninn links check: rebuild links and have your Claude check every one it can only guess at, now.
+      if (args[0] !== "check") { console.error("Usage: muninn links check"); process.exitCode = 1; return; }
+      const [{ openDb }, { scanLogs }, { buildLinks }, { confirmLinks }, { pickRunner, saveUsage }] = await Promise.all([import("./store/db.js"), import("./logs/discover.js"), import("./links/links.js"), import("./links/confirm.js"), import("./learn/writer.js")]);
+      const db = await openDb(); const runner = pickRunner("background");
+      if (!runner) { console.error("This needs the claude (or codex) command, which muninn couldn't find."); process.exitCode = 1; return; }
+      await buildLinks(db, scanLogs().sessions);
+      const total = { motivates: 0, supersedes: 0, outside: 0 };
+      for (let i = 0; i < 40; i++) { const c = await confirmLinks(db, runner); total.motivates += c.motivates; total.supersedes += c.supersedes; total.outside += c.outside; if (!c.motivates && !c.supersedes && !c.outside) break; }
+      await saveUsage(db, runner, "link checks");
+      const n = async (sql: string) => Number((await db.execute(sql)).rows[0]?.n ?? 0);
+      console.log(`Checked ${total.motivates} led-to link(s): ${await n("SELECT count(*) n FROM links WHERE rel='motivates' AND how='confirmed'")} kept, ${await n("SELECT count(*) n FROM links WHERE rel='motivates' AND how='rejected'")} dropped as only similar.`);
+      console.log(`Checked ${total.supersedes} pair(s) of decisions: ${await n("SELECT count(*) n FROM links WHERE rel='supersedes' AND how='confirmed'")} newer decision(s) replace an older one.`);
+      console.log(`Checked ${total.outside} outcome(s) for changes outside the repo: ${await n("SELECT count(*) n FROM links WHERE rel='affects'")} found.`);
+      console.log(`Lessons naming files no longer in their repo: ${await n("SELECT count(DISTINCT src_id) n FROM links WHERE rel='applies_to' AND how='missing'")}.`);
+      return;
+    }
+    case "link": case "unlink": {
+      const [decision, work] = args.filter((x) => !x.startsWith("--"));
+      if (!decision || !work) { console.error(`Usage: muninn ${cmd} "a decision" "a piece of finished work"`); process.exitCode = 1; return; }
+      const [{ openDb }, { repoIdentity }, { loadEmbedder }, { linkCmd }] = await Promise.all([import("./store/db.js"), import("./repo/identity.js"), import("./embed/model.js"), import("./links/links.js")]);
+      console.log(await linkCmd(await openDb(), cmd === "link", decision, work, args.includes("--all-repos") ? null : repoIdentity(process.cwd()), await loadEmbedder()));
       return;
     }
     case "recall": return (await import("./commands/recall.js")).recall(args);

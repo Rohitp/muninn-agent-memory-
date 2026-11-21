@@ -11,7 +11,7 @@ import { getPlan, type PlanItem } from "./plan.js";
  * shipped, 21 Nov, ffbf07e), each in a plain-language area, with routine steps (tests run, pushed) marked so they
  * fold away; and each decision as what was decided and why.
  */
-export type Links = { because?: string[]; ledTo?: string[]; sessions?: number; files?: string[] };
+export type Links = { because?: { id: string; title: string }[]; ledTo?: { id: string; title: string }[]; replacedBy?: string[]; sessions?: number; files?: string[]; outside?: string[] };
 export type Outcome = { id: string; title: string; result: string; kind: "shipped" | "fixed" | "checked" | "explored"; area: string; ref: string | null; at: string; steps: { id: string; text: string; routine: boolean; at: string; reopenable: boolean }[]; links?: Links };
 export type Decision = { id: string; what: string; why: string | null; area: string | null; at: string; links?: Links };
 export type History = { outcomes: Outcome[]; ungrouped: Outcome["steps"]; decisions: Decision[]; areas: string[] };
@@ -130,14 +130,16 @@ export async function branchesToGroup(db: Client, repo: string): Promise<string[
 async function attachLinks(db: Client, outcomes: Outcome[], decisions: Decision[]) {
   const q = async (sql: string, args: string[]) => { try { return (await db.execute({ sql, args })).rows; } catch { return []; } };
   for (const o of outcomes) {
-    const because = (await q("SELECT coalesce(p.what, p.text) t FROM links l JOIN plan_items p ON p.id=l.src_id WHERE l.rel='motivates' AND l.dst_id=? ORDER BY l.score DESC LIMIT 3", [o.id])).map((r) => String(r.t));
-    const sessions = Number((await q("SELECT count(*) n FROM links WHERE src_id=? AND rel='built_in'", [o.id]))[0]?.n ?? 0);
+    const because = (await q("SELECT p.id, coalesce(p.what, p.text) t FROM live_links l JOIN plan_items p ON p.id=l.src_id WHERE l.rel='motivates' AND l.dst_id=? ORDER BY l.score DESC LIMIT 3", [o.id])).map((r) => ({ id: String(r.id), title: String(r.t) }));
+    const outside = (await q("SELECT dst_id FROM live_links WHERE src_id=? AND rel='affects'", [o.id])).map((r) => String(r.dst_id));
+    const sessions = Number((await q("SELECT count(*) n FROM live_links WHERE src_id=? AND rel='built_in'", [o.id]))[0]?.n ?? 0);
     let files: string[] = [];
     try { const { filesFor } = await import("../links/links.js"); files = (await filesFor(db, [o.id], 4)).files; } catch { /* no links yet */ }
-    o.links = { because, sessions, files };
+    o.links = { because, sessions, files, outside };
   }
   for (const d of decisions) {
-    const ledTo = (await q("SELECT o.title FROM links l JOIN plan_outcomes o ON o.id=l.dst_id WHERE l.rel='motivates' AND l.src_id=? ORDER BY l.score DESC LIMIT 3", [d.id])).map((r) => String(r.title));
-    d.links = { ledTo };
+    const ledTo = (await q("SELECT o.id, o.title FROM live_links l JOIN plan_outcomes o ON o.id=l.dst_id WHERE l.rel='motivates' AND l.src_id=? ORDER BY l.score DESC LIMIT 3", [d.id])).map((r) => ({ id: String(r.id), title: String(r.title) }));
+    const replacedBy = (await q("SELECT coalesce(p.what, p.text) t FROM live_links l JOIN plan_items p ON p.id=l.src_id WHERE l.rel='supersedes' AND l.dst_id=?", [d.id])).map((r) => String(r.t));
+    d.links = { ledTo, replacedBy };
   }
 }
