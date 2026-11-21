@@ -1,13 +1,7 @@
 import { createInterface } from "node:readline/promises";
-import { enableCursor } from "../deliver/cursor.js";
 import { loadEmbedder, modelCached, MODEL_SIZE, MODEL_SOURCE } from "../embed/model.js";
-import { logFiles } from "../logs/discover.js";
-import { readCursor } from "../logs/cursor.js";
-import { repoIdentity } from "../repo/identity.js";
-import { openDb } from "../store/db.js";
-import { ensureRepo } from "../store/lessons.js";
 import { uiDetached } from "../ui/detach.js";
-import { codexPresent, install } from "./install.js";
+import { codexPresent } from "./install.js";
 import { learn } from "./learn.js";
 import { pickRunner } from "../learn/writer.js";
 
@@ -20,42 +14,35 @@ const ask = async (q: string, def = true) => {
 };
 
 /**
- * One command from nothing to a first look: hooks for Claude Code and Codex, Cursor rules for repos
- * Cursor is used in, a first scan of every repo, and the review page open in the browser.
+ * One command from nothing to a first look: every coding tool on this machine connected (connect.ts), the local
+ * model, a first scan of every repo (which also turns on Cursor and Antigravity rules where they're used), and the
+ * review page open in the browser.
  */
 export async function setup(args: string[]) {
   console.log(`secondnature (muninn for short, which is also its command) learns from your coding sessions and gives your agents what you've taught them.
 
-What it reads: your Claude Code, Codex and Cursor session logs, on this machine.
+What it reads: your Claude Code, Codex, Cursor and Antigravity session logs, on this machine.
 What it sends: redacted excerpts to your own Claude Code (or Codex) to write lessons.
 What it downloads: a small local model (${MODEL_SIZE}, from ${MODEL_SOURCE}), once. Nothing else leaves this machine.
-What it changes: adds hooks to Claude Code${codexPresent() ? " and Codex" : ""}, and rules files in repos you use Cursor in.
-Nothing reaches an agent until you keep it.
+What it connects, wherever each is installed:
+  - hooks in Claude Code${codexPresent() ? ", Codex" : ""} and Antigravity, so agents are told what you kept at the right moment
+  - muninn's MCP server in Claude Code (through its plugin), the Claude desktop app, Cursor, Codex and Antigravity, so agents can ask it questions
+  - rules files in repos where you use Cursor or Antigravity (they stay out of git)${process.platform === "darwin" ? "\n  - a background check every few hours on this Mac" : ""}
+Nothing reaches an agent until you keep it. "muninn uninstall" undoes the hooks; "muninn connect" re-checks everything.
 `);
   if (!(await ask("Set it up?"))) { console.log("Stopped. Nothing was changed."); return; }
 
   let step = 0;
   const heading = (t: string) => console.log(`\n${++step}. ${t}`);
-  heading("Hooks");
-  install();
+  heading("Connecting your coding tools");
+  const { connectEverything } = await import("./connect.js");
+  await connectEverything();
 
   // Downloaded now, not at the first scan: with no sessions yet that scan stops early, and automatic scans can't ask.
   if (!modelCached()) {
     heading(`Local model (${MODEL_SIZE}). It runs on this machine and spots instructions that mean the same thing.`);
     try { await loadEmbedder(); console.log("   Done."); }
     catch (e) { console.log(`   Couldn't download it: ${e instanceof Error ? e.message : String(e)}. Run "muninn learn --all-repos" later to try again.`); }
-  }
-
-  const f = logFiles();
-  const cursorRepos = new Map<string, string>();
-  for (const file of f.cursor) { const s = readCursor(file, f.roots.cursor); const r = s.cwd ? repoIdentity(s.cwd) : null; if (r && !cursorRepos.has(r)) cursorRepos.set(r, s.cwd); }
-  if (cursorRepos.size) {
-    heading(`Cursor: you've used it in ${cursorRepos.size} repo(s): ${[...cursorRepos.keys()].map((r) => r.split("/").pop()).join(", ")}.`);
-    if (await ask("Write kept lessons as Cursor rules in those repos? The files stay out of git.")) {
-      const db = await openDb();
-      for (const [repo, cwd] of cursorRepos) { await ensureRepo(db, repo, cwd); try { await enableCursor(db, repo); } catch { /* a moved repo shouldn't stop setup */ } }
-      console.log("   Done.");
-    }
   }
 
   // Without a client, only instructions you repeated word for word can become lessons; say so before the scan, not after.

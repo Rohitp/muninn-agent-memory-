@@ -58,11 +58,14 @@ export function setAntigravityHooks(command: (event: string) => string, on: bool
     if (raw.trim()) { try { cfg = JSON.parse(raw); } catch { throw new Error(`${file} isn't valid JSON, so muninn left it alone.`); } }
   }
   if (!on) { if (!(KEY in cfg)) return false; delete cfg[KEY]; writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n"); return true; }
-  if (existsSync(file)) copyFileSync(file, `${file}.muninn-backup`);
-  cfg[KEY] = {
+  const want = {
     PostToolUse: [{ matcher: "run_command", hooks: [{ type: "command", command: command("PostToolUse"), timeout: 5 }] }],
     PreInvocation: [{ type: "command", command: command("PreInvocation"), timeout: 5 }],
   };
+  // Already as wanted: change nothing, and say nothing.
+  if (JSON.stringify(cfg[KEY]) === JSON.stringify(want)) return false;
+  if (existsSync(file)) copyFileSync(file, `${file}.muninn-backup`);
+  cfg[KEY] = want;
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
   return true;

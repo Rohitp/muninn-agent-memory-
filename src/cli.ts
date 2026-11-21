@@ -26,6 +26,7 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn plan history [--all-repos]  Group finished steps into outcomes, and give decisions their reasons
   muninn handoff [--list]       Where the last session on this branch left off
   muninn setup                  Set everything up and take a first look (start here)
+  muninn connect                Connect (or re-check) hooks, plugin, MCP and the background job for every tool here
   muninn report [--all]         Did kept lessons work: delivered, and seen again since
   muninn keep <id> | reject <id>  Keep a waiting lesson with muninn's suggested delivery, or reject it
   muninn dial [quiet|start|anytime]  When muninn speaks up to agents here: only when asked,
@@ -146,6 +147,8 @@ async function main() {
       if ((!args.includes("--force") && !scanDue()) || !takeLock()) return;
       // Without the local model the scan stops before reading anything, so it isn't stamped and is tried again next time.
       const { modelCached } = await import("./embed/model.js");
+      // Quietly put back anything that dropped off (a hook removed, an MCP entry rewritten away). Files only, no prompts.
+      try { await (await import("./commands/connect.js")).connectEverything({ quiet: true }); } catch { /* repair is best effort */ }
       try { await learn({ allRepos: true, auto: true }); if (modelCached()) stamp(); } finally { releaseLock(); }
       return;
     }
@@ -161,7 +164,7 @@ async function main() {
     case "export": return (await import("./commands/lessons.js")).exportLessons(args);
     case "purge": return (await import("./commands/lessons.js")).purge(args);
     case "install": { const m = await import("./commands/install.js"); return args.includes("--learn") ? m.installLearnHook() : m.install(); }
-    case "uninstall": { (await import("./commands/install.js")).uninstall(); console.log("Removed muninn's hooks. Lessons are kept."); return; }
+    case "uninstall": { (await import("./commands/install.js")).uninstall(); (await import("./commands/connect.js")).markDisconnected(); console.log('Removed muninn\'s hooks. Lessons are kept. muninn won\'t add them back on its own; "muninn connect" does.'); return; }
     case "ask": return (await import("./commands/ask.js")).ask(args);
     case "mcp": return (await import("./mcp/install.js")).mcpCmd(args);
     case "related": {
@@ -244,6 +247,7 @@ async function main() {
       const [{ openDb }, { repoIdentity }, w] = await Promise.all([import("./store/db.js"), import("./repo/identity.js"), import("./workflow/runs.js")]);
       return w.runsCmd(await openDb(), args.includes("--all-repos") ? null : repoIdentity(process.cwd()), { all: args.includes("--all") });
     }
+    case "connect": { console.log("Connecting muninn to the coding tools on this machine:"); await (await import("./commands/connect.js")).connectEverything(); return; }
     case "schedule": return (await import("./commands/schedule.js")).schedule(args[0] ?? "");
     case "keywords": return (await import("./commands/status.js")).keywords();
     case "pause": writeFileSync(join(ensureHome(), "paused"), ""); console.log("Paused."); return;
