@@ -53,6 +53,9 @@ export async function originOf(db: Client, l: { id: string; source: string; sign
  * its questions, and meaning against the lesson and the questions it answers. Results merged by rank.
  * Agents (muninn ask) only ever see kept items. The UI can include waiting ones, marked.
  */
+/** A word without its ending, for matching "fails" to "failing": the start of the word, at least four letters. */
+export const stem = (w: string) => { const b = w.replace(/(ing|ed|es|s)$/, ""); return b.length >= 4 ? b : w; };
+
 export async function askData(db: Client, q: string, here: string | null, opts: { includeWaiting?: boolean; embed?: Embed } = {}): Promise<AskHit[]> {
   const statuses = opts.includeWaiting ? "('live','proposed')" : "('live')";
   const ranks = new Map<string, number>(); const matched = new Map<string, string>();
@@ -60,7 +63,17 @@ export async function askData(db: Client, q: string, here: string | null, opts: 
   const words = (q.toLowerCase().match(/[a-z0-9_]{3,}/g) ?? []).filter((w) => !STOP.has(w));
   if (words.length) {
     const fts = words.map((w) => `"${w}"`).join(" OR ");
-    add((await db.execute({ sql: `SELECT f.lesson_id id FROM lessons_fts f JOIN lessons l ON l.id=f.lesson_id WHERE lessons_fts MATCH ? AND l.status IN ${statuses} ORDER BY rank LIMIT 20`, args: [fts] })).rows.map((r) => String(r.id)));
+    const hits = (await db.execute({ sql: `SELECT f.lesson_id id, l.text, coalesce(l.plain,'') plain, (SELECT group_concat(question, ' ') FROM lesson_questions q WHERE q.lesson_id=l.id) qs FROM lessons_fts f JOIN lessons l ON l.id=f.lesson_id WHERE lessons_fts MATCH ? AND l.status IN ${statuses} ORDER BY rank LIMIT 40`, args: [fts] })).rows;
+    // A shared word or two ("new", "release") isn't a match: a lesson needs most of the question's words (60%),
+    // counting "fails" for "failing" and "keep" for "keeps".
+    const need = Math.max(1, Math.ceil(words.length * 0.6));
+    const stems = words.map(stem);
+    const hays = hits.map((r) => ({ id: String(r.id), hay: `${r.text} ${r.plain} ${r.qs ?? ""}`.toLowerCase() }));
+    const has = (hay: string, w: string) => new RegExp(`\\b${w}`).test(hay);
+    // The question's most distinctive word ("ruff", not "check"): the one fewest candidate lessons contain. A lesson must have it.
+    const counts = stems.map((w) => hays.filter((h) => has(h.hay, w)).length);
+    const rarest = stems.filter((_, i) => counts[i]! > 0).sort((a, b) => counts[stems.indexOf(a)]! - counts[stems.indexOf(b)]!)[0];
+    add(hays.filter((h) => stems.filter((w) => has(h.hay, w)).length >= need && (!rarest || has(h.hay, rarest))).map((h) => h.id).slice(0, 20));
   }
   const embed = opts.embed ?? (modelCached() ? await loadEmbedder() : null);
   if (embed) {
@@ -101,10 +114,15 @@ export async function ask(args: string[]) {
   if (!q) { console.error('Usage: muninn ask "question"'); process.exitCode = 1; return; }
   const db = await openDb(); const t0 = Date.now(); const repo = repoIdentity(process.cwd());
   const hits = await askData(db, q, repo);
+  // No kept lesson answers it: the answer may be in a past session, as it often is for how something was done.
+  const { recallData, recallText } = await import("./recall.js");
+  const past = hits.length ? [] : await recallData(db, q, repo, { limit: 4 }).catch(() => []);
+  // Logged once, with what was really found, so a question past sessions answered doesn't look unanswered.
   const { recordQuery, whoIsAsking } = await import("../store/queries.js");
   const { currentBranch } = await import("../handoff/handoff.js");
   const who = whoIsAsking();
-  await recordQuery(db, { repo, branch: repo ? currentBranch(process.cwd()) : null, session: who.session, tool: who.tool, surface: "ask", query: q, results: hits.length, result_ids: hits.map((h) => ({ kind: h.kind === "note" ? "note" : "lesson", id: h.id })), ms: Date.now() - t0 });
-  if (!hits.length) { console.log("No kept lessons match."); return; }
+  const found = hits.length ? hits.map((h) => ({ kind: (h.kind === "note" ? "note" : "lesson") as "note" | "lesson", id: h.id })) : past.map((h) => ({ kind: "session" as const, id: h.session }));
+  await recordQuery(db, { repo, branch: repo ? currentBranch(process.cwd()) : null, session: who.session, tool: who.tool, surface: "ask", query: q, results: found.length, result_ids: found, ms: Date.now() - t0 });
+  if (!hits.length) { console.log(past.length ? `No kept lesson matches. From past sessions:\n\n${recallText(past, false)}` : "No kept lesson or past session matches."); return; }
   for (const r of hits) console.log(`- ${r.text}${r.plain ? `\n  In short: ${r.plain}` : ""}\n  ${r.where}, kept ${r.kind === "note" ? "note" : "lesson"}. ${r.origin}.`);
 }
