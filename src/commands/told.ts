@@ -2,10 +2,10 @@ import type { Client } from "@libsql/client";
 
 /**
  * What secondnature told agents through its hooks: each recent session, what it got, and when nothing was sent, why.
- * Deliveries don't carry a repo, so a session is tied to one through what else is known about it: its stored log,
- * the handoff it was given, a loop it hit, or a lesson kept for one repo that it was told.
+ * Each delivery names the session's repo. Older rows (before 21 Nov 2026) don't, so those sessions are tied to one through
+ * what else is known about them: their stored log, the handoff they were given, a loop they hit, or a single-repo lesson.
  */
-export type ToldItem = { kind: "lesson" | "handoff"; id: string; text: string; why: string };
+export type ToldItem = { kind: "lesson" | "handoff" | "plan" | "note"; id: string; text: string; why: string };
 export type ToldSession = {
   session: string; tool: string; start: string; last: string;
   told: ToldItem[]; held: ToldItem[]; fromFile: number; loops: { cmd: string; n: number }[];
@@ -20,7 +20,7 @@ const s = (v: unknown) => (v == null ? "" : String(v));
 export async function toldData(db: Client, repo: string | null, days = 7): Promise<ToldData> {
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
   const rows = (await db.execute({
-    sql: `SELECT d.ts,d.tool,d.session,d.event,d.outcome,d.lesson_id,d.handoff_id,d.trigger_id,
+    sql: `SELECT d.ts,d.tool,d.session,d.event,d.source,d.outcome,d.lesson_id,d.handoff_id,d.trigger_id,d.repo,d.kind,
             l.text ltext,l.plain lplain,CASE WHEN l.scope='repo' THEN l.repo_id END lrepo,h.text htext,h.repo_id hrepo
           FROM deliveries d LEFT JOIN lessons l ON l.id=d.lesson_id LEFT JOIN handoffs h ON h.id=d.handoff_id
           WHERE d.ts>=? ORDER BY d.ts`,
@@ -29,6 +29,7 @@ export async function toldData(db: Client, repo: string | null, days = 7): Promi
   // Which repo each session belongs to: its stored log first, then a loop it hit, a handoff or a single-repo lesson it got.
   const repoOf = new Map<string, string>();
   const place = (sess: unknown, r: unknown) => { if (sess && r && !repoOf.has(s(sess))) repoOf.set(s(sess), s(r)); };
+  for (const r of rows) place(r.session, r.repo);
   const sessions = [...new Set(rows.map((r) => s(r.session)).filter(Boolean))];
   for (let i = 0; i < sessions.length; i += 300) {
     const part = sessions.slice(i, i + 300); const qs = part.map(() => "?").join(",");
@@ -54,10 +55,16 @@ export async function toldData(db: Client, repo: string | null, days = 7): Promi
     if (!x) by.set(sess, (x = { session: sess, tool: s(r.tool), start: s(r.ts), last: s(r.ts), told: [], held: [], fromFile: 0, loops: [], checked: 0, outcomes: {} }));
     x.last = s(r.ts);
     x.outcomes[o] = (x.outcomes[o] ?? 0) + 1;
-    if (r.lesson_id || o !== "sent") x.checked++;
+    // Older rows have no kind: a lesson, or a handoff where one is named.
+    const kind = s(r.kind) || (r.handoff_id ? "handoff" : "lesson");
+    if (kind === "lesson") x.checked++;
     if (o === "limit" && r.lesson_id && !x.held.some((h) => h.id === r.lesson_id)) x.held.push({ kind: "lesson", id: s(r.lesson_id), text: s(r.lplain || r.ltext), why: "over the limit for one message or session" });
     if (o !== "sent") continue;
-    if (r.handoff_id) x.told.push({ kind: "handoff", id: s(r.handoff_id), text: s(r.htext), why: "where the last session on this branch left off" });
+    // Loop warnings show from live_loops, which also has the command and how often it failed.
+    if (kind === "loop") continue;
+    if (kind === "plan") x.told.push({ kind: "plan", id: "", text: "This branch's plan", why: "at a fresh start" });
+    else if (kind === "note") x.told.push({ kind: "note", id: "", text: "That past sessions are stored and can be looked up", why: r.source === "compact" ? "right after the conversation was compressed" : "at a fresh start" });
+    else if (kind === "handoff") x.told.push({ kind: "handoff", id: s(r.handoff_id), text: s(r.htext), why: "where the last session on this branch left off" });
     else if (r.trigger_id === "CLAUDE.local.md") x.fromFile++;
     else if (r.lesson_id) x.told.push({ kind: "lesson", id: s(r.lesson_id), text: s(r.lplain || r.ltext), why: r.trigger_id ? `matched "${s(r.trigger_id)}"` : r.event === "SubagentStart" ? "every new agent gets it" : r.event === "SessionStart" ? "every session gets it" : "kept after this session began" });
   }

@@ -15,8 +15,8 @@ async function setup() {
     await db.execute({ sql: "INSERT INTO lessons (id,repo_id,scope,text,source,status,always_on,role,created_at,updated_at) VALUES (?,?,?,?,'manual','live',?,?,?,?)", args: [id, o.repo === undefined ? repo : o.repo, o.scope ?? "repo", `lesson ${id}`, o.always ?? 0, o.role ?? null, now, now] });
     if (o.kw) await db.execute({ sql: "INSERT INTO triggers (id,lesson_id,pattern,created_at) VALUES (?,?,?,?)", args: [randomUUID(), id, o.kw, now] });
   };
-  const told = (session: string, event: string, outcome: string, x: { lesson?: string; handoff?: string; trigger?: string; tool?: string } = {}) =>
-    db.execute({ sql: "INSERT INTO deliveries (id,ts,tool,session,event,lesson_id,outcome,tokens,trigger_id,handoff_id) VALUES (?,?,?,?,?,?,?,0,?,?)", args: [randomUUID(), now, x.tool ?? "claude-code", session, event, x.lesson ?? null, outcome, x.trigger ?? null, x.handoff ?? null] });
+  const told = (session: string, event: string, outcome: string, x: { lesson?: string; handoff?: string; trigger?: string; tool?: string; repo?: string; kind?: string; source?: string } = {}) =>
+    db.execute({ sql: "INSERT INTO deliveries (id,ts,tool,session,event,source,lesson_id,outcome,tokens,trigger_id,handoff_id,repo,kind) VALUES (?,?,?,?,?,?,?,?,0,?,?,?,?)", args: [randomUUID(), now, x.tool ?? "claude-code", session, event, x.source ?? null, x.lesson ?? null, outcome, x.trigger ?? null, x.handoff ?? null, x.repo ?? null, x.kind ?? null] });
   return { db, lesson, told };
 }
 
@@ -47,6 +47,17 @@ describe("what secondnature told agents", () => {
     expect(d.sessions.map((x) => x.session)).toEqual(["s2"]);
     expect(d.unplaced).toBe(1);
     expect((await toldData(db, "github.com/me/other", 7)).sessions).toEqual([]);
+  });
+  it("uses the repo each delivery names, and shows the plan and reminder it was told", async () => {
+    const { db, told } = await setup();
+    await told("s4", "SessionStart", "sent", { repo, kind: "plan", source: "startup" });
+    await told("s4", "SessionStart", "sent", { repo, kind: "note", source: "compact" });
+    await told("s4", "PostToolUseFailure", "sent", { repo, kind: "loop" });
+    await told("s5", "SessionStart", "sent", { repo: "github.com/me/other", kind: "plan" });
+    const d = await toldData(db, repo, 7);
+    expect(d.sessions.map((x) => x.session)).toEqual(["s4"]);
+    expect(d.sessions[0]!.told.map((t) => [t.kind, t.why])).toEqual([["plan", "at a fresh start"], ["note", "right after the conversation was compressed"]]);
+    expect(d.sessions[0]!.checked).toBe(0);
   });
   it("lists kept lessons no agent was told, with how each would reach one", async () => {
     const { lesson, told, db } = await setup();
