@@ -78,10 +78,16 @@ export async function report(args: string[]) {
   const repo = args.includes("--all") ? null : repoIdentity(process.cwd());
   const r = await reportData(db, repo);
   if (!r.lessons.length) { console.log("No kept lessons yet."); return; }
+  // Lessons for one role in a team of agents: measured on runs, before and after.
+  const roles = await (await import("../workflow/effect.js")).roleEffects(db, repo);
   for (const l of r.lessons) {
     console.log(`\n${l.id.slice(0, 8)}  ${l.kind === "note" ? "[note] " : ""}${l.text.length > 110 ? l.text.slice(0, 109) + "…" : l.text}`);
     console.log(`  Kept ${l.keptAt.slice(0, 10)}, ${l.route}. Sent ${l.sent} time(s) in ${l.sentSessions} session(s). Seen in ${l.before} session(s) before you kept it.`);
     console.log(`  ${l.verdict}`);
+  }
+  if (roles.length) {
+    console.log("\nLessons for one role in a team of agents, measured on workflow runs before and since:");
+    for (const e of roles) console.log(`\n${e.id.slice(0, 8)}  for the ${e.role}: ${e.text.length > 90 ? e.text.slice(0, 89) + "…" : e.text}\n  ${e.summary}`);
   }
   console.log(`\nHandoffs: ${r.handoffs.written} written, ${r.handoffs.delivered} delivered.`);
   console.log(`\nLast ${r.days} days, all repos:`);
