@@ -56,11 +56,14 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   const session = input.session_id ?? null;
   const ts = new Date().toISOString();
   // trigger_id holds the keyword that matched, so the panel can say why a lesson was sent.
-  const log = (outcome: string, l?: { id: string; pattern?: string | null }, t = 0) =>
-    db.execute({ sql: "INSERT INTO deliveries (id,ts,tool,session,event,source,lesson_id,outcome,tokens,trigger_id) VALUES (?,?,?,?,?,?,?,?,?,?)", args: [randomUUID(), ts, client, session, event, input.source ?? null, l?.id ?? null, outcome, t, l?.pattern ?? null] });
+  // The repo is known once the folder is read, below; deliveries logged before that (an unsupported client) have none.
+  let logRepo: string | null = null;
+  const log = (outcome: string, l?: { id: string; pattern?: string | null }, t = 0, kind: string | null = l ? "lesson" : null) =>
+    db.execute({ sql: "INSERT INTO deliveries (id,ts,tool,session,event,source,lesson_id,outcome,tokens,trigger_id,repo,kind) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", args: [randomUUID(), ts, client, session, event, input.source ?? null, l?.id ?? null, outcome, t, l?.pattern ?? null, logRepo, kind] });
   if (fromCursor(input)) { await log("unsupported_client"); return null; }
   if (isPaused()) { await log("paused"); return null; }
   const repo = input.cwd ? repoIdentity(input.cwd) : null;
+  logRepo = repo;
   // A repo you told muninn to leave alone: nothing is registered or told there.
   if (repo && (await ignoredRepos(db)).has(repo)) { await log("paused"); return null; }
   // A repo that just got a remote changes identity; carry its lessons over before looking them up.
@@ -129,7 +132,7 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
     const h = branch ? await latestHandoff(db, repo, branch, cfg.handoffDays, session) : null;
     if (h) {
       handoff = handoffText(h, cfg.handoffStaleDays);
-      await db.execute({ sql: "INSERT INTO deliveries (id,ts,tool,session,event,source,lesson_id,outcome,tokens,handoff_id) VALUES (?,?,?,?,?,?,NULL,'sent',?,?)", args: [randomUUID(), ts, client, session, event, input.source ?? null, tokens(handoff), h.id] });
+      await db.execute({ sql: "INSERT INTO deliveries (id,ts,tool,session,event,source,lesson_id,outcome,tokens,handoff_id,repo,kind) VALUES (?,?,?,?,?,?,NULL,'sent',?,?,?,'handoff')", args: [randomUUID(), ts, client, session, event, input.source ?? null, tokens(handoff), h.id, repo] });
     }
   }
   // This branch's plan, at the start of a fresh session, after where the last session left off.
@@ -156,6 +159,10 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   ].filter(Boolean).join("\n") || null;
   if (!out.length && !waiting && !handoff && !plan && !loopHint && !askLine) { await log("no_match"); return null; }
   const lines: string[] = [];
+  // The plan, the look-it-up reminder and loop warnings are told too: log them, so the page can show all of it.
+  if (loopHint) await log("sent", undefined, tokens(loopHint), "loop");
+  if (plan) await log("sent", undefined, tokens(plan), "plan");
+  if (askLine) await log("sent", undefined, tokens(askLine), "note");
   if (loopHint) lines.push(loopHint, "");
   if (handoff) lines.push(handoff, "");
   if (plan) lines.push(plan, "");

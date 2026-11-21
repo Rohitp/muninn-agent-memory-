@@ -55,3 +55,20 @@ describe("muninn's MCP server through the muninn-panel plugin", () => {
     expect(hasMcp()).toBe(false);
   });
 });
+
+describe("the log of what muninn told agents", () => {
+  it("records the repo, and the reminder and plan as well as lessons", async () => {
+    const db = await openDb();
+    const file = join(tmp(), "log.jsonl"); writeFileSync(file, "x");
+    await indexSessions(db, [{ id: "s1", tool: "claude-code", cwd: root, clientVersion: "1", unknown: 0, file, events: [
+      { k: "typed", text: "rename the package", ts: "2026-11-20T13:55:00.000Z" }, { k: "agent", text: "Renamed.", ts: "2026-11-20T13:55:10.000Z" },
+    ] }], fakeEmbed);
+    const { addItem } = await import("../src/plan/plan.js");
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("git", ["-C", root, "checkout", "-q", "-b", "main"]);
+    await addItem(db, repo, "main", "open", "Publish 0.2.0", { person: true });
+    await deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "startup", session_id: "c", cwd: root });
+    const rows = (await db.execute({ sql: "SELECT repo, kind FROM deliveries WHERE session='c' AND outcome='sent' ORDER BY kind", args: [] })).rows.map((r) => [r.repo, r.kind]);
+    expect(rows).toEqual([[repo, "note"], [repo, "plan"]]);
+  });
+});
