@@ -78,6 +78,12 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
     }
     for (const s of sessions) if (s.unknown) { await db.execute({ sql: "INSERT OR REPLACE INTO scan_counts (repo_id,tool,client_version,scanned_at,unknown_records) VALUES (?,?,?,?,?)", args: [repo, s.tool, s.clientVersion, new Date().toISOString(), s.unknown] }); }
   }
+  // Cursor and Antigravity only hear lessons through rules files: turned on where you've used them, unless you turned them off.
+  try {
+    const { autoTurnOn, TOOL_NAME } = await import("../deliver/auto-rules.js");
+    for (const t of await autoTurnOn(db, new Map(repos.map((r) => [r, scan.byRepo.get(r)!]))))
+      if (!opts.auto) console.log(`${t.repo}: you've used ${TOOL_NAME[t.tool]} here, so its agent now gets your lessons as rules files (${t.files.join(", ")}). Turn this off with "muninn ${t.tool} off" or on the page.`);
+  } catch { /* rules files are a convenience */ }
   // Every session kept as searchable exchanges, and the raw logs copied before the tool deletes them.
   try {
     const st = await import("../store/sessions.js");

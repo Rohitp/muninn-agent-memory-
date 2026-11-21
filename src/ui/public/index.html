@@ -509,8 +509,8 @@ async function load() {
   const [repos, suggested, kept, home, scan] = await Promise.all([
     api("/api/repos"), api("/api/lessons?" + q({ repo, status: "proposed" })), api("/api/lessons?" + q({ repo, status: "live" })), api("/api/home?" + q({ repo })), api("/api/scan"),
   ]);
-  const [plan, memory, lessonFile, proposals, threads, askSuggestions] = await Promise.all([repo ? api("/api/plan?" + q({ repo, branch: planBranch })) : null, api("/api/memory?" + q({ repo })), repo ? api("/api/lesson-file?" + q({ repo })) : null, api("/api/proposals?" + q({ repo })), api("/api/threads?" + q({ repo })), api("/api/ask-suggestions?" + q({ repo })).catch(() => [])]);
-  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions };
+  const [plan, memory, lessonFile, proposals, threads, askSuggestions, rules] = await Promise.all([repo ? api("/api/plan?" + q({ repo, branch: planBranch })) : null, api("/api/memory?" + q({ repo })), repo ? api("/api/lesson-file?" + q({ repo })) : null, api("/api/proposals?" + q({ repo })), api("/api/threads?" + q({ repo })), api("/api/ask-suggestions?" + q({ repo })).catch(() => []), repo ? api("/api/rules?" + q({ repo })).catch(() => null) : null]);
+  data = { repos, suggested, kept, home, scan, plan, memory, lessonFile, proposals, threads, askSuggestions, rules };
 }
 
 /* muninn checks your sessions on its own after they end. This line shows when it last did, and lets you ask now. */
@@ -664,9 +664,18 @@ function drawPage() {
           <button class="switch" role="switch" aria-checked="${!!data.plan?.fileOn}" aria-label="Keep a copy of the plan in PLAN.md" data-plan-file></button></div></li>
         <li><div class="row"><div class="main" style="cursor:default"><div class="title">Keep always-on lessons in CLAUDE.local.md</div><div class="sub">For this machine only: Claude Code reads that file at the start of every session here, even without muninn's hooks. git is told to ignore it, so it's never committed, and the rest of the file is left as it is.</div></div>
           <button class="switch" role="switch" aria-checked="${data.lessonFile?.mode === "local"}" aria-label="Keep always-on lessons in CLAUDE.local.md" data-lesson-file></button></div></li>
+        ${rulesRow("antigravity", "Antigravity", ".agents/rules")}
+        ${rulesRow("cursor", "Cursor", ".cursor/rules")}
       </ul>
       ${dial === "quiet" ? `<p class="note">Both off: muninn tells agents nothing unless they ask with muninn ask.</p>` : ""}
     </section>` : ""}`;
+}
+/** Cursor and Antigravity hear lessons only through rules files in the repo. Says when muninn turned them on by itself. */
+function rulesRow(tool, name, dir) {
+  const r = data.rules?.[tool]; if (!r) return "";
+  const when = r.auto ? new Date(r.auto).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "";
+  return `<li><div class="row"><div class="main" style="cursor:default"><div class="title">Give ${name}'s agent your lessons</div><div class="sub">${name} has no way for muninn to step in during a session, so lessons go in rules files in ${dir}, which its agent reads. git is told to ignore them.${r.auto ? ` Turned on by muninn on ${esc(when)}, because you used ${name} in this repo.` : ` muninn turns this on by itself once you use ${name} here, unless you've turned it off.`}</div></div>
+    <button class="switch" role="switch" aria-checked="${r.on}" aria-label="Give ${name}'s agent your lessons" data-rules="${tool}"></button></div></li>`;
 }
 async function refresh() { await load(); draw(); if (data.scan.running) followScan(data.suggested.length); }
 async function savePlanInput() {
@@ -782,6 +791,12 @@ document.addEventListener("click", async (e) => {
       try { const r = await api("/api/propose", { repo }); data.proposals = await api("/api/proposals?" + q({ repo })); toast(r.proposed ? `${r.proposed} edit(s) proposed.` : "Nothing clearly worth changing right now."); }
       catch (e) { toast(e.message || String(e)); }
       proposing = false; draw(); return;
+    }
+    if (el.dataset.rules) {
+      const on = el.getAttribute("aria-checked") !== "true";
+      data.rules = await api("/api/rules", { repo, tool: el.dataset.rules, on }); draw();
+      toast(on ? "Rules files written. Its agent gets your lessons." : "Rules files removed. muninn won't turn them back on here.");
+      return;
     }
     if (el.dataset.lessonFile !== undefined) {
       const on = el.getAttribute("aria-checked") !== "true";

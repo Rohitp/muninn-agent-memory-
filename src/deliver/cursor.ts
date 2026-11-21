@@ -49,7 +49,7 @@ function exclude(root: string) {
   const f = join(info, "exclude");
   if (!existsSync(f) || !readFileSync(f, "utf8").split("\n").includes(EXCLUDE)) appendFileSync(f, `\n# Written by muninn for Cursor\n${EXCLUDE}\n`);
 }
-async function enabled(db: Client): Promise<string[]> {
+export async function enabled(db: Client): Promise<string[]> {
   const v = (await db.execute("SELECT value FROM meta WHERE key='cursor_repos'")).rows[0]?.value;
   return v ? JSON.parse(String(v)) : [];
 }

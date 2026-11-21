@@ -8,10 +8,18 @@ import { notTyped, parseLines, readText, stripPrivate, type LogEvent, type Sessi
  * one step per line: {step_index, source: USER_EXPLICIT|MODEL|SYSTEM, type: USER_INPUT|PLANNER_RESPONSE|…, status,
  * content, tool_calls}. Documented at antigravity.google/docs/hooks; the per-line fields are known only from the
  * app's own prompt text, so anything unexpected is counted as unknown rather than guessed at.
- * Steps carry no times and no folder: times are the file's, and the folder is the git repo the agent's paths fall in.
+ * Steps may carry created_at (else the file's time is used). There's no folder: it's the git repo the agent's paths fall in.
  */
 const text = (c: unknown): string => typeof c === "string" ? c : Array.isArray(c) ? c.map(text).join("\n") : c && typeof c === "object" && "text" in c ? String((c as { text: unknown }).text ?? "") : "";
-const argsOf = (t: any): Record<string, unknown> => { const a = t?.args ?? t?.arguments ?? t?.input ?? {}; if (typeof a === "string") { try { return JSON.parse(a); } catch { return {}; } } return a; };
+/** Antigravity writes each argument JSON-encoded a second time ("\"ls -la\""): unwrap those. */
+const unquote = (v: unknown) => { if (typeof v === "string" && v.length > 1 && v.startsWith('"') && v.endsWith('"')) { try { return JSON.parse(v); } catch { /* keep as is */ } } return v; };
+const argsOf = (t: any): Record<string, unknown> => {
+  let a = t?.args ?? t?.arguments ?? t?.input ?? {};
+  if (typeof a === "string") { try { a = JSON.parse(a); } catch { return {}; } }
+  return Object.fromEntries(Object.entries(a ?? {}).map(([k, v]) => [k, unquote(v)]));
+};
+/** What you typed, without the metadata Antigravity wraps it in (<USER_REQUEST>…</USER_REQUEST><ADDITIONAL_METADATA>…). */
+const typedIn = (body: string) => body.match(/<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/)?.[1] ?? body;
 /** Absolute paths in a tool call's arguments: files viewed or edited, the folder a command ran in. */
 const pathsIn = (a: Record<string, unknown>): string[] => Object.values(a).flatMap((v) => (typeof v === "string" ? [v.replace(/^file:\/\//, "")].filter((p) => p.startsWith("/")) : []));
 
@@ -36,8 +44,10 @@ export function readAntigravity(file: string): Session {
   for (const o of parseLines(file, readText)) {
     if (typeof o?.type !== "string") { unknown++; continue; }
     const body = text(o.content).trim();
+    if (typeof o.created_at === "string") ts = o.created_at;
     if (o.type === "USER_INPUT" || o.source === "USER_EXPLICIT") {
-      if (body && !notTyped(body)) events.push({ k: "typed", text: stripPrivate(body), ts });
+      const typed = typedIn(body).trim();
+      if (typed && !notTyped(typed)) events.push({ k: "typed", text: stripPrivate(typed), ts });
       continue;
     }
     if (o.source === "MODEL" && body && o.type === "PLANNER_RESPONSE") events.push({ k: "agent", text: body, ts });
@@ -49,9 +59,9 @@ export function readAntigravity(file: string): Session {
       if (name === "run_command" && typeof cmd === "string") {
         if (pending) events.push({ k: "cmd", cmd: pending.cmd, failed: false, output: "", ts });
         pending = { cmd };
-      } else if (/^(view_file|edit_file|write_to_file|replace_file_content|create_file)$/.test(name)) {
+      } else if (/^(view_file|read_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content|create_file)$/.test(name)) {
         const p = pathsIn(a)[0];
-        if (p) events.push({ k: "file", tool: name.startsWith("view") ? "read" : "edit", path: p, failed: o.status === "ERROR", output: "", ts });
+        if (p) events.push({ k: "file", tool: /^(view|read)/.test(name) ? "read" : "edit", path: p, failed: o.status === "ERROR", output: "", ts });
       }
     }
     // A command's result: the step after it, with its output and whether it errored.

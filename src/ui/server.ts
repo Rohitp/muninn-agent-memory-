@@ -187,6 +187,14 @@ const routes: Record<string, Handler> = {
     const r = await setLessonFile(db, repo, b.mode === "local" ? "local" : "off");
     return { mode: await lessonFileMode(db, repo), written: !!r };
   },
+  "GET /api/rules": async (db, q) => { const repo = q.get("repo"); if (!repo) throw new Error("Pick a repo first."); return (await import("../deliver/auto-rules.js")).rulesState(db, repo); },
+  "POST /api/rules": async (db, _q, b) => {
+    const repo = String(b.repo ?? ""); if (!repo) throw new Error("Pick a repo first.");
+    if (b.tool !== "cursor" && b.tool !== "antigravity") throw new Error("Rules are for cursor or antigravity.");
+    const m = await import("../deliver/auto-rules.js");
+    await m.setRules(db, repo, b.tool, !!b.on);
+    return m.rulesState(db, repo);
+  },
   "POST /api/dial": async (db, _q, b) => { await setDial(db, b.repo || null, b.dial); return { dial: await getDial(db, b.repo || null) }; },
   "POST /api/feedback": async (db, _q, b) => {
     if (b.verdict !== "helped" && b.verdict !== "wrong") throw new Error("Feedback is helped or wrong.");
