@@ -32,6 +32,11 @@ export async function gatherSources(db: Client, q: string, repo: string | null, 
     })),
     ...(handoff ? [{ id: String(handoff.id), kind: "handoff" as const, text: `Where the last session on ${handoff.branch} left off: ${handoff.text}`, where: short(repo), date: day(String(handoff.created_at)) }] : []),
   ];
+  // A decision found carries what it led to, so answers can say what it affected.
+  for (const s of out) if (s.kind === "decision" && s.id.startsWith("plan:")) {
+    const led = (await db.execute({ sql: "SELECT o.title FROM links l JOIN plan_outcomes o ON o.id=l.dst_id WHERE l.rel='motivates' AND l.src_id=? ORDER BY l.score DESC LIMIT 3", args: [s.id.slice(5)] }).catch(() => ({ rows: [] }))).rows.map((r) => String(r.title));
+    if (led.length) s.text += ` (Led to: ${led.join("; ")})`;
+  }
   return out.map((s, i) => ({ n: i + 1, ...s }));
 }
 

@@ -119,6 +119,8 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
       for (const repo of repos) for (const b of await branchesToGroup(db, repo)) { if (branches++ >= 6) break; await groupHistory(db, repo, b, runner).catch(() => 0); }
       await saveUsage(db, runner, "plan history");
     } catch { /* the history is a convenience */ }
+    // How things relate: decisions to the outcomes they led to, outcomes to sessions and commits, sessions to files.
+    try { const { buildLinks } = await import("../links/links.js"); await buildLinks(db, repos.flatMap((r) => scan.byRepo.get(r)!)); } catch { /* links are a convenience */ }
     // Questions worth asking muninn, written from each repo's recent work, for the page's Ask box.
     try {
       const { refreshSuggestions } = await import("./suggestions.js");

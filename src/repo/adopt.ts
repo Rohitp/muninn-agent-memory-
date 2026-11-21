@@ -43,6 +43,7 @@ async function move(db: Client, top: string, id: string) {
       await db.execute({ sql: "UPDATE OR IGNORE meta SET key=? WHERE key=?", args: [prefix + id + key.slice(prefix.length + top.length), key] });
     }
   }
+  await db.execute({ sql: "UPDATE OR IGNORE links SET repo_id=? WHERE repo_id=?", args: [id, top] }).catch(() => null);
   for (const key of ["cursor_repos", "antigravity_repos"]) {
     const v = (await db.execute({ sql: "SELECT value FROM meta WHERE key=?", args: [key] })).rows[0]?.value;
     if (!v) continue;
