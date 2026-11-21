@@ -55,8 +55,15 @@ export function worktreeOf(cwd: string): string | null {
 export const roleOf = (s: Session) => s.parent ? (s.agentType ?? worktreeOf(s.cwd) ?? "subagent") : worktreeOf(s.cwd) ?? "main";
 
 /** A reviewer, checker or qa role sending work back. Read from what that role's agent said. */
-export const REJECTS = /\b(changes requested|request(ed|ing)? changes|--request-changes|not (approved|ready to merge|ready)|(do not|don'?t|cannot|can'?t) (approve|merge)|reject(ed|ing)?\b|blocking (issue|problem)s?|fails? (the )?(acceptance|review|check)|needs? (more )?work|send(ing)? (it )?back)/i;
+export const REJECTS = /\b(changes requested|request(ed|ing)? changes|--request-changes|REQUEST_CHANGES|not ready to merge|(do not|don'?t) merge|(cannot|can'?t|won'?t) approve|\[reject(ed)?\]|\[blocked\]|\bI reject\b|reject(ed|ing)? (this|the|your) (pr|pull request|change|diff|patch|work|build)|blocking (issue|problem)s? (found|remain)|fails? (the )?(acceptance|review)|send(ing)? (it|this|the pr) back)/i;
 export const REVIEWER = /review|check|qa|test|verif|audit|critic/i;
+/** The sentence around a position in some text, for quoting why work went back. */
+export function sentenceAround(text: string, at: number): string {
+  const start = Math.max(text.lastIndexOf(".", at - 1), text.lastIndexOf("\n", at - 1)) + 1;
+  const ends = [".", "\n"].map((c) => text.indexOf(c, at)).filter((i) => i >= 0);
+  const end = ends.length ? Math.min(...ends) + 1 : text.length;
+  return text.slice(start, Math.min(end, start + 240)).replace(/\s+/g, " ").trim();
+}
 
 /** A slice of a session: what it did between two times. A session left open for days is several slices. */
 type Slice = { s: Session; start: string; end: string };
@@ -134,7 +141,7 @@ export function buildRuns(repo: string, sessions: Session[]): Run[] {
       const said = s.events.find((e) => e.k === "agent" && REJECTS.test(e.text)) as { text: string; ts: string } | undefined;
       if (said) {
         const at = said.text.search(REJECTS);
-        handoffs.push({ from_role: role, to_role: roles.find((x) => x !== role && x !== "main" && !REVIEWER.test(x)) ?? "main", at: said.ts, kind: "review_rejected", note: said.text.match(REJECTS)?.[0], evidence: said.text.slice(Math.max(0, at - 60), at + 140).replace(/\s+/g, " ") });
+        handoffs.push({ from_role: role, to_role: roles.find((x) => x !== role && x !== "main" && !REVIEWER.test(x)) ?? "main", at: said.ts, kind: "review_rejected", note: sentenceAround(said.text, at), evidence: said.text.slice(Math.max(0, at - 60), at + 140).replace(/\s+/g, " ") });
       }
     }
     // Swarm agents say who they're handing to: a board message mentioning @roles. Approvals, send-backs and follow-up fixes are read from it.

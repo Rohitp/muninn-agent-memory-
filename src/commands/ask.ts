@@ -27,6 +27,7 @@ const SIGNAL: Record<string, string> = {
   stated: "You stated this as a rule",
   promised: "An agent promised this after a mistake",
   sent_back: "Learned from work one agent sent back to another",
+  missed: "Learned from work fixed after this role approved it",
   steered: "You steered agents toward this in a long session",
   noticed: "Noticed in a long session",
 };
