@@ -67,8 +67,8 @@ describe("workflow runs", () => {
     const reviewer = session("v", root, [3], { parent: "p", agentType: "reviewer", messages: [msg(3, "@builder changes requested: missing tests")] });
     const qa = session("q", root, [4], { parent: "p", agentType: "qa", messages: [msg(4, "@builder [done] QA PASS on PR #2")] });
     const [run] = buildRuns("r", [session("p", root, [0, 5], { subagents: [builder, reviewer, qa] })]);
-    expect(run!.handoffs.map((h) => [h.from_role, h.kind])).toEqual([["builder", "rework"], ["reviewer", "review_rejected"], ["qa", "approved"]]);
-    expect(run!.handoffs[0]!.note).toBe("- fix: null guard (M1 #4 follow-up)");
+    expect(run!.handoffs.filter((h) => h.kind !== "started").map((h) => [h.from_role, h.kind])).toEqual([["builder", "rework"], ["reviewer", "review_rejected"], ["qa", "approved"]]);
+    expect(run!.handoffs.find((h) => h.kind === "rework")!.note).toBe("- fix: null guard (M1 #4 follow-up)");
   });
 });
 
@@ -101,5 +101,58 @@ describe("Claude Code agent teams", () => {
     const [run] = buildRuns("r", [lead, mate]);
     expect(run!.roles).toEqual(["main", "researcher"]);
     expect(run!.handoffs.find((h) => h.from_role === "researcher")).toMatchObject({ evidence: "[done] Compare three price feeds" });
+  });
+});
+
+describe("edges and roles in a run", () => {
+  it("link each subagent to the session that started it, never to the sibling before it", () => {
+    const subs = ["a", "b", "c"].map((id, i) => session(id, "/nowhere", [1 + i, 2 + i], { parent: "lead", agentType: ["explorer", "designer", "explorer"][i] }));
+    const [run] = buildRuns("r", [session("lead", "/nowhere", [0, 9], { subagents: subs })]);
+    expect(run!.handoffs.map((h) => `${h.from_role}→${h.to_role}:${h.kind}`)).toEqual(["main→explorer:started", "main→designer:started", "main→explorer:started"]);
+    expect(run!.bounces).toBe(1);
+  });
+  it("read a general-purpose subagent's job from how its task opens", async () => {
+    const { roleFromTask } = await import("../src/workflow/runs.js");
+    expect(roleFromTask("Builder: implement the cart")).toBe("builder");
+    expect(roleFromTask("Re-review the fix wave")).toBe("reviewer");
+    expect(roleFromTask("Adversarial security review of mods: You are…")).toBe("reviewer");
+    expect(roleFromTask("Verify Meta Marketing API: check the token")).toBe("verifier");
+    expect(roleFromTask("Data migrator: move rows")).toBe("data migrator");
+    expect(roleFromTask("Summarise the thread")).toBeNull();
+    expect(roleOf(session("x", "/nowhere", [0], { parent: "p", agentType: "general-purpose", task: "Tester: run the suite" }))).toBe("tester");
+    expect(roleOf(session("y", "/nowhere", [0], { parent: "p", agentType: "Explore", task: "Builder: x" }))).toBe("Explore");
+  });
+});
+
+describe("Claude Code workflows", () => {
+  it("read each workflow agent with its role, and the run's summary, and count its blocking rounds as send-backs", async () => {
+    const { scanLogs } = await import("../src/logs/discover.js");
+    const logs = tmp(); process.env.MUNINN_LOG_ROOT = logs;
+    const repoDir = join(tmp(), "factory"); mkdirSync(repoDir); execFileSync("git", ["init", "-q", repoDir]);
+    const proj = join(logs, "claude", "projects", "-factory");
+    write(join(proj, "lead.jsonl"), [
+      { type: "user", cwd: repoDir, timestamp: T(0), message: { role: "user", content: "run the factory for step 4" } },
+      { type: "assistant", timestamp: T(1), message: { id: "m1", content: [{ type: "text", text: "Starting the workflow." }] } },
+    ]);
+    const agent = (id: string, label: string, m: number) => {
+      const dir = join(proj, "lead", "subagents", "workflows", "wf_1");
+      write(join(dir, `agent-${id}.jsonl`), [
+        { isSidechain: true, type: "user", cwd: repoDir, timestamp: T(m), message: { role: "user", content: "You are part of a software factory." } },
+        { isSidechain: true, type: "assistant", timestamp: T(m + 1), message: { id: `x${id}`, model: "claude-opus-5-5", content: [{ type: "text", text: "done" }], usage: { input_tokens: 10, output_tokens: 5 } } },
+      ]);
+      writeFileSync(join(dir, `agent-${id}.meta.json`), JSON.stringify({ agentType: "workflow-subagent", description: label, workflowPhase: label.startsWith("coder") ? "Build" : "Check", inWorkflowRun: true }));
+    };
+    agent("c1", "coder:step-4", 2); agent("r1", "review:step-4:r1", 5); agent("q1", "qa:step-4:r1", 5);
+    mkdirSync(join(proj, "lead", "workflows"), { recursive: true });
+    writeFileSync(join(proj, "lead", "workflows", "wf_1.json"), JSON.stringify({ runId: "wf_1", workflowName: "factory-step", status: "completed", startTime: Date.parse(T(1)), durationMs: 600000, agentCount: 3, totalTokens: 45, phases: [{ title: "Build" }, { title: "Check" }], logs: ["Round 1: 2 blocking", "Round 2: 0 blocking"] }));
+    const scan = scanLogs();
+    const lead = scan.sessions.find((s) => s.id === "lead")!;
+    expect(lead.subagents?.map((s) => [s.role, s.workflow?.phase]).sort()).toEqual([["coder", "Build"], ["qa", "Check"], ["reviewer", "Check"]]);
+    const runs = buildRuns("r", [lead]);
+    const run = runs.find((r) => r.workflows?.length)!;
+    expect(run.roles).toEqual(expect.arrayContaining(["main", "coder", "reviewer", "qa"]));
+    expect(run.workflows![0]).toMatchObject({ name: "factory-step", agents: 3, logs: ["Round 1: 2 blocking", "Round 2: 0 blocking"] });
+    expect(run.handoffs.filter((h) => h.kind === "review_rejected")).toEqual([expect.objectContaining({ from_role: "reviewer", to_role: "coder", note: "factory-step: Round 1: 2 blocking" })]);
+    delete process.env.MUNINN_LOG_ROOT;
   });
 });

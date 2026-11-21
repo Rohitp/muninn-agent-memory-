@@ -21,7 +21,7 @@ export type RunSession = {
   cost_usd: number | null;
 };
 export type Handoff = {
-  from_role: string; to_role: string; at: string; kind: "handoff" | "review_rejected" | "approved" | "rework"; note?: string;
+  from_role: string; to_role: string; at: string; kind: "started" | "handoff" | "review_rejected" | "approved" | "rework"; note?: string;
   /** A short quote or file path showing what was handed over: the message, the task the next role was given, or the last file the previous role changed. */
   evidence?: string;
 };
@@ -33,6 +33,8 @@ export type Run = {
   /** Output tokens spent on failed retries, loops and re-reads. */
   wasted_tokens: number;
   tokens_in: number; tokens_out: number;
+  /** Claude Code workflow runs inside this run: name, phases, agents, tokens, and its own log lines ("Round 1: 3 blocking"). */
+  workflows?: { id: string; name: string; status: string; agents: number; tokens: number; phases: string[]; logs: string[] }[];
   /** Estimated dollars for the sessions whose model price is known; `cost_unpriced` counts the others. */
   cost_usd?: number; cost_unpriced?: number;
 };
@@ -57,7 +59,28 @@ export function worktreeOf(cwd: string): string | null {
   return name;
 }
 /** A session's role: a subagent's type, else the worktree it ran in, else "main". */
-export const roleOf = (s: Session) => s.teammate ?? (s.parent ? (s.agentType ?? worktreeOf(s.cwd) ?? "subagent") : worktreeOf(s.cwd) ?? "main");
+/** Job words a task can open with, and the role each means. */
+const JOBS: [RegExp, string][] = [
+  [/^re-?review/, "reviewer"], [/^review/, "reviewer"], [/^build|^implement/, "builder"], [/^test/, "tester"], [/^fix/, "fixer"],
+  [/^verif/, "verifier"], [/^research|^investigat|^explor/, "researcher"], [/^check/, "checker"], [/^plan/, "planner"], [/^design/, "designer"], [/^audit/, "auditor"],
+];
+/**
+ * A general-purpose subagent's real job, from how its task opens: "Builder: …" is a builder, "Re-review the fix
+ * wave" a reviewer, "Adversarial security review of mods" a reviewer. A short "Name:" prefix is taken as it is;
+ * otherwise the first job word in the first six words. Null when the task doesn't say.
+ */
+export function roleFromTask(task: string | undefined): string | null {
+  if (!task) return null;
+  const head = task.trim().split("\n")[0]!;
+  const named = head.match(/^([A-Za-z][A-Za-z -]{1,24}?)\s*:/)?.[1]?.trim().toLowerCase();
+  if (named && named.split(" ").length <= 3) { for (const w of named.split(" ")) { const hit = JOBS.find(([re]) => re.test(w)); if (hit) return hit[1]; } return named; }
+  for (const w of head.toLowerCase().split(/[^a-z-]+/).filter(Boolean).slice(0, 6)) { const hit = JOBS.find(([re]) => re.test(w)); if (hit) return hit[1]; }
+  return null;
+}
+const GENERIC = new Set(["general-purpose", "subagent", "fork", "agent", "workflow-subagent"]);
+export const roleOf = (s: Session) => s.teammate ?? (s.parent
+  ? ((!s.agentType || GENERIC.has(s.agentType) ? roleFromTask(s.workflow?.label ?? s.task) : null) ?? s.agentType ?? worktreeOf(s.cwd) ?? "subagent")
+  : worktreeOf(s.cwd) ?? "main");
 
 /** Claude Code agent teams: names teammates' sessions from muninn's team hooks, and adds the tasks they finished as handoffs. */
 export async function teamFacts(db: Client): Promise<{ names: Map<string, string>; done: { session: string; teammate: string | null; subject: string; ts: string }[] }> {
@@ -125,7 +148,8 @@ function toRunSession(s: Session): RunSession {
  * Pure: no database.
  */
 export function buildRuns(repo: string, sessions: Session[]): Run[] {
-  const slices = sessions.flatMap(bursts).sort((a, b) => a.start.localeCompare(b.start));
+  // Subagents' own activity keeps a run going: a session that waits while a workflow or its subagents work is still in that run.
+  const slices = sessions.flatMap((s) => [s, ...(s.subagents ?? [])]).flatMap(bursts).sort((a, b) => a.start.localeCompare(b.start));
   const groups: Slice[][] = [];
   let end = 0;
   for (const x of slices) {
@@ -136,25 +160,30 @@ export function buildRuns(repo: string, sessions: Session[]): Run[] {
   return groups.map((g) => {
     const from = g[0]!.start, to = g.map((x) => x.end).sort().at(-1)!;
     const all: Session[] = [];
-    for (const x of g) {
-      all.push(sliceOf(x.s, x.start, x.end));
-      for (const sub of x.s.subagents ?? []) { const st = spanOf(sub).start || sub.turns?.[0]?.ts || ""; if (st && inSlice(st, x.start, new Date(Date.parse(x.end) + RUN_GAP_MS).toISOString())) all.push(sub); }
-    }
+    for (const x of g) all.push(sliceOf(x.s, x.start, x.end));
     const rs = all.map(toRunSession).filter((r) => r.started_at && (r.tokens_out || r.commands || r.parent_session || r.ended_at > r.started_at)).sort((a, b) => a.started_at.localeCompare(b.started_at));
     const roles = [...new Set(rs.map((r) => r.role))];
-    // Handoffs: a role starting work after another role's session or subagent started. A return to a role is a bounce.
-    const handoffs: Handoff[] = []; let bounces = 0; const seen: string[] = [];
+    // Edges between roles, only from real signals:
+    //   a subagent was started by its parent session ("started"), never by the sibling that started before it;
+    //   a worktree role started work after another worktree role had finished ("handoff");
+    //   swarm board posts, below. A return to a role already left is a bounce.
+    const handoffs: Handoff[] = []; let bounces = 0;
+    const roleById = new Map(rs.map((r) => [r.id, r.role]));
+    for (const r of rs) if (r.parent_session) handoffs.push({ from_role: roleById.get(r.parent_session) ?? "main", to_role: r.role, at: r.started_at, kind: "started", evidence: r.task?.replace(/\s+/g, " ").slice(0, 200) || undefined });
+    const order = (list: RunSession[]) => { const seen: string[] = []; for (const r of list) { if (seen.length && seen.at(-1) !== r.role && seen.includes(r.role)) bounces++; if (seen.at(-1) !== r.role) seen.push(r.role); } };
+    order(rs.filter((r) => r.parent_session));
     const swarm = all.some((x) => x.messages?.some((m) => m.dir === "out"));
-    for (const r of swarm ? [] : rs) {
-      if (r.role === "main" && r.parent_session === null && seen.length) continue; // the session steering the run isn't a step in it
-      const prev = seen.at(-1);
-      if (prev && prev !== r.role) {
-        const before = all.find((x) => roleOf(x) === prev);
+    if (!swarm) {
+      const tops = rs.filter((r) => !r.parent_session && r.role !== "main");
+      for (let i = 1; i < tops.length; i++) {
+        const r = tops[i]!;
+        const prev = tops.slice(0, i).filter((p) => p.role !== r.role && p.ended_at <= r.started_at).sort((a, b) => a.ended_at.localeCompare(b.ended_at)).at(-1);
+        if (!prev) continue;
+        const before = all.find((x) => x.id === prev.id);
         const lastFile = before ? [...before.events].reverse().find((e) => e.k === "file" && e.tool !== "read") as { path: string } | undefined : undefined;
-        handoffs.push({ from_role: prev, to_role: r.role, at: r.started_at, kind: "handoff", evidence: (r.task ?? lastFile?.path ?? "").replace(/\s+/g, " ").slice(0, 200) || undefined });
-        if (seen.includes(r.role)) bounces++;
+        handoffs.push({ from_role: prev.role, to_role: r.role, at: r.started_at, kind: "handoff", evidence: (r.task ?? lastFile?.path ?? "").replace(/\s+/g, " ").slice(0, 200) || undefined });
       }
-      seen.push(r.role);
+      order(tops);
     }
     // A reviewing role that said the work isn't ready sent it back.
     for (const s of all) {
@@ -170,9 +199,21 @@ export function buildRuns(repo: string, sessions: Session[]): Run[] {
     for (const x of all) for (const m of x.messages ?? []) {
       if (m.dir !== "out") continue;
       const from = roleOf(x);
-      const to = m.to.filter((r) => r !== from && r !== "coordinator");
+      // A recipient named by agent id (a subagent the session resumes) is shown by that agent's role.
+      const to = m.to.map((r) => { const hit = all.find((y) => y.id === r || y.id === `agent-${r}`); return hit ? roleOf(hit) : r; }).filter((r) => r !== from && r !== "coordinator");
       const kind: Handoff["kind"] = /\bAPPROVE[D]?\b|LGTM|\[approved?\]|\b(QA|CHECK|ACCEPTANCE|TESTS?) PASS(ED)?\b/i.test(m.text) && !/\bnot approved?\b/i.test(m.text) ? "approved" : REJECTS.test(m.text) || /\[blocked\]/i.test(m.text) ? "review_rejected" : /follow-?up/i.test(m.text) ? "rework" : "handoff";
       handoffs.push({ from_role: from, to_role: to.length > 2 ? "everyone" : to.join(", ") || "board", at: m.ts, kind, note: (kind === "rework" ? m.text.split("\n").find((l) => /follow-?up/i.test(l)) ?? m.text : m.text).replace(/^["\s]+/, "").replace(/(@[\w-]+\s*)+/, "").replace(/\s+/g, " ").slice(0, 160), evidence: m.text.replace(/^["\s]+/, "").replace(/(@[\w-]+\s*)+/, "").replace(/\s+/g, " ").slice(0, 200) });
+    }
+    // A workflow's own log lines say when a check round sent work back ("Round 1: 3 blocking").
+    const workflows = sessions.flatMap((x) => x.workflowRuns ?? []).filter((w, i, arr) => arr.findIndex((v) => v.id === w.id) === i && all.some((a) => a.workflow?.id === w.id));
+    for (const w of workflows) {
+      const agents = all.filter((x) => x.workflow?.id === w.id);
+      const checker = agents.map(roleOf).find((r) => /review/.test(r)) ?? agents.map(roleOf).find((r) => REVIEWER.test(r)) ?? "reviewer";
+      const maker = agents.map(roleOf).find((r) => /build|cod|fix|implement/.test(r)) ?? "main";
+      for (const line of w.logs) {
+        const n = Number(line.match(/(\d+)\s+blocking/i)?.[1] ?? 0);
+        if (n > 0 || /changes requested|sent back|rejected/i.test(line)) handoffs.push({ from_role: checker, to_role: maker, at: w.started, kind: "review_rejected", note: `${w.name}: ${line}`, evidence: line });
+      }
     }
     handoffs.sort((a, b) => a.at.localeCompare(b.at));
     const wasted = effortMoments(all).reduce((n, m) => n + (m.wasted ?? 0), 0);
@@ -180,6 +221,7 @@ export function buildRuns(repo: string, sessions: Session[]): Run[] {
       id: createHash("sha1").update(`${repo}\u0000${from}`).digest("hex").slice(0, 16), repo_id: repo,
       started_at: from, ended_at: [to, ...rs.map((r) => r.ended_at)].sort().at(-1)!, roles, team: roles.length > 1, sessions: rs, handoffs, bounces,
       wasted_tokens: wasted, tokens_in: rs.reduce((n, r) => n + r.tokens_in, 0), tokens_out: rs.reduce((n, r) => n + r.tokens_out, 0),
+      ...(workflows.length ? { workflows: workflows.map(({ id, name, status, agents, tokens, phases, logs }) => ({ id, name, status, agents, tokens, phases, logs })) } : {}),
       cost_usd: rs.reduce((n, r) => n + (r.cost_usd ?? 0), 0), cost_unpriced: rs.filter((r) => r.cost_usd === null && (r.tokens_in || r.tokens_out)).length,
     };
   });
