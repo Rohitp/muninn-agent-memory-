@@ -8,6 +8,7 @@ import { readAntigravity } from "./antigravity.js";
 import { readCursor, slugToPath } from "./cursor.js";
 import { isOwnRun, type Session } from "./types.js";
 import { archivedOnly } from "../store/sessions.js";
+import { roleOf } from "../workflow/runs.js";
 
 export type Scan = { sessions: Session[]; byRepo: Map<string, Session[]>; missingFolder: number; ownRuns: number; files: { claude: number; codex: number; cursor: number; antigravity: number } };
 
@@ -44,6 +45,8 @@ export function scanLogs(): Scan {
   // Antigravity swarm agents: conversations started by another conversation's message, not by you.
   for (const x of all) if (x.tool === "antigravity" && x.parent) subs.set(x.parent, [...(subs.get(x.parent) ?? []), x]);
   for (const s of all) if (subs.has(s.id)) s.subagents = subs.get(s.id);
+  // Each session's role in a team of agents, for runs, session reviews and insights.
+  for (const s of all) for (const x of [s, ...(s.subagents ?? [])]) { try { x.role = roleOf(x); } catch { /* roles are extra */ } }
   for (const s of all) {
     if (!s.events.some((e) => e.k === "typed")) continue;
     if (isOwnRun(s)) { scan.ownRuns++; continue; }

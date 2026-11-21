@@ -14,8 +14,14 @@ export type RunSession = {
   id: string; tool: string; role: string; branch: string | null; worktree: string | null; parent_session: string | null; agent_type: string | null;
   started_at: string; ended_at: string; tokens_in: number; tokens_out: number; cache_read: number; model: string | null;
   commands: number; failed_commands: number; task: string | null;
+  /** Messages the engineer typed: 0 for a session that ran on its own. */
+  typed: number;
 };
-export type Handoff = { from_role: string; to_role: string; at: string; kind: "handoff" | "review_rejected" | "approved" | "rework"; note?: string };
+export type Handoff = {
+  from_role: string; to_role: string; at: string; kind: "handoff" | "review_rejected" | "approved" | "rework"; note?: string;
+  /** A short quote or file path showing what was handed over: the message, the task the next role was given, or the last file the previous role changed. */
+  evidence?: string;
+};
 export type Run = {
   id: string; repo_id: string; started_at: string; ended_at: string; roles: string[]; team: boolean;
   sessions: RunSession[]; handoffs: Handoff[];
@@ -80,6 +86,7 @@ function toRunSession(s: Session): RunSession {
     id: s.id, tool: s.tool, role: roleOf(s), branch: s.branch ?? null, worktree: s.parent ? null : worktreeOf(s.cwd), parent_session: s.parent ?? null, agent_type: s.agentType ?? null,
     started_at: t0, ended_at: t1, tokens_in: turns.reduce((n, t) => n + t.input, 0), tokens_out: turns.reduce((n, t) => n + t.output, 0), cache_read: 0, model: s.model ?? null,
     commands: cmds.length, failed_commands: cmds.filter((e) => e.k === "cmd" && e.failed).length, task: s.task?.slice(0, 300) ?? null,
+    typed: s.events.filter((e) => e.k === "typed").length,
   };
 }
 
@@ -113,7 +120,9 @@ export function buildRuns(repo: string, sessions: Session[]): Run[] {
       if (r.role === "main" && r.parent_session === null && seen.length) continue; // the session steering the run isn't a step in it
       const prev = seen.at(-1);
       if (prev && prev !== r.role) {
-        handoffs.push({ from_role: prev, to_role: r.role, at: r.started_at, kind: "handoff" });
+        const before = all.find((x) => roleOf(x) === prev);
+        const lastFile = before ? [...before.events].reverse().find((e) => e.k === "file" && e.tool !== "read") as { path: string } | undefined : undefined;
+        handoffs.push({ from_role: prev, to_role: r.role, at: r.started_at, kind: "handoff", evidence: (r.task ?? lastFile?.path ?? "").replace(/\s+/g, " ").slice(0, 200) || undefined });
         if (seen.includes(r.role)) bounces++;
       }
       seen.push(r.role);
@@ -123,7 +132,10 @@ export function buildRuns(repo: string, sessions: Session[]): Run[] {
       const role = roleOf(s);
       if (!REVIEWER.test(role)) continue;
       const said = s.events.find((e) => e.k === "agent" && REJECTS.test(e.text)) as { text: string; ts: string } | undefined;
-      if (said) handoffs.push({ from_role: role, to_role: roles.find((x) => x !== role && x !== "main" && !REVIEWER.test(x)) ?? "main", at: said.ts, kind: "review_rejected", note: said.text.match(REJECTS)?.[0] });
+      if (said) {
+        const at = said.text.search(REJECTS);
+        handoffs.push({ from_role: role, to_role: roles.find((x) => x !== role && x !== "main" && !REVIEWER.test(x)) ?? "main", at: said.ts, kind: "review_rejected", note: said.text.match(REJECTS)?.[0], evidence: said.text.slice(Math.max(0, at - 60), at + 140).replace(/\s+/g, " ") });
+      }
     }
     // Swarm agents say who they're handing to: a board message mentioning @roles. Approvals, send-backs and follow-up fixes are read from it.
     for (const x of all) for (const m of x.messages ?? []) {
@@ -131,7 +143,7 @@ export function buildRuns(repo: string, sessions: Session[]): Run[] {
       const from = roleOf(x);
       const to = m.to.filter((r) => r !== from && r !== "coordinator");
       const kind: Handoff["kind"] = /\bAPPROVE[D]?\b|LGTM|\[approved?\]|\b(QA|CHECK|ACCEPTANCE|TESTS?) PASS(ED)?\b/i.test(m.text) && !/\bnot approved?\b/i.test(m.text) ? "approved" : REJECTS.test(m.text) || /\[blocked\]/i.test(m.text) ? "review_rejected" : /follow-?up/i.test(m.text) ? "rework" : "handoff";
-      handoffs.push({ from_role: from, to_role: to.length > 2 ? "everyone" : to.join(", ") || "board", at: m.ts, kind, note: (kind === "rework" ? m.text.split("\n").find((l) => /follow-?up/i.test(l)) ?? m.text : m.text).replace(/^["\s]+/, "").replace(/(@[\w-]+\s*)+/, "").replace(/\s+/g, " ").slice(0, 160) });
+      handoffs.push({ from_role: from, to_role: to.length > 2 ? "everyone" : to.join(", ") || "board", at: m.ts, kind, note: (kind === "rework" ? m.text.split("\n").find((l) => /follow-?up/i.test(l)) ?? m.text : m.text).replace(/^["\s]+/, "").replace(/(@[\w-]+\s*)+/, "").replace(/\s+/g, " ").slice(0, 160), evidence: m.text.replace(/^["\s]+/, "").replace(/(@[\w-]+\s*)+/, "").replace(/\s+/g, " ").slice(0, 200) });
     }
     handoffs.sort((a, b) => a.at.localeCompare(b.at));
     const wasted = effortMoments(all).reduce((n, m) => n + (m.wasted ?? 0), 0);
@@ -147,7 +159,9 @@ export function buildRuns(repo: string, sessions: Session[]): Run[] {
 export async function saveRuns(db: Client, runs: Run[]) {
   for (const r of runs) await db.execute({ sql: "INSERT OR REPLACE INTO runs (id,repo_id,started_at,ended_at,team,data) VALUES (?,?,?,?,?,?)", args: [r.id, r.repo_id, r.started_at, r.ended_at, r.team ? 1 : 0, JSON.stringify(r)] });
 }
-export async function listRuns(db: Client, opts: { repo?: string | null; teamOnly?: boolean; limit?: number } = {}): Promise<Run[]> {
+/** Recent runs, newest first. Takes a repo (null for all repos) or options. */
+export async function listRuns(db: Client, o: { repo?: string | null; teamOnly?: boolean; limit?: number } | string | null = {}): Promise<Run[]> {
+  const opts = typeof o === "string" || o === null ? { repo: o } : o;
   const where = [opts.repo ? "repo_id=?" : "1", opts.teamOnly ? "team=1" : "1"].join(" AND ");
   const rows = (await db.execute({ sql: `SELECT data FROM runs WHERE ${where} ORDER BY started_at DESC LIMIT ?`, args: [...(opts.repo ? [opts.repo] : []), opts.limit ?? 50] })).rows;
   return rows.map((r) => JSON.parse(String(r.data)) as Run);

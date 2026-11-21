@@ -54,7 +54,7 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   if (event === "SessionStart" && input.cwd) {
     await adoptRepo(db, repo, input.cwd);
     // Register the repo on its first session, so the page lists it before any scan has run.
-    if (repo) await db.execute({ sql: "INSERT OR IGNORE INTO repos (id,paths) VALUES (?,?)", args: [repo, JSON.stringify([input.cwd])] });
+    if (repo) await db.execute({ sql: "INSERT OR IGNORE INTO repos (id,paths) VALUES (?,?)", args: [repo, JSON.stringify([(await import("../repo/identity.js")).mainFolder(input.cwd)])] });
   }
   // A standing instruction you typed becomes a suggestion now, whatever the dial says: nothing is told to agents here.
   if (event === "UserPromptSubmit" && input.prompt) { try { await catchStanding(db, repo, session, client, input.prompt); } catch { /* never block a prompt */ } }
