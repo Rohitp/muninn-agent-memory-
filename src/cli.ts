@@ -30,6 +30,7 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn cursor on|off|sync     Write kept lessons as Cursor rules in this repo
   muninn local-file on|off      Keep always-on lessons in this repo's CLAUDE.local.md (this machine only)
   muninn keywords               Keywords in use, and how many lessons each has
+  muninn mcp install            Ask about your work from any chat with Claude (adds muninn's MCP server)
   muninn ignore-repo [name] [--undo]  Leave a repo alone: not listed, scanned or told
   muninn changes [check|apply <id>|dismiss <id>|undo <id>]
                                 Changes muninn proposes: ask-first rules, skills, edits to CLAUDE.md
@@ -141,6 +142,7 @@ async function main() {
     case "install": { const m = await import("./commands/install.js"); return args.includes("--learn") ? m.installLearnHook() : m.install(); }
     case "uninstall": { (await import("./commands/install.js")).uninstall(); console.log("Removed muninn's hooks. Lessons are kept."); return; }
     case "ask": return (await import("./commands/ask.js")).ask(args);
+    case "mcp": return (await import("./mcp/install.js")).mcpCmd(args);
     case "recall": return (await import("./commands/recall.js")).recall(args);
     case "cursor": return cursorCmd(args[0] ?? "");
     case "local-file": return localFileCmd(args[0] ?? "");

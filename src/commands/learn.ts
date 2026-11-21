@@ -82,6 +82,7 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
   try {
     const st = await import("../store/sessions.js");
     const archived = await st.archiveLogs(db);
+    await st.indexPlan(db, embed);
     const all = repos.flatMap((r) => scan.byRepo.get(r)!);
     let shown = -1;
     const r = await st.indexSessions(db, all, embed, { ignored, onProgress: opts.auto ? undefined : (done, total) => { const pct = Math.floor((done / total) * 10); if (process.stdout.isTTY && pct !== shown) { shown = pct; process.stdout.write(`\rStoring sessions for search: ${done}/${total}`); } } });

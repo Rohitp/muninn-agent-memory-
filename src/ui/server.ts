@@ -192,7 +192,8 @@ const routes: Record<string, Handler> = {
   "POST /api/answer": async (db, _q, b) => {
     const runner = pickRunner("background");
     if (!runner) throw new Error("No Claude Code found to write an answer.");
-    try { return await answerData(db, String(b.q ?? ""), b.repo || null, runner, await embed()); }
+    const history = Array.isArray(b.history) ? (b.history as { q: unknown; a: unknown }[]).slice(-4).map((t) => ({ q: String(t.q ?? ""), a: String(t.a ?? "").slice(0, 2000) })) : [];
+    try { return await answerData(db, String(b.q ?? ""), b.repo || null, runner, await embed(), history); }
     finally { await saveUsage(db, runner, "answer"); }
   },
   "GET /api/settings": async () => ({ maxPerDelivery: settings().maxPerDelivery }),

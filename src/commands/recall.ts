@@ -40,7 +40,7 @@ export async function recallData(db: Client, q: string, repo: string | null, opt
   });
 }
 
-const TOOL: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor" };
+const TOOL: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", plan: "Plan" };
 const date = (iso: string) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? iso.slice(0, 10) : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); };
 export function recallText(hits: RecallHit[], full = false): string {
   return hits.map((h) => {

@@ -6,7 +6,7 @@ import { readClaude } from "../src/logs/claude-code.js";
 import { readCodex } from "../src/logs/codex.js";
 import { scanLogs } from "../src/logs/discover.js";
 import { OWN_RUN_MARK } from "../src/logs/types.js";
-import { tmp, write } from "./helpers.js";
+import { tmp, useHome, write } from "./helpers.js";
 
 afterEach(() => { delete process.env.MUNINN_LOG_ROOT; });
 
@@ -48,6 +48,7 @@ describe("Codex reader", () => {
 });
 describe("scanLogs", () => {
   it("groups by repo, and skips muninn's own runs and missing folders", () => {
+    useHome();
     const root = tmp(); process.env.MUNINN_LOG_ROOT = root;
     const repo = join(tmp(), "repo"); mkdirSync(repo);
     execFileSync("git", ["init", "-q", repo]);

@@ -33,6 +33,13 @@ It also proposes changes to what your agents read, each one waiting for you to a
 
 And two things for you rather than your agents: `muninn pr` writes the "why" for a branch's pull request (what was tried, what was decided, how to test) from your sessions, and `muninn insights` shows your week: where agents wasted effort, and whether lessons helped.
 
+## Ask it about your work
+
+Ask muninn a question about your own work and it answers from everything it keeps: kept lessons, the decisions and finished work in your branch plans, and your past sessions. It cites each source with its date, and you can ask follow-ups.
+
+- **On the page:** the Ask muninn box at the top.
+- **In any chat with Claude:** run `muninn mcp install` once. It adds muninn's MCP server (the standard way chat apps call outside tools) to Claude Code and the Claude desktop app. Then ask, in a normal chat, "what did we decide about the npm name?" or "how did we fix the webhook last time?". Claude can also suggest a lesson when you say "remember that…"; it waits in your review queue like any other. For Cursor or another app, `muninn mcp install` prints the command to add.
+
 ## What it looks like
 
 `muninn ui` opens one page in your browser, **"What your agents know"**:
@@ -95,6 +102,7 @@ After that you don't need any commands. muninn checks for new lessons on its own
 | `muninn ui` | Open the page |
 | `muninn learn` | Look for new lessons now (also runs on its own) |
 | `muninn ask "question"` | Search what you've kept |
+| `muninn mcp install` | Ask about your work from any chat with Claude |
 | `muninn recall "what"` | Search your past sessions: what was asked, said and run (`--all-repos`, `--days 30`) |
 | `muninn changes` | Proposed rules, skills and instruction edits; `check` reviews CLAUDE.md now |
 | `muninn pr [--apply]` | Write the "why" for this branch's pull request |

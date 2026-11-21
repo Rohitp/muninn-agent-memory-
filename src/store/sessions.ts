@@ -130,3 +130,24 @@ export function archivedOnly(): { tool: "claude" | "codex"; file: string; origin
   return out;
 }
 
+
+const PLAN_LABEL: Record<string, string> = { decision: "DECISION", done: "DONE", goal: "GOAL", open: "DONE" };
+/**
+ * The plan's goals, decisions and finished work, stored like exchanges (tool "plan") so one search covers them too.
+ * Only new items are embedded; removed ones are taken out.
+ */
+export async function indexPlan(db: Client, embed: Embed): Promise<number> {
+  const items = (await db.execute("SELECT id, repo_id, branch, kind, text, status, coalesce(closed_at, created_at) ts FROM plan_items WHERE status != 'removed' AND (kind IN ('decision','done','goal') OR (kind='open' AND status='closed'))")).rows;
+  const have = new Set((await db.execute("SELECT id FROM chunks WHERE tool='plan'")).rows.map((r) => String(r.id)));
+  const want = new Set(items.map((i) => `plan:${i.id}`));
+  for (const id of have) if (!want.has(id)) { await db.execute({ sql: "DELETE FROM chunks WHERE id=?", args: [id] }); await db.execute({ sql: "DELETE FROM chunks_fts WHERE chunk_id=?", args: [id] }); }
+  const fresh = items.filter((i) => !have.has(`plan:${i.id}`)).map((i) => ({ id: String(i.id), repo_id: String(i.repo_id), branch: i.branch ? String(i.branch) : null, ts: String(i.ts), line: `${PLAN_LABEL[String(i.kind)]}${i.branch ? ` on ${i.branch}` : ""}: ${redact(String(i.text))}` }));
+  if (!fresh.length) return 0;
+  const vectors = await embed(fresh.map((f) => f.line));
+  for (const f of fresh) {
+    const id = `plan:${f.id}`, v = vectors.get(f.line);
+    await db.execute({ sql: "INSERT OR REPLACE INTO chunks (id,repo_id,session,tool,branch,ts,seq,text,embedding) VALUES (?,?,?,?,?,?,0,?,?)", args: [id, String(f.repo_id), `plan:${f.branch ?? ""}`, "plan", f.branch ? String(f.branch) : null, String(f.ts), f.line, v ? vec(v) : null] });
+    await db.execute({ sql: "INSERT INTO chunks_fts (chunk_id,text) VALUES (?,?)", args: [id, f.line] });
+  }
+  return fresh.length;
+}

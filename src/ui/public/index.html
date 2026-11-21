@@ -185,6 +185,29 @@ function changesSection() {
     ${repo ? `<p class="note">${proposing ? `<span class="spin" aria-hidden="true"></span> Your Claude is reviewing this repo's CLAUDE.md, AGENTS.md and skills…` : `<button class="linkbtn" data-propose>Review CLAUDE.md, AGENTS.md and skills</button> against your sessions and propose edits. One call to your Claude.`}</p>` : ""}
   </section>`;
 }
+/* Ask muninn: a question answered from lessons, plan decisions, finished work and past sessions, with its sources. */
+let askThread = [], asking = false;
+const SRC_KIND = { lesson: "Lesson", note: "Note", decision: "Decision", done: "Done", goal: "Goal", session: "Session", handoff: "Last session" };
+function askSection() {
+  const cite = (t) => esc(t).replace(/\[(\d+)\]/g, '<sup style="color:var(--link);font-weight:600">[$1]</sup>');
+  return `<section aria-labelledby="ak">
+    <h2 id="ak">Ask muninn</h2>
+    <ul class="group">
+      ${askThread.map((t) => `<li style="padding:14px 16px;display:flex;flex-direction:column;gap:8px">
+        <div style="font-weight:600">${esc(t.q)}</div>
+        ${t.error ? `<div style="color:var(--warn)">${esc(t.error)}</div>` : t.a == null ? `<div style="color:var(--muted)">${t.sources ? "Nothing muninn keeps answers that." : '<span class="spin" aria-hidden="true"></span> Looking through your lessons, plans and past sessions…'}</div>` : `<div style="line-height:1.5">${cite(t.a)}</div>`}
+        ${t.sources?.length && t.a != null ? `<details><summary style="cursor:pointer;color:var(--muted);font-size:13px">${t.sources.length} sources</summary><ol style="margin:8px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)">${t.sources.map((s) => `<li><b style="color:var(--ink)">${esc(SRC_KIND[s.kind] || s.kind)}</b> · ${esc(s.where)}${s.date ? ` · ${esc(shortDate(s.date))}` : ""}<br>${esc(s.text.length > 260 ? s.text.slice(0, 259) + "…" : s.text)}</li>`).join("")}</ol></details>` : ""}
+      </li>`).join("")}
+      <li style="padding:12px 16px"><form data-ask-form style="display:flex;gap:8px;flex-wrap:wrap">
+        <label class="vh" for="askq">Ask a question about your work</label>
+        <input id="askq" name="q" autocomplete="off" placeholder="${askThread.length ? "Ask a follow-up" : "Why did we rename the package? What did I do on servanda this week?"}" style="flex:1 1 260px;min-width:0;height:40px;box-sizing:border-box;border:1px solid var(--line-strong);border-radius:10px;padding:0 12px;font-size:15px;background:var(--bg);color:var(--ink)" ${asking ? "disabled" : ""}>
+        <button class="btn" type="submit" ${asking ? "disabled" : ""}>Ask</button>
+        ${askThread.length ? `<button class="linkbtn" type="button" data-ask-clear>New question</button>` : ""}
+      </form></li>
+    </ul>
+    <p class="note">Answers come from what muninn keeps: lessons, plan decisions, finished work and your past sessions${repo ? ` in ${esc(short(repo))}` : ""}. One call to your Claude. Also in any chat with Claude once the muninn MCP server is added: <code>muninn mcp install</code>.</p>
+  </section>`;
+}
 /* Your week with coding agents, read from all your logs, so only on request. */
 let week = null, weekLoading = false;
 function weekSection() {
@@ -333,6 +356,14 @@ function lessonRow(l) {
 }
 
 function draw() {
+  // The page redraws when muninn's data changes; keep a half-typed question and its focus.
+  const typing = $("#askq"), keepQ = typing?.value ?? "", keepFocus = document.activeElement === typing;
+  drawPage();
+  const again = $("#askq");
+  if (again && keepQ && !asking) again.value = keepQ;
+  if (again && keepFocus) again.focus();
+}
+function drawPage() {
   const { repos, suggested, kept, home } = data;
   const shown = showAll ? suggested : suggested.slice(0, 3);
   const dial = home.dial;
@@ -344,6 +375,8 @@ function draw() {
     <h1>What your agents know</h1>
     <p class="lead">Switch a lesson on and Claude, Codex and Cursor are told it. Switch it off and they aren't.</p>
     <p class="scan">${scanLine()}</p>
+
+    ${askSection()}
 
     ${(() => {
       // Suggestions waiting in other repos are easy to miss, since the page opens on the repo it was started from.
@@ -401,6 +434,16 @@ document.addEventListener("input", (e) => {
   if (e.target.id !== "doneFilter") return;
   doneFilter = e.target.value; $("#doneList").innerHTML = doneList(data.plan.plan.done);
 });
+document.addEventListener("submit", async (e) => {
+  const form = e.target.closest("[data-ask-form]"); if (!form) return;
+  e.preventDefault();
+  const q = form.q.value.trim(); if (!q || asking) return;
+  const history = askThread.filter((t) => t.a).map((t) => ({ q: t.q, a: t.a }));
+  const turn = { q, a: null, sources: null }; askThread.push(turn); asking = true; draw();
+  try { const r = await api("/api/answer", { q, repo, history }); turn.a = r.answer; turn.sources = r.sources; }
+  catch (err) { turn.error = err.message || String(err); }
+  asking = false; draw(); $("#askq")?.focus();
+});
 document.addEventListener("keydown", (e) => {
   if (!e.target.matches?.("[data-plan-input]")) return;
   if (e.key === "Enter") { e.preventDefault(); savePlanInput().catch((err) => toast(err.message)); }
@@ -444,6 +487,7 @@ document.addEventListener("click", async (e) => {
       } catch (e) { toast(e.message || String(e)); }
       return;
     }
+    if (el.dataset.askClear !== undefined) { askThread = []; draw(); $("#askq")?.focus(); return; }
     if (el.dataset.week !== undefined) {
       weekLoading = true; draw();
       try { week = (await api("/api/insights?" + q({ repo }))).text; } catch (e) { toast(e.message || String(e)); }
@@ -521,7 +565,7 @@ document.addEventListener("click", async (e) => {
   } catch (err) { toast(err.message); el.disabled = false; }
 });
 document.addEventListener("change", (e) => {
-  if (e.target.id === "repo") { repo = e.target.value; week = null; open = null; showAll = false; planBranch = null; refresh(); }
+  if (e.target.id === "repo") { repo = e.target.value; week = null; askThread = []; open = null; showAll = false; planBranch = null; refresh(); }
   if (e.target.id === "planBranch") { planBranch = e.target.value; planEdit = null; planShow.decisions = planShow.done = false; doneFilter = ""; doneLimit = 15; refresh(); }
 });
 refresh().catch((e) => { $("#main").innerHTML = `<p class="lead">${esc(e.message)}</p>`; });
