@@ -58,7 +58,7 @@ export async function markShown(db: Client, id: string) {
   await db.execute({ sql: "UPDATE lessons SET first_shown_at=coalesce(first_shown_at,?) WHERE id=?", args: [now(), id] });
 }
 /** A person's decision. Agents and scans never call this. */
-export async function decide(db: Client, id: string, d: { status?: "live" | "rejected" | "retired"; text?: string; news?: boolean; alwaysOn?: boolean; global?: boolean; triggers?: string[]; off?: boolean }) {
+export async function decide(db: Client, id: string, d: { status?: "live" | "rejected" | "retired"; text?: string; news?: boolean; alwaysOn?: boolean; global?: boolean; triggers?: string[]; off?: boolean; role?: string | null }) {
   const sets = ["updated_at=?", "reviewed_at=?"]; const t = now(); const args: (string | number)[] = [t, t];
   if (d.status) { sets.push("status=?"); args.push(d.status); }
   // New text makes the plain line and questions stale. The next learn, or the UI, writes them again.
@@ -67,6 +67,8 @@ export async function decide(db: Client, id: string, d: { status?: "live" | "rej
   if (d.alwaysOn !== undefined) { sets.push("always_on=?"); args.push(d.alwaysOn ? 1 : 0); }
   if (d.global !== undefined) { sets.push("scope=?"); args.push(d.global ? "global" : "repo"); }
   if (d.off !== undefined) { sets.push("off=?"); args.push(d.off ? 1 : 0); }
+  // The role in a team of agents it's told to ("builder"); null or "" for every agent.
+  if (d.role !== undefined) { sets.push("role=?"); args.push((d.role ?? "").trim().toLowerCase() || null as unknown as string); }
   await db.execute({ sql: `UPDATE lessons SET ${sets.join(",")} WHERE id=?`, args: [...args, id] });
   if (d.text !== undefined) {
     await db.execute({ sql: "DELETE FROM lessons_fts WHERE lesson_id=?", args: [id] });

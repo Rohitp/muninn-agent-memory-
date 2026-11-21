@@ -50,3 +50,16 @@ describe("lessons kept for every repo", () => {
     expect(await inB(false)).toEqual([]);
   });
 });
+
+describe("a lesson's role", () => {
+  it("can be set or cleared by the person keeping it", async () => {
+    const { openDb } = await import("../src/store/db.js");
+    const { createLesson, decide, getLesson } = await import("../src/store/lessons.js");
+    const db = await openDb();
+    const id = await createLesson(db, { repo_id: null, scope: "global", text: "Check edge cases before handing off", source: "manual", status: "proposed", by: "t", role: "builder" });
+    await decide(db, id, { status: "live", role: "Reviewer" });
+    expect((await getLesson(db, id))?.role).toBe("reviewer");
+    await decide(db, id, { role: "" });
+    expect((await getLesson(db, id))?.role).toBeNull();
+  });
+});
