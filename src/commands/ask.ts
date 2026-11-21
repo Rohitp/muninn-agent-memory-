@@ -24,12 +24,18 @@ const SIGNAL: Record<string, string> = {
   wrong_path: "Learned from paths agents looked for in the wrong place",
   big_file: "Learned from a file too big to read in one go",
   skimmed: "Learned from long answers you skimmed or stopped",
+  stated: "You stated this as a rule",
 };
 /** Where a lesson came from, in words: "Learned from a command that failed and was then fixed, in Claude Code, Nov 6". */
 export async function originOf(db: Client, l: { id: string; source: string; signal: string | null; created_at?: string }): Promise<string> {
   if (l.source === "manual") return "You added this";
   const e = (await db.execute({ sql: "SELECT tool, seen_at FROM evidence WHERE lesson_id=? ORDER BY seen_at LIMIT 1", args: [l.id] })).rows[0];
-  const base = SIGNAL[l.signal ?? ""] ?? "Found in your sessions";
+  let base = SIGNAL[l.signal ?? ""] ?? "Found in your sessions";
+  // A rule you stated: say whether it was said once or has come up again, since once is all it took to suggest it.
+  if (l.signal === "stated") {
+    const n = Number((await db.execute({ sql: "SELECT count(DISTINCT session) n FROM evidence WHERE lesson_id=?", args: [l.id] })).rows[0]?.n ?? 0);
+    base += n > 1 ? `, said in ${n} sessions` : ", said once";
+  }
   if (!e) return base;
   const d = new Date(String(e.seen_at));
   const when = Number.isNaN(d.getTime()) ? "" : `, ${d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;

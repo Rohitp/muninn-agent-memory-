@@ -61,6 +61,8 @@ export type Defaults = { route: "always" | "keyword" | "none"; keywords: string[
  * how-you-work lessons always-on everywhere; notes and command fixes on their keywords; the rest always-on here.
  */
 export function defaultRoute(l: Pick<Lesson, "text" | "kind" | "signal" | "suggested_keywords" | "suggested_scope">): Defaults {
+  // A rule you stated once: told every session, but in this repo only until you widen it or it comes up elsewhere.
+  if (l.signal === "stated") return { route: "always", keywords: [], global: false };
   if (isPreference(l)) return { route: "always", keywords: [], global: true };
   const suggested: string[] = (l.suggested_keywords ? (JSON.parse(l.suggested_keywords) as string[]) : []).filter(usefulKeyword);
   const guess = suggestKeyword(l.text);

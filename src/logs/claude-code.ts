@@ -19,6 +19,12 @@ export function readClaude(file: string): Session {
     if (o.version) clientVersion = o.version;
     if (o.gitBranch) branch = o.gitBranch;
     if (o.isSidechain || o.isMeta) continue;
+    // A message sent while the agent was working is logged as a queued command, not a user message.
+    if (o.type === "attachment" && o.attachment?.type === "queued_command" && typeof o.attachment.prompt === "string") {
+      const t = o.attachment.prompt;
+      if (!notTyped(t)) events.push({ k: "typed", text: stripPrivate(t), ts: o.timestamp ?? "" });
+      continue;
+    }
     const c = o.message?.content;
     const ts = o.timestamp ?? "";
     if (o.type === "user") {

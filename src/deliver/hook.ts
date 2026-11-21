@@ -56,6 +56,8 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
     // Register the repo on its first session, so the page lists it before any scan has run.
     if (repo) await db.execute({ sql: "INSERT OR IGNORE INTO repos (id,paths) VALUES (?,?)", args: [repo, JSON.stringify([input.cwd])] });
   }
+  // A standing instruction you typed becomes a suggestion now, whatever the dial says: nothing is told to agents here.
+  if (event === "UserPromptSubmit" && input.prompt) { try { await catchStanding(db, repo, session, client, input.prompt); } catch { /* never block a prompt */ } }
   // The dial: quiet holds everything back; "start" speaks only when a session starts, never mid-task.
   // Loops are counted whatever the setting, so the panel can show them; the agent is told only mid-task.
   const loopHint = failed(event, input) && session ? await trackLoop(db, session, repo, input) : null;
@@ -74,6 +76,11 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
     const hay = event === "UserPromptSubmit" ? input.prompt ?? "" : `${input.tool_input?.command ?? fileCall(input)?.cmd ?? ""}\n${input.error ?? responseText(input.tool_response)}`;
     const all = (await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,t.pattern FROM lessons l JOIN triggers t ON t.lesson_id=l.id WHERE ${scope}`, args: [repo, repo] })).rows as unknown as Row[];
     rows = all.filter((r) => r.pattern && matches(r.pattern, hay));
+    // Lessons told every session that were kept after this session started: it never got them, so tell it now.
+    if (event === "UserPromptSubmit" && session) {
+      const started = String((await db.execute({ sql: "SELECT min(ts) t FROM deliveries WHERE session=?", args: [session] })).rows[0]?.t ?? "");
+      if (started) rows.push(...((await db.execute({ sql: `SELECT l.id,l.text,l.always_on,l.updated_at,NULL pattern FROM lessons l WHERE ${scope} AND l.always_on=1 AND coalesce(l.reviewed_at, l.updated_at) > ?`, args: [repo, repo, started] })).rows as unknown as Row[]));
+    }
   }
   // Once per session, reset by compaction. Tokens count for the whole session.
   const lastCompact = event === "SessionStart" && input.source === "compact" ? ts : session ? String((await db.execute({ sql: "SELECT max(ts) t FROM deliveries WHERE session=? AND event='SessionStart' AND source='compact'", args: [session] })).rows[0]?.t ?? "") : "";
@@ -181,4 +188,26 @@ export async function trackLoop(db: Client, session: string, repo: string | null
   if (!hint) return null;
   const name = file ? cmd.slice(0, 60) : shortCommand(cmd);
   return `muninn: \`${name}\` has failed ${n} times in a row with the same error${err ? ` ("${err}")` : ""}. Running it again as is will fail the same way. Read the error, check what the command needs, or try another approach.`;
+}
+
+/**
+ * A standing instruction typed into a prompt ("from now on, put features on branches") goes straight into the
+ * suggestions, in the engineer's words, so it can be kept today rather than after it's been repeated. The next
+ * scan finds the same quote and leaves it be; the lesson writer can still turn it into tidier wording then.
+ */
+export async function catchStanding(db: Client, repo: string | null, session: string | null, tool: string, prompt: string): Promise<string | null> {
+  if (!repo || !session) return null;
+  const { standingIn } = await import("../learn/signals.js");
+  const { redact } = await import("../privacy/redact.js");
+  const { stripPrivate } = await import("../logs/types.js");
+  const found = standingIn(stripPrivate(prompt))[0];
+  if (!found) return null;
+  const quote = redact(found).slice(0, 240);
+  if ((await db.execute({ sql: "SELECT 1 FROM evidence WHERE quote=? LIMIT 1", args: [quote] })).rows.length) return null;
+  const { createLesson, addEvidence } = await import("../store/lessons.js");
+  const text = redact(found).replace(/^\w/, (c) => c.toUpperCase()).replace(/([^.!])$/, "$1.");
+  const ts = new Date().toISOString();
+  const id = await createLesson(db, { repo_id: repo, text, source: "own_words", signal: "stated", suggestedScope: "repo", status: "proposed", sessions: 1, last_seen: ts, by: "live" });
+  await addEvidence(db, id, [{ tool, session, ts, quote }]);
+  return id;
 }

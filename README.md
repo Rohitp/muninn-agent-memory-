@@ -13,6 +13,7 @@ Inside, it goes by its code name, **muninn**, and so does its command: `muninn` 
 You tell an agent the same things over and over: "explain it step by step", "the benchmarks folder is at the repo root", "use `poetry run python`, not bare `python`". Next session, it's forgotten. muninn fixes that in three steps:
 
 1. **It learns from your sessions.** After you work, muninn looks through the session logs on your machine for:
+   - rules you state, even once ("from now on…", "let's put every feature on a branch"), marked "said once" until they come up again
    - things you said more than once
    - corrections you made to an agent
    - commands that failed and were then fixed
