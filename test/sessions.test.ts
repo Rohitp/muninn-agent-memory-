@@ -83,3 +83,22 @@ describe("keeping logs the tool deletes", () => {
     expect(scanLogs().sessions.map((x) => x.id)).toEqual(["abc"]);
   });
 });
+
+describe("the vector index", () => {
+  it("finds the nearest exchanges through the index, and still finds a repo's own when others crowd it out", async () => {
+    const { nearest } = await import("../src/commands/recall.js");
+    const db = await openDb();
+    const file = join(tmp(), "log.jsonl"); writeFileSync(file, "x");
+    const many: Session = { id: "busy", tool: "claude-code", cwd: "", clientVersion: "1", unknown: 0, file, events: Array.from({ length: 40 }, (_, i) => typed(`deploy the billing service step ${i}`, i % 50)) };
+    await indexSessions(db, [many], fakeEmbed);
+    await db.execute("UPDATE chunks SET repo_id='busy'");
+    const file2 = join(tmp(), "log2.jsonl"); writeFileSync(file2, "x");
+    await indexSessions(db, [{ ...many, id: "quiet", file: file2, events: [typed("deploy the billing service from main", 1)] }], fakeEmbed);
+    await db.execute("UPDATE chunks SET repo_id='quiet' WHERE session='quiet'");
+    expect(Number((await db.execute("SELECT count(*) n FROM vector_top_k('chunks_vec', (SELECT embedding FROM chunks LIMIT 1), 5)")).rows[0]!.n)).toBe(5);
+    const v = (await fakeEmbed(["deploy the billing service"])).get("deploy the billing service")!;
+    expect((await nearest(db, v, "1 AND 1", [])).length).toBeGreaterThan(10);
+    const mine = await nearest(db, v, "c.repo_id=? AND 1", ["quiet"]);
+    expect(mine).toHaveLength(1);
+  });
+});
