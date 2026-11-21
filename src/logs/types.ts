@@ -27,6 +27,8 @@ export type Session = {
   turns?: { ts: string; input: number; output: number }[];
   /** A subagent: the session that started it, its type ("Explore", "general-purpose", a custom agent), and the task it was handed. */
   parent?: string; agentType?: string; task?: string;
+  /** In a team of agents: the subagent's type, the worktree's name, or "main". Set by scans. */
+  role?: string;
   /** Messages between agents in a swarm: posted to the shared board ("out"), or sent to this agent ("in", with the sender's session id). */
   messages?: AgentMessage[];
   /** Subagents this session started, read from their own logs. */

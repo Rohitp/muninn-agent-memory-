@@ -8,7 +8,13 @@ const now = () => new Date().toISOString();
 export async function ensureRepo(db: Client, id: string, path: string) {
   const { ignoredRepos } = await import("./ignore.js");
   if ((await ignoredRepos(db)).has(id)) return;
-  await db.execute({ sql: "INSERT OR IGNORE INTO repos (id,paths) VALUES (?,?)", args: [id, JSON.stringify([path])] });
+  const { mainFolder } = await import("../repo/identity.js");
+  const main = mainFolder(path);
+  await db.execute({ sql: "INSERT OR IGNORE INTO repos (id,paths) VALUES (?,?)", args: [id, JSON.stringify([main])] });
+  // A folder recorded before muninn knew about worktrees may be one of them: put the main folder first.
+  const row = (await db.execute({ sql: "SELECT paths FROM repos WHERE id=?", args: [id] })).rows[0];
+  const paths = row ? (JSON.parse(String(row.paths)) as string[]) : [];
+  if (paths[0] && paths[0] !== main && mainFolder(paths[0]) === main) await db.execute({ sql: "UPDATE repos SET paths=? WHERE id=?", args: [JSON.stringify([main, ...paths.filter((p) => p !== main && mainFolder(p) !== main)]), id] });
 }
 async function version(db: Client, id: string, by: string) {
   const l = await getLesson(db, id);

@@ -62,3 +62,31 @@ describe("lessons for a role", () => {
     expect(existsSync(join(root, ".worktrees", "reviewer", ".agents", "rules", "muninn.md"))).toBe(true);
   });
 });
+
+describe("a repo's folder", () => {
+  it("is its main folder, even when first seen from a worktree, and a worktree recorded earlier is corrected", async () => {
+    const { mainFolder } = await import("../src/repo/identity.js");
+    const db = await openDb();
+    const wt = join(root, ".worktrees", "reviewer");
+    execFileSync("git", ["-C", root, "worktree", "add", "-q", wt]);
+    const real = execFileSync("git", ["-C", root, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
+    expect(mainFolder(wt)).toBe(real);
+    await db.execute({ sql: "UPDATE repos SET paths=? WHERE id=?", args: [JSON.stringify([wt]), repo] });
+    await ensureRepo(db, repo, wt);
+    expect(JSON.parse(String((await db.execute({ sql: "SELECT paths FROM repos WHERE id=?", args: [repo] })).rows[0]!.paths))).toEqual([real]);
+  });
+});
+
+describe("runs, as the page and insights read them", () => {
+  it("say how many messages you typed in each session, quote each handoff, and list by repo", async () => {
+    const { buildRuns, listRuns, saveRuns } = await import("../src/workflow/runs.js");
+    const db = await openDb();
+    const lead: Session = { id: "p", tool: "claude-code", cwd: root, clientVersion: "1", unknown: 0, events: [{ k: "typed", text: "build it", ts: T(0) }, { k: "agent", text: "ok", ts: T(6) }],
+      subagents: [{ id: "s", tool: "claude-code", cwd: root, clientVersion: "1", unknown: 0, parent: "p", agentType: "reviewer", task: "Review the ledger diff", events: [{ k: "agent", text: "x", ts: T(2) }] }] };
+    const runs = buildRuns(repo, [lead]);
+    expect(runs[0]!.sessions.map((s) => [s.role, s.typed])).toEqual([["main", 1], ["reviewer", 0]]);
+    expect(runs[0]!.handoffs[0]).toMatchObject({ from_role: "main", to_role: "reviewer", evidence: "Review the ledger diff" });
+    await saveRuns(db, runs);
+    expect((await listRuns(db, repo)).map((r) => r.id)).toEqual([runs[0]!.id]);
+  });
+});
