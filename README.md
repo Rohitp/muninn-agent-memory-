@@ -2,7 +2,7 @@
 
 **Your coding agents forget everything between sessions. Teach them once, and it becomes second nature.**
 
-secondnature reads your past Claude Code, Codex and Cursor sessions, notices what you keep teaching your agents, and tells them at the right moment, so you stop repeating yourself.
+secondnature reads your past Claude Code, Codex, Cursor and Antigravity sessions, notices what you keep teaching your agents, and tells them at the right moment, so you stop repeating yourself.
 
 Inside, it goes by its code name, **muninn**, and so does its command: `muninn` is short to type, and `secondnature` works too.
 
@@ -38,7 +38,7 @@ And two things for you rather than your agents: `muninn pr` writes the "why" for
 Ask muninn a question about your own work and it answers from everything it keeps: kept lessons, the decisions and finished work in your branch plans, and your past sessions. It cites each source with its date, and you can ask follow-ups.
 
 - **On the page:** the Ask muninn box at the top.
-- **In any chat with Claude:** run `muninn mcp install` once. It adds muninn's MCP server (the standard way chat apps call outside tools) to Claude Code and the Claude desktop app. Then ask, in a normal chat, "what did we decide about the npm name?" or "how did we fix the webhook last time?". Claude can also suggest a lesson when you say "remember that…"; it waits in your review queue like any other. For Cursor or another app, `muninn mcp install` prints the command to add.
+- **In any chat with Claude:** run `muninn mcp install` once. It adds muninn's MCP server (the standard way chat apps call outside tools) to Claude Code, the Claude desktop app and Antigravity. Then ask, in a normal chat, "what did we decide about the npm name?" or "how did we fix the webhook last time?". Claude can also suggest a lesson when you say "remember that…"; it waits in your review queue like any other. For Cursor or another app, `muninn mcp install` prints the command to add.
 
 ## What it looks like
 
@@ -62,6 +62,7 @@ claude plugin install muninn-panel@muninn
 | Claude Code (terminal and desktop app) | Hooks: session start, your prompt, failed commands, subagents |
 | Codex | The same hooks, in `~/.codex/hooks.json`. Built from Codex's documentation, not yet tested live |
 | Cursor | Rules files in `.cursor/rules/` in each repo where you switch it on |
+| Antigravity | Rules files in `.agents/rules/` in each repo where you switch it on (`muninn antigravity on`): lessons told every session are always on, keyword lessons are read when they fit the task. Its sessions are read from its plain-text transcripts. Built from Antigravity's documentation; not yet tried on a real session |
 | Claude Code, without hooks | Optional, per repo: always-on lessons in `CLAUDE.local.md`, for this machine only and ignored by git (`muninn local-file on`, or the switch on the page) |
 | Any agent | `muninn ask "how do the benchmarks run?"` searches what you've kept |
 

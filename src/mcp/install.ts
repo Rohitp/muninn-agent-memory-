@@ -14,7 +14,26 @@ export function serverCommand(): { command: string; args: string[] } {
 export const desktopConfig = () => process.env.MUNINN_DESKTOP_CONFIG ?? join(homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json");
 const hasClaude = () => spawnSync("claude", ["--version"], { stdio: "ignore" }).status === 0;
 
-/** Registers muninn's MCP server with Claude Code (for every project) and the Claude desktop app. */
+/** Antigravity's global MCP settings (antigravity.google/docs/mcp), or the one tests point at. */
+export const antigravityConfig = () => process.env.MUNINN_ANTIGRAVITY_MCP ?? join(homedir(), ".gemini", "config", "mcp_config.json");
+/** Adds or removes muninn in a JSON file of the {"mcpServers": {...}} shape, keeping everything else and a backup. */
+function setServer(file: string, entry: { command: string; args: string[] } | null): boolean {
+  let cfg: Record<string, any> = {};
+  if (existsSync(file)) {
+    const raw = readFileSync(file, "utf8");
+    if (raw.trim()) { try { cfg = JSON.parse(raw); } catch { throw new Error(`${file} isn't valid JSON, so muninn left it alone.`); } }
+    if (entry) copyFileSync(file, `${file}.muninn-backup`);
+  } else if (!entry) return false;
+  if (!entry && !cfg.mcpServers?.muninn) return false;
+  const servers = { ...(cfg.mcpServers ?? {}) };
+  if (entry) servers.muninn = entry; else delete servers.muninn;
+  cfg.mcpServers = servers;
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
+  return true;
+}
+
+/** Registers muninn's MCP server with Claude Code (for every project), the Claude desktop app and Antigravity. */
 export function installMcp(): string[] {
   const { command, args } = serverCommand();
   const done: string[] = [];
@@ -35,6 +54,7 @@ export function installMcp(): string[] {
     writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
     done.push("the Claude desktop app (restart it to pick this up)");
   }
+  if (existsSync(dirname(antigravityConfig())) && setServer(antigravityConfig(), { command, args })) done.push("Antigravity");
   return done;
 }
 export function uninstallMcp(): string[] {
@@ -47,6 +67,7 @@ export function uninstallMcp(): string[] {
       if (cfg.mcpServers?.muninn) { delete cfg.mcpServers.muninn; writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n"); done.push("the Claude desktop app"); }
     } catch { /* leave a file muninn can't read alone */ }
   }
+  try { if (setServer(antigravityConfig(), null)) done.push("Antigravity"); } catch { /* leave a file muninn can't read alone */ }
   return done;
 }
 

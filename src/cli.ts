@@ -30,6 +30,7 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn ui                     Open muninn in your browser
   muninn cursor on|off|sync     Write kept lessons as Cursor rules in this repo
   muninn local-file on|off      Keep always-on lessons in this repo's CLAUDE.local.md (this machine only)
+  muninn antigravity on|off     Write kept lessons as Antigravity rules in this repo (.agents/rules)
   muninn keywords               Keywords in use, and how many lessons each has
   muninn mcp install            Ask about your work from any chat with Claude (adds muninn's MCP server)
   muninn ignore-repo [name] [--undo]  Leave a repo alone: not listed, scanned or told
@@ -73,6 +74,19 @@ async function localFileCmd(sub: string) {
   console.log(sub === "on"
     ? `Wrote this repo's always-on lessons into ${r.file}, between muninn's two marker lines. Claude Code reads that file at the start of every session. git ignores it in this clone, and muninn rewrites its part when lessons change.`
     : `Took muninn's lessons out of ${r.file}. Anything else in the file is left as it was.`);
+}
+
+async function antigravityCmd(sub: string) {
+  if (sub !== "on" && sub !== "off") { console.error("Usage: muninn antigravity on|off"); process.exitCode = 1; return; }
+  const [{ openDb }, { repoIdentity }, a, { ensureRepo }] = await Promise.all([import("./store/db.js"), import("./repo/identity.js"), import("./deliver/antigravity.js"), import("./store/lessons.js")]);
+  const db = await openDb();
+  const repo = repoIdentity(process.cwd());
+  if (!repo) { console.error("Run this inside a git repo."); process.exitCode = 1; return; }
+  if (sub === "off") { await a.disableAntigravity(db, repo); console.log("Removed muninn's Antigravity rules from this repo."); return; }
+  await ensureRepo(db, repo, process.cwd());
+  const r = await a.enableAntigravity(db, repo);
+  if (!r) { console.error("Couldn't find this repo's folder."); process.exitCode = 1; return; }
+  console.log(`Wrote ${r.files.join(", ")} in ${r.root}/.agents/rules. Antigravity's agent reads the always-on one every turn, and the others when they fit the task. git ignores them in this clone, and muninn rewrites them when lessons change.`);
 }
 
 /** muninn ignore-repo [repo] [--undo]: leave a repo alone (this one, or one named as the page lists it). */
@@ -147,6 +161,7 @@ async function main() {
     case "recall": return (await import("./commands/recall.js")).recall(args);
     case "cursor": return cursorCmd(args[0] ?? "");
     case "local-file": return localFileCmd(args[0] ?? "");
+    case "antigravity": return antigravityCmd(args[0] ?? "");
     case "ignore-repo": return ignoreRepoCmd(args);
     case "changes": return (await import("./commands/changes.js")).changes(args);
     case "pr": return (await import("./commands/pr.js")).pr(args);

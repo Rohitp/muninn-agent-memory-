@@ -84,7 +84,7 @@ export async function latestHandoff(db: Client, repo: string, branch: string, da
   const r = await db.execute({ sql: "SELECT id,repo_id,branch,session,tool,text,created_at FROM handoffs WHERE repo_id=? AND branch=? AND created_at>=? AND session IS NOT ? ORDER BY created_at DESC LIMIT 1", args: [repo, branch, since, excludeSession ?? null] });
   return (r.rows[0] as unknown as Handoff) ?? null;
 }
-const TOOL_NAMES: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor" };
+const TOOL_NAMES: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity" };
 export function age(iso: string, now = Date.now()): string {
   const m = Math.round((now - Date.parse(iso)) / 60_000);
   if (m < 60) return `${m} minute(s) ago`;

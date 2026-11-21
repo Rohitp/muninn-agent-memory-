@@ -24,7 +24,7 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
   const repos = (here ? (scan.byRepo.has(here) ? [here] : []) : [...scan.byRepo.keys()]).filter((r) => !ignored.has(r));
   const count = repos.reduce((n, r) => n + scan.byRepo.get(r)!.length, 0);
   if (!opts.auto) {
-    console.log(`Found ${scan.files.claude} Claude Code, ${scan.files.codex} Codex and ${scan.files.cursor} Cursor log files.`);
+    console.log(`Found ${scan.files.claude} Claude Code, ${scan.files.codex} Codex, ${scan.files.cursor} Cursor and ${scan.files.antigravity} Antigravity log files.`);
     console.log(`Reading ${count} session(s) in ${repos.length} repo(s).${scan.missingFolder ? ` ${scan.missingFolder} skipped because they didn't run inside a git repo (or the folder is gone). muninn learns per repo, so run your agents inside a project that's a git repo.` : ""}`);
   }
   if (!count) { if (!opts.auto) console.log(opts.allRepos ? "Nothing to learn from yet. Work with Claude Code, Codex or Cursor as usual; muninn checks your sessions on its own and suggestions appear in muninn ui." : "No sessions found for this repo yet. muninn checks on its own as you work."); return 0; }

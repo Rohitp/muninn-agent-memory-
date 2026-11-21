@@ -16,7 +16,7 @@ export const eventLine = (e: LogEvent): string =>
   : e.k === "cmd" ? `COMMAND${e.failed ? " (failed)" : ""}: ${e.cmd.slice(0, 200)}`
   : e.k === "file" ? `${e.tool.toUpperCase()}${e.failed ? " (failed)" : ""}: ${e.path.slice(0, 200)}`
   : "ENGINEER stopped the answer";
-export type Tool = "claude-code" | "codex" | "cursor";
+export type Tool = "claude-code" | "codex" | "cursor" | "antigravity";
 export type Session = { id: string; tool: Tool; cwd: string; clientVersion: string; events: LogEvent[]; unknown: number; branch?: string; file?: string };
 /** First text of every LLM run muninn starts, so readers can skip those sessions. */
 export const OWN_RUN_MARK = "[muninn-lesson-writer]";

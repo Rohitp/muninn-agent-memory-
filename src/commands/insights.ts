@@ -6,7 +6,7 @@ import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
 import { reportData } from "./report.js";
 
-const TOOL: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor" };
+const TOOL: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity" };
 const KIND: Record<string, string> = {
   loop: "the same command failing again and again", failure_then_fix: "commands that failed before they worked", mistake_returned: "a failure that keeps coming back",
   refetch: "re-running commands to see more output", stopped: "commands you stopped", wrong_path: "looking for files in the wrong place", big_file: "files too big to read in one go",

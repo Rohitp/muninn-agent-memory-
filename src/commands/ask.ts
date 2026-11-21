@@ -9,7 +9,7 @@ export type AskHit = {
 };
 const STOP = new Set(["the", "and", "for", "with", "how", "what", "where", "when", "why", "who", "which", "does", "this", "that", "are", "was", "can", "should", "would", "could", "there", "here", "from", "into", "about", "run", "use", "did", "our", "you", "your"]);
 export const shortRepo = (r: string | null) => (r ? r.split("/").filter(Boolean).at(-1) ?? r : "global");
-const TOOL: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor" };
+const TOOL: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity" };
 const SIGNAL: Record<string, string> = {
   repeat: "You asked for this in several sessions",
   correction: "You corrected an agent about this",

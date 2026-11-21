@@ -10,6 +10,8 @@ export function useHome() {
   const h = tmp(); process.env.MUNINN_HOME = h;
   process.env.MUNINN_CLAUDE_SETTINGS = join(h, "claude-settings.json");
   process.env.MUNINN_CODEX_HOOKS = join(h, "codex-hooks.json");
+  // Antigravity's MCP settings: a folder that doesn't exist, so tests never write the real one.
+  process.env.MUNINN_ANTIGRAVITY_MCP = join(h, "antigravity", "mcp_config.json");
   return h;
 }
 
