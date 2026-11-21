@@ -25,9 +25,11 @@ const BACK = new Set<Handoff["kind"]>(["review_rejected", "rework"]);
 export type RoleNumbers = {
   role: string; sessions: number; minutes: number; tokensIn: number; tokensOut: number; tokens: number; share: number;
   commands: number; failed: number; approvals: number; sentBack: number; reworkTokens: number; models: string[];
+  /** Messages you typed in this role's sessions: 0 when it ran on its own. */
+  typed: number;
 };
 export type RunNumbers = {
-  minutes: number; tokensIn: number; tokensOut: number; tokens: number; roles: RoleNumbers[];
+  minutes: number; tokensIn: number; tokensOut: number; tokens: number; typed: number; roles: RoleNumbers[];
   stalls: { from: string; to: string; minutes: number; after: string | null; before: string | null }[];
   approvals: number; sentBack: number; rework: number; reworkTokens: number;
 };
@@ -37,9 +39,9 @@ export function runNumbers(run: Run): RunNumbers {
   const by = new Map<string, RoleNumbers>();
   const models = new Map<string, Set<string>>();
   for (const s of run.sessions) {
-    const r = by.get(s.role) ?? { role: s.role, sessions: 0, minutes: 0, tokensIn: 0, tokensOut: 0, tokens: 0, share: 0, commands: 0, failed: 0, approvals: 0, sentBack: 0, reworkTokens: 0, models: [] };
+    const r = by.get(s.role) ?? { role: s.role, sessions: 0, minutes: 0, tokensIn: 0, tokensOut: 0, tokens: 0, share: 0, commands: 0, failed: 0, approvals: 0, sentBack: 0, reworkTokens: 0, models: [], typed: 0 };
     r.sessions++; r.minutes += mins(s.started_at, s.ended_at); r.tokensIn += s.tokens_in; r.tokensOut += s.tokens_out; r.tokens += s.tokens_in + s.tokens_out;
-    r.commands += s.commands ?? 0; r.failed += s.failed_commands ?? 0;
+    r.commands += s.commands ?? 0; r.failed += s.failed_commands ?? 0; r.typed += s.typed ?? 0;
     if (s.model) (models.get(s.role) ?? models.set(s.role, new Set()).get(s.role)!).add(s.model);
     by.set(s.role, r);
   }
@@ -68,7 +70,7 @@ export function runNumbers(run: Run): RunNumbers {
   const roles = [...by.values()].sort((a, b) => b.tokens - a.tokens);
   return {
     minutes: Math.round(mins(run.started_at, run.ended_at)), tokensIn: roles.reduce((a, r) => a + r.tokensIn, 0), tokensOut: roles.reduce((a, r) => a + r.tokensOut, 0), tokens,
-    roles, stalls, approvals: run.handoffs.filter((h) => h.kind === "approved").length,
+    typed: roles.reduce((a, r) => a + r.typed, 0), roles, stalls, approvals: run.handoffs.filter((h) => h.kind === "approved").length,
     sentBack: run.handoffs.filter((h) => h.kind === "review_rejected").length, rework: run.handoffs.filter((h) => h.kind === "rework").length,
     reworkTokens: roles.reduce((a, r) => a + r.reworkTokens, 0),
   };
@@ -80,13 +82,13 @@ export type RunFindings = { run: string; runEnded: string; at: string; items: Fi
 
 export function findingsPrompt(run: Run, n: RunNumbers, noticed: string[]): string {
   const data = {
-    minutes: n.minutes, tokens_read: n.tokensIn, tokens_written: n.tokensOut, wasted_tokens: run.wasted_tokens, approvals: n.approvals, sent_back: n.sentBack, follow_up_fixes: n.rework,
+    minutes: n.minutes, tokens_read: n.tokensIn, tokens_written: n.tokensOut, wasted_tokens: run.wasted_tokens, engineer_messages: n.typed, approvals: n.approvals, sent_back: n.sentBack, follow_up_fixes: n.rework,
     roles: n.roles.map((r) => ({ role: r.role, sessions: r.sessions, minutes: Math.round(r.minutes), tokens_read: r.tokensIn, tokens_written: r.tokensOut, share_of_tokens: Math.round(r.share * 100) + "%",
-      commands: r.commands, failed_commands: r.failed, approvals_given: r.approvals, times_sent_back: r.sentBack, tokens_after_sent_back: r.reworkTokens, models: r.models })),
+      commands: r.commands, failed_commands: r.failed, approvals_given: r.approvals, times_sent_back: r.sentBack, tokens_after_sent_back: r.reworkTokens, models: r.models, engineer_messages: r.typed })),
     tasks: run.sessions.filter((s) => s.task).slice(0, 12).map((s) => ({ role: s.role, task: redact(s.task!).slice(0, 160) })),
     stalls: n.stalls.map((s) => ({ minutes: s.minutes, after: s.after, before: s.before })),
     // Approvals are many and alike: send the others in full, and approvals only as a count above.
-    handoffs: run.handoffs.filter((h) => h.kind !== "approved").slice(0, 40).map((h) => ({ from: h.from_role, to: h.to_role, kind: h.kind, said: h.note ? redact(h.note).slice(0, 200) : undefined })),
+    handoffs: run.handoffs.filter((h) => h.kind !== "approved").slice(0, 40).map((h) => ({ from: h.from_role, to: h.to_role, kind: h.kind, said: h.note ? redact(h.note).slice(0, 200) : undefined, handed_over: h.evidence && h.evidence !== h.note ? redact(h.evidence).slice(0, 200) : undefined })),
     noticed_in_these_sessions: noticed.slice(0, 10),
   };
   return `${OWN_RUN_MARK}

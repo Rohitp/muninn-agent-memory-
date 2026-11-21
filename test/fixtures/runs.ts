@@ -5,7 +5,7 @@ const t = (h: number, m: number) => new Date(Date.UTC(2026, 10, 21, h, m)).toISO
 const sess = (id: string, role: string, from: [number, number], to: [number, number], tokensIn: number, tokensOut: number, commands = 0, failed = 0, parent: string | null = "main-1") => ({
   id, tool: "antigravity", role, branch: role === "main" ? "main" : `agent/${role}`, worktree: role === "main" ? null : `.worktrees/${role}`, parent_session: role === "main" ? null : parent,
   agent_type: role === "main" ? null : role, started_at: t(...from), ended_at: t(...to), tokens_in: tokensIn, tokens_out: tokensOut, cache_read: 0, model: "gemini-4-argon-high",
-  commands, failed_commands: failed, task: role === "main" ? null : `${role} work for milestone 1`,
+  commands, failed_commands: failed, task: role === "main" ? null : `${role} work for milestone 1`, typed: role === "main" ? 7 : 0,
 });
 const run = (r: Omit<Run, "team" | "tokens_in" | "tokens_out">): Run => ({ ...r, team: r.roles.length > 1, tokens_in: r.sessions.reduce((a, s) => a + s.tokens_in, 0), tokens_out: r.sessions.reduce((a, s) => a + s.tokens_out, 0) });
 

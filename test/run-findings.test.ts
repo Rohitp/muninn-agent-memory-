@@ -19,7 +19,8 @@ describe("a run's numbers", () => {
     expect(n.roles.find((r) => r.role === "checker")).toMatchObject({ approvals: 1 });
     // A follow-up posted to two roles counts for each.
     expect(n.roles.find((r) => r.role === "reviewer")).toMatchObject({ sentBack: 1, reworkTokens: 0 });
-    expect(n).toMatchObject({ approvals: 1, sentBack: 1, rework: 1, reworkTokens: 360_000 });
+    expect(n).toMatchObject({ approvals: 1, sentBack: 1, rework: 1, reworkTokens: 360_000, typed: 7 });
+    expect(n.roles.find((r) => r.role === "main")).toMatchObject({ typed: 7 });
   });
   it("finds gaps when no agent but the main session was working", () => {
     expect(runNumbers(factory).stalls).toEqual([{ from: "2026-11-21T16:18:00.000Z", to: "2026-11-21T16:26:00.000Z", minutes: 8, after: "builder", before: "qa" }]);
