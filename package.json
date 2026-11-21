@@ -1,6 +1,6 @@
 {
   "name": "secondnature",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Teach your coding agents something once and it becomes second nature: lessons from your past Claude Code, Codex and Cursor sessions, told to agents when they matter.",
   "license": "MIT",
   "author": "Rohit Parthasarathy",
