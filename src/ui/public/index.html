@@ -1131,14 +1131,19 @@ function toldSection() {
   }).join("");
   const how = (l) => l.how === "always" ? (l.role ? `goes only to agents in the ${l.role} role, and none got it (see Lessons for why)` : "goes to every session, yet none got it")
     : l.how === "keyword" ? `waits for ${l.keywords.slice(0, 4).map((k) => `"${k}"`).join(", ")}, which never came up` : "only if an agent looks it up, and none did";
-  const never = t.neverTold.slice(0, 8).map((l) => `<li><div class="row"><div class="main"><div class="title">${esc(clip(l.text, 140))}</div><div class="sub"><span class="status warn">not told in ${t.days} days</span> ${esc(how(l))}</div></div></div></li>`).join("");
+  // Flagged only once enough sessions here have run since it was kept; until then it is too early to say.
+  const late = t.neverTold.filter((l) => !l.tooEarly), early = t.neverTold.filter((l) => l.tooEarly);
+  const since = (l) => `${l.sessionsSince} session${l.sessionsSince === 1 ? "" : "s"} here since it was kept`;
+  const never = late.slice(0, 8).map((l) => `<li><div class="row"><div class="main"><div class="title">${esc(clip(l.text, 140))}</div><div class="sub"><span class="status warn">not told in ${esc(since(l))}</span> ${esc(how(l))}</div></div></div></li>`).join("");
+  const wait = early.slice(0, 8).map((l) => `<li><div class="row"><div class="main"><div class="title">${esc(clip(l.text, 140))}</div><div class="sub">Kept ${esc(ago(l.kept))}, ${esc(since(l))}${l.role ? ` · goes only to agents in the ${esc(l.role)} role` : ""}</div></div></div></li>`).join("");
   return `<section><h2>What secondnature told agents · ${t.sessions.length} session${t.sessions.length === 1 ? "" : "s"}</h2>
     ${t.sessions.length ? `<div class="panel">
       <div class="panelbody" style="display:flex;gap:6px 18px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--line)"><span style="color:var(--muted)">${total} checks:</span>${strip}</div>
       <div class="tablewrap"><table class="data"><thead><tr><th>Started</th><th>Who</th><th>What it was told</th></tr></thead><tbody>${rows}</tbody></table></div>
     </div>` : `<ul class="group"><li class="empty">No agent session here was told anything this week. secondnature tells agents through hooks: kept lessons when a session or agent starts, matching ones when a prompt or failed command fits, and where the last session left off.</li></ul>`}
     <p class="note">It checks at every session start, prompt and failed command; "nothing fit" is normal. The branch plan and the look-it-up reminder are shown from 21 Nov on.${t.unplaced ? ` ${t.unplaced} session${t.unplaced === 1 ? "" : "s"} this week couldn't be tied to a repo yet, so they aren't shown.` : ""}</p>
-    ${never ? `<h3 style="margin:18px 0 8px;font-size:14px">Kept, but not told in ${t.days} days · ${t.neverTold.length}</h3><ul class="group">${never}</ul>` : ""}
+    ${never ? `<h3 style="margin:18px 0 8px;font-size:14px">Kept, but not told · ${late.length}</h3><ul class="group">${never}</ul>` : ""}
+    ${wait ? `<h3 style="margin:18px 0 8px;font-size:14px">Too early to tell · ${early.length}</h3><ul class="group">${wait}</ul><p class="note">Kept recently. Each is checked once ${t.minSessions} sessions here have run since it was kept.</p>` : ""}
   </section>`;
 }
 /* What agents asked secondnature this week: through its MCP tools or muninn ask. Shows whether it's useful to them. */

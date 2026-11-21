@@ -11,10 +11,12 @@ export type ToldSession = {
   told: ToldItem[]; held: ToldItem[]; fromFile: number; loops: { cmd: string; n: number }[];
   checked: number; outcomes: Record<string, number>;
 };
-export type NeverTold = { id: string; text: string; role: string | null; how: "always" | "keyword" | "lookup"; keywords: string[] };
-export type ToldData = { days: number; sessions: ToldSession[]; outcomes: Record<string, number>; unplaced: number; neverTold: NeverTold[] };
+export type NeverTold = { id: string; text: string; role: string | null; kept: string; sessionsSince: number; tooEarly: boolean; how: "always" | "keyword" | "lookup"; keywords: string[] };
+export type ToldData = { days: number; sessions: ToldSession[]; outcomes: Record<string, number>; unplaced: number; minSessions: number; neverTold: NeverTold[] };
 
 type Row = Record<string, unknown>;
+/** A lesson not told is only worth flagging once this many sessions in its repo have run since it was kept. */
+export const MIN_SESSIONS = 3;
 const s = (v: unknown) => (v == null ? "" : String(v));
 
 export async function toldData(db: Client, repo: string | null, days = 7): Promise<ToldData> {
@@ -72,7 +74,7 @@ export async function toldData(db: Client, repo: string | null, days = 7): Promi
 
   // Lessons kept for this repo (or everywhere) that no agent was told in the window.
   const live = (await db.execute({
-    sql: `SELECT l.id,l.text,l.plain,l.always_on,l.role,(SELECT group_concat(pattern,'|') FROM triggers t WHERE t.lesson_id=l.id) kw
+    sql: `SELECT l.id,l.text,l.plain,l.always_on,l.role,coalesce(l.reviewed_at,l.created_at) kept,(SELECT group_concat(pattern,'|') FROM triggers t WHERE t.lesson_id=l.id) kw
           FROM lessons l WHERE l.status='live' AND l.off=0 AND (l.scope='global' OR l.repo_id IS ?)
           AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.lesson_id=l.id AND d.outcome='sent' AND d.ts>=?)
           ORDER BY l.updated_at DESC`,
@@ -80,8 +82,10 @@ export async function toldData(db: Client, repo: string | null, days = 7): Promi
   })).rows as unknown as Row[];
   const neverTold = live.map((l): NeverTold => {
     const keywords = s(l.kw).split("|").filter(Boolean);
-    return { id: s(l.id), text: s(l.plain || l.text), role: l.role ? s(l.role) : null, how: Number(l.always_on) ? "always" : keywords.length ? "keyword" : "lookup", keywords };
+    // Sessions here that were still running after it was kept: each was a chance to tell it.
+    const sessionsSince = [...by.values()].filter((x) => x.last >= s(l.kept)).length;
+    return { id: s(l.id), text: s(l.plain || l.text), role: l.role ? s(l.role) : null, kept: s(l.kept), sessionsSince, tooEarly: sessionsSince < MIN_SESSIONS, how: Number(l.always_on) ? "always" : keywords.length ? "keyword" : "lookup", keywords };
   });
   const list = [...by.values()].sort((a, b) => b.start.localeCompare(a.start));
-  return { days, sessions: list, outcomes, unplaced: unplacedSet.size, neverTold };
+  return { days, sessions: list, outcomes, unplaced: unplacedSet.size, minSessions: MIN_SESSIONS, neverTold };
 }

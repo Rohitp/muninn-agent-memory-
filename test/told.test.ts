@@ -65,5 +65,9 @@ describe("what secondnature told agents", () => {
     await told("s1", "SessionStart", "sent", { lesson: "A" });
     const d = await toldData(db, repo, 7);
     expect(d.neverTold.map((l) => [l.id, l.how, l.role]).sort()).toEqual([["K", "keyword", null], ["L", "lookup", null], ["R", "always", "qa"]]);
+    // Only one session has run since they were kept: too early to flag any of them.
+    expect(d.neverTold.every((l) => l.tooEarly && l.sessionsSince === 1)).toBe(true);
+    for (const s of ["s2", "s3"]) await told(s, "SessionStart", "no_match", { repo });
+    expect((await toldData(db, repo, 7)).neverTold.every((l) => !l.tooEarly && l.sessionsSince === 3)).toBe(true);
   });
 });
