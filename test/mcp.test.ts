@@ -44,7 +44,7 @@ describe("answers from everything muninn keeps", () => {
 
 describe("the MCP tools", () => {
   it("lists its tools, each with a schema", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["search_history", "get_plan", "get_week", "get_related", "list_repos", "suggest_lesson"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["search_history", "get_plan", "get_week", "get_related", "list_repos", "suggest_lesson", "get_runs", "list_lessons", "where_left_off"]);
     for (const t of TOOLS) expect(t.inputSchema.type).toBe("object");
   });
   it("finds a repo by its short name, and says which ones exist when it can't", async () => {
@@ -75,7 +75,7 @@ describe("the MCP tools", () => {
     await new Promise<void>((ok, fail) => { const t = setInterval(() => { if (lines.length >= 3) { clearInterval(t); ok(); } }, 50); setTimeout(() => { clearInterval(t); fail(new Error(`only ${lines.length} replies`)); }, 15000); });
     child.kill();
     expect(lines[0]).toMatchObject({ id: 1, result: { protocolVersion: "2025-06-18", serverInfo: { name: "muninn" } } });
-    expect(lines[1].result.tools).toHaveLength(6);
+    expect(lines[1].result.tools).toHaveLength(9);
     expect(lines[2].result.content[0].text).toContain("shop");
   }, 30000);
 });
@@ -170,5 +170,34 @@ describe("questions to try", () => {
     expect(prompt).toContain("Publish as secondnature");
     expect(await getSuggestions(db, repo)).toHaveLength(4);
     expect((await getSuggestions(db, repo))[1]).toBe("What blocks the 0.1.1 release?");
+  });
+});
+
+describe("autonomous work, lessons and handoffs, from a chat", () => {
+  it("reports runs with each role's numbers and how role lessons are doing", async () => {
+    const db = await openDb();
+    const { saveRuns } = await import("../src/workflow/runs.js");
+    const at = (m: number) => new Date(Date.UTC(2026, 10, 21, 10, m)).toISOString();
+    const sess = (role: string, typed: number) => ({ id: role, tool: "antigravity", role, branch: null, worktree: role, parent_session: role === "main" ? null : "main", agent_type: null, started_at: at(0), ended_at: at(30), tokens_in: 1000, tokens_out: 200, cache_read: 0, model: null, commands: 3, failed_commands: 0, task: null, typed });
+    await saveRuns(db, [{ id: "r1", repo_id: repo, started_at: at(0), ended_at: at(30), roles: ["main", "builder", "reviewer"], team: true, bounces: 0, wasted_tokens: 0, tokens_in: 3000, tokens_out: 600,
+      sessions: [sess("main", 2), sess("builder", 0), sess("reviewer", 0)],
+      handoffs: [{ from_role: "reviewer", to_role: "everyone", at: at(10), kind: "approved" }, { from_role: "builder", to_role: "everyone", at: at(20), kind: "rework", note: "fix: null guard (M1 #3 follow-up)" }] }]);
+    const { createLesson } = await import("../src/store/lessons.js");
+    await createLesson(db, { repo_id: repo, text: "Before approving, test null inputs", source: "inferred", signal: "missed", status: "live", by: "t", role: "reviewer", why: "Fixes were needed after approval." });
+    const runs = await callTool(db, "get_runs", { repo: "shop" }, embed);
+    expect(runs).toContain("roles: main, builder, reviewer · the engineer typed 2 message(s)");
+    expect(runs).toContain("1 approval(s), 0 sent back, 1 fix(es) after approval");
+    expect(runs).toContain("builder fixed later: fix: null guard (M1 #3 follow-up)");
+    expect(runs).toContain("for the reviewer: Before approving, test null inputs");
+    const lessons = await callTool(db, "list_lessons", { repo: "shop" }, embed);
+    expect(lessons).toContain("(only when searched, for the reviewer only)");
+    expect(lessons).toContain("Why: Fixes were needed after approval.");
+    expect(lessons).toContain("How it's doing: No runs with the reviewer since you kept it");
+  });
+  it("says where the last session on a branch left off", async () => {
+    const db = await openDb();
+    expect(await callTool(db, "where_left_off", { repo: "shop", branch: "main" }, embed)).toMatch(/^No session on main in .* has left a note/);
+    await db.execute({ sql: "INSERT INTO handoffs (id,repo_id,branch,session,tool,text,created_at) VALUES ('h1',?,?,?,?,?,?)", args: [repo, "main", "s1", "claude-code", "Goal: ship it. Next: run the release.", new Date().toISOString()] });
+    expect(await callTool(db, "where_left_off", { repo: "shop", branch: "main" }, embed)).toContain("Next: run the release.");
   });
 });
