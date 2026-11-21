@@ -561,7 +561,7 @@ function suggestionRow(l) {
   const ev = (l.evidence || []).slice(0, 3).map((e) => runs ? `<div class="mono run">${esc(e.quote)}</div>` : `<div>"${esc(e.quote)}"</div>`).join("");
   return `<li data-id="${esc(l.id)}">
     <div class="row">
-      <button class="main" data-open="${esc(l.id)}" aria-expanded="${isOpen}"><div class="title">${esc(l.plain || l.text)}</div><div class="sub">${esc(l.origin)}</div>${l.worth ? `<div class="sub">${esc(l.worth)}</div>` : ""}</button>
+      <button class="main" data-open="${esc(l.id)}" aria-expanded="${isOpen}"><div class="title">${esc(l.plain || l.text)}</div><div class="sub">${esc(l.origin)}</div>${l.why ? `<div class="sub why">Why: ${esc(l.why)}</div>` : ""}${l.worth ? `<div class="sub">${esc(l.worth)}</div>` : ""}</button>
       <button class="x" data-dismiss="${esc(l.id)}" aria-label="Don't suggest this" title="Don't suggest this">×</button>
       <button class="add" data-add="${esc(l.id)}">Add</button>
     </div>
@@ -570,7 +570,7 @@ function suggestionRow(l) {
       <textarea id="t-${esc(l.id)}" rows="3" data-f="text">${esc(l.text)}</textarea>
       ${whenChoices(d.route, (d.keywords.length ? d.keywords : l.suggested || []).join(", "))}
       ${l.scope !== "global" ? `<label class="checkline"><input type="checkbox" data-f="global" ${d.global ? "checked" : ""}> Tell agents in all my repos, not just this one</label>` : ""}
-      ${ev ? `<div class="evidence">${runs ? "What ran in your session:" : ["repeat", "correction", "explained", "confused", "friction"].includes(l.signal) ? "You said:" : "From your session:"} ${ev}</div>` : ""}
+      ${ev ? `<div class="evidence">${runs ? "What ran in your session:" : ["repeat", "correction", "explained", "confused", "friction", "stated"].includes(l.signal) ? "You said:" : l.signal === "promised" ? "The agent said:" : "From your session:"} ${ev}</div>` : ""}
       <div class="btns"><button class="btn primary" data-add="${esc(l.id)}" data-custom="1">Add</button><button class="btn" data-open="${esc(l.id)}">Cancel</button></div>
     </div>` : ""}
   </li>`;
@@ -594,6 +594,7 @@ function lessonRow(l) {
     ${isOpen ? `<div class="detail">
       <label for="t-${esc(l.id)}">What agents are told</label>
       <textarea id="t-${esc(l.id)}" rows="3" data-f="text">${esc(l.text)}</textarea>
+      ${l.why ? `<p class="hint">Why muninn kept this: ${esc(l.why)}</p>` : ""}
       ${whenChoices(route, l.triggers.join(", "))}
       <label for="r-${esc(l.id)}">Applies to</label>
       <select id="r-${esc(l.id)}" data-f="applies" style="height:38px;border:1px solid var(--line-strong);border-radius:10px;background:var(--group);padding:0 10px;font-size:14px">

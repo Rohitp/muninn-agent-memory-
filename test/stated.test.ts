@@ -23,6 +23,8 @@ describe("standing instructions", () => {
     expect(isStanding("lets merge it")).toBe(false);
     expect(isStanding("should we always use branches for features?")).toBe(false);
     expect(isStanding("I always forget where this lives")).toBe(false);
+    expect(isStanding("From now on I delete a branch only after checking the merge actually happened. - is this a lesson.")).toBe(false);
+    expect(isStanding("From now on I want every feature on its own branch.")).toBe(true);
   });
   it("are read from messages sent while the agent was working", () => {
     const f = join(tmp(), "s.jsonl");

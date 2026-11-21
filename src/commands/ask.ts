@@ -25,6 +25,7 @@ const SIGNAL: Record<string, string> = {
   big_file: "Learned from a file too big to read in one go",
   skimmed: "Learned from long answers you skimmed or stopped",
   stated: "You stated this as a rule",
+  promised: "An agent promised this after a mistake",
 };
 /** Where a lesson came from, in words: "Learned from a command that failed and was then fixed, in Claude Code, Nov 6". */
 export async function originOf(db: Client, l: { id: string; source: string; signal: string | null; created_at?: string }): Promise<string> {

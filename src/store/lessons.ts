@@ -1,8 +1,8 @@
 import type { Client } from "@libsql/client";
 import { randomUUID } from "node:crypto";
 
-export type Lesson = { off: number; plain: string | null; kind: string; suggested_keywords: string | null; suggested_scope: string | null; updated_at: string; id: string; repo_id: string | null; scope: string; text: string; source: string; signal: string | null; status: string; sessions: number; last_seen: string | null; reviewed_at: string | null; first_shown_at: string | null; news_to_engineer: number | null; edited_by_person: number; always_on: number };
-const COLS = "off,plain,kind,suggested_keywords,suggested_scope,updated_at,id,repo_id,scope,text,source,signal,status,sessions,last_seen,reviewed_at,first_shown_at,news_to_engineer,edited_by_person,always_on";
+export type Lesson = { why: string | null; off: number; plain: string | null; kind: string; suggested_keywords: string | null; suggested_scope: string | null; updated_at: string; id: string; repo_id: string | null; scope: string; text: string; source: string; signal: string | null; status: string; sessions: number; last_seen: string | null; reviewed_at: string | null; first_shown_at: string | null; news_to_engineer: number | null; edited_by_person: number; always_on: number };
+const COLS = "why,off,plain,kind,suggested_keywords,suggested_scope,updated_at,id,repo_id,scope,text,source,signal,status,sessions,last_seen,reviewed_at,first_shown_at,news_to_engineer,edited_by_person,always_on";
 const now = () => new Date().toISOString();
 
 export async function ensureRepo(db: Client, id: string, path: string) {
@@ -15,12 +15,12 @@ async function version(db: Client, id: string, by: string) {
   const triggers = (await db.execute({ sql: "SELECT pattern FROM triggers WHERE lesson_id=?", args: [id] })).rows.map((r) => r.pattern);
   await db.execute({ sql: "INSERT INTO lesson_versions (id,lesson_id,snapshot,changed_by,changed_at) VALUES (?,?,?,?,?)", args: [randomUUID(), id, JSON.stringify({ ...l, triggers }), by, now()] });
 }
-export async function createLesson(db: Client, l: { repo_id: string | null; scope?: string; text: string; source: string; signal?: string | null; suggestedScope?: string; kind?: "rule" | "note"; suggestedKeywords?: string[]; status: string; sessions?: number; last_seen?: string | null; vector?: Float32Array; by: string; reviewed?: boolean; wasted?: number }) {
+export async function createLesson(db: Client, l: { repo_id: string | null; scope?: string; text: string; source: string; signal?: string | null; suggestedScope?: string; kind?: "rule" | "note"; suggestedKeywords?: string[]; status: string; sessions?: number; last_seen?: string | null; vector?: Float32Array; by: string; reviewed?: boolean; wasted?: number; why?: string }) {
   const id = randomUUID(); const t = now();
   const vec = l.vector ? `[${[...l.vector].join(",")}]` : null;
   await db.execute({
-    sql: `INSERT INTO lessons (id,repo_id,scope,text,source,signal,suggested_scope,kind,suggested_keywords,status,sessions,last_seen,reviewed_at,embedding,created_at,updated_at,wasted_tokens) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,${vec ? "vector32(?)" : "NULL"},?,?,?)`,
-    args: [id, l.repo_id, l.scope ?? (l.repo_id ? "repo" : "global"), l.text, l.source, l.signal ?? null, l.suggestedScope ?? null, l.kind ?? "rule", l.suggestedKeywords?.length ? JSON.stringify(l.suggestedKeywords) : null, l.status, l.sessions ?? 0, l.last_seen ?? null, l.reviewed ? t : null, ...(vec ? [vec] : []), t, t, l.wasted ?? null],
+    sql: `INSERT INTO lessons (id,repo_id,scope,text,source,signal,suggested_scope,kind,suggested_keywords,status,sessions,last_seen,reviewed_at,embedding,created_at,updated_at,wasted_tokens,why) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,${vec ? "vector32(?)" : "NULL"},?,?,?,?)`,
+    args: [id, l.repo_id, l.scope ?? (l.repo_id ? "repo" : "global"), l.text, l.source, l.signal ?? null, l.suggestedScope ?? null, l.kind ?? "rule", l.suggestedKeywords?.length ? JSON.stringify(l.suggestedKeywords) : null, l.status, l.sessions ?? 0, l.last_seen ?? null, l.reviewed ? t : null, ...(vec ? [vec] : []), t, t, l.wasted ?? null, l.why ?? null],
   });
   await db.execute({ sql: "INSERT INTO lessons_fts (lesson_id,text) VALUES (?,?)", args: [id, l.text] });
   await version(db, id, l.by);

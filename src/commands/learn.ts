@@ -95,6 +95,10 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
     try { const n = await fillExplanations(db, runner, embed); if (n && !opts.auto) console.log(`Wrote plain-English summaries for ${n} lesson(s).`); }
     catch (e) { if (!opts.auto) console.log(`Couldn't write summaries this time: ${e instanceof Error ? e.message : String(e)}`); }
     await saveUsage(db, runner, "plain lines");
+    // A why for lessons kept before muninn wrote one with each lesson.
+    try { const { explainWhy } = await import("../learn/why.js"); for (let i = 0; i < 4; i++) if (!(await explainWhy(db, runner))) break; }
+    catch { /* asked again next time */ }
+    await saveUsage(db, runner, "lesson reasons");
   }
   // Handoffs for recent sessions that ended without the SessionEnd hook, such as Cursor's.
   if (runner && !isPaused()) {

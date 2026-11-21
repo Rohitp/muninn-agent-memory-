@@ -7,10 +7,10 @@ import { OWN_RUN_MARK } from "../logs/types.js";
 import type { Moment } from "./signals.js";
 
 /** Turns moments into lesson text. Returns null for a moment that is not worth a lesson. */
-export type Written = { text: string; scope: "repo" | "global"; kind?: "rule" | "note"; keywords?: string[] } | null;
+export type Written = { text: string; scope: "repo" | "global"; kind?: "rule" | "note"; keywords?: string[]; why?: string } | null;
 export type Writer = { name: string; write: (moments: Moment[]) => Promise<Written[]> };
 
-const Out = z.array(z.object({ i: z.number().int(), lesson: z.string().max(1000).nullable(), scope: z.enum(["repo", "global"]).optional(), keywords: z.array(z.string().max(40)).max(5).optional() }));
+const Out = z.array(z.object({ i: z.number().int(), lesson: z.string().max(1000).nullable(), scope: z.enum(["repo", "global"]).optional(), keywords: z.array(z.string().max(40)).max(5).optional(), why: z.string().max(400).nullable().optional() }));
 
 export function buildPrompt(moments: Moment[]): string {
   const items = moments.map((m, i) => ({ i, kind: m.signal, seen: m.text, context: m.context, sessions: m.sessions, days: m.days, quotes: m.quotes.map((q) => q.quote) }));
@@ -33,6 +33,8 @@ Items of kind "wrong_path" are paths agents looked for that weren't there, match
 
 Items of kind "stated" are something the engineer said once that reads like a standing instruction. Return a lesson only if it says how work should be done from now on, in this repo or in general (for example "Put each feature on its own branch and merge it through a pull request"), not a request about the task at hand ("merge it", "let's fix this now"). Keep the engineer's meaning and specifics; don't widen it. Scope is "repo" unless it is plainly about how to work anywhere.
 
+Items of kind "promised" come from the agent's own messages, not the engineer's: a promise about how it will work from now on ("From now on I delete a branch only after checking the merge happened"), or a mistake it owned up to. "context" holds what the engineer last asked and the agent's whole message. Return a lesson only if the agent made a real mistake or a real promise that would help a future agent in a different session avoid the same problem. Prefer a mechanical fix the context supports (a safer command or flag) over "be careful". Return null for apologies about wording, promises about the task at hand ("next time I run the scan it will…"), plans for the current work, or things the engineer did not care about. Most items should be null. Scope is "global" when the mistake could happen in any repo (git, shell, how to report).
+
 Items of kind "skimmed" count long answers the engineer replied to faster than they could have read, or stopped while being written. "context" shows how each answer began and what the engineer said next. Look at what they replied to: if they acted on the first lines and skipped the rest, return a lesson about the shape of answers (put the result and the next step first, in a line or two, and keep the rest short). Do not tell agents to explain less or drop plain-language explanations; the engineer may want those and still skim. Return null if the quick replies were to questions answered in the first line, or don't share a pattern. This lesson is usually "global".
 
 For command items ("failure_then_fix", "mistake_returned", "loop", "refetch", "stopped"), "quotes" are the actual runs, each as "$ command  →  first line it printed". Check them before writing anything: return null unless they show the same command doing what "seen" says. If the runs are different commands or scripts that only look alike, or the output doesn't show the claimed failure or repeat, return null. Base the lesson on what the runs show, not on "seen" alone.
@@ -41,7 +43,9 @@ Do not claim one thing fixed another unless the evidence shows it. Do not add fa
 
 Also say whether a lesson applies only to this repo ("repo") or to any repo, such as shell behaviour or how to explain things ("global").
 
-Reply with only a JSON array of {"i": number, "lesson": string or null, "scope": "repo" or "global", "keywords": [strings], only for notes}, one per item.
+For every lesson, also return "why": one plain sentence saying what happened in the sessions that makes it worth keeping, from the evidence only (for example "A pull request merge failed, but the next command deleted the branch anyway, which closed the pull request"). Say what went wrong or what the engineer said, not what the lesson tells agents to do.
+
+Reply with only a JSON array of {"i": number, "lesson": string or null, "scope": "repo" or "global", "keywords": [strings], only for notes, "why": string}, one per item.
 
 DATA:
 ${JSON.stringify(items, null, 1)}`;
@@ -50,7 +54,7 @@ export function parseReply(reply: string, n: number): Written[] {
   const start = reply.indexOf("["); const end = reply.lastIndexOf("]");
   if (start < 0 || end < 0) throw new Error("the lesson writer did not return JSON");
   const out: Written[] = new Array(n).fill(null);
-  for (const { i, lesson, scope, keywords } of Out.parse(JSON.parse(reply.slice(start, end + 1)))) if (i >= 0 && i < n && lesson) out[i] = { text: lesson, scope: scope ?? "repo", ...(keywords?.length ? { keywords: keywords.map((k) => k.toLowerCase().trim()).filter(Boolean) } : {}) };
+  for (const { i, lesson, scope, keywords, why } of Out.parse(JSON.parse(reply.slice(start, end + 1)))) if (i >= 0 && i < n && lesson) out[i] = { text: lesson, scope: scope ?? "repo", ...(keywords?.length ? { keywords: keywords.map((k) => k.toLowerCase().trim()).filter(Boolean) } : {}), ...(why?.trim() ? { why: why.trim() } : {}) };
   return out;
 }
 
