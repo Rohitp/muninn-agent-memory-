@@ -43,9 +43,9 @@ export async function listLessons(db: Client, f: { repo?: string | null; status?
   const r = await db.execute({ sql: `SELECT ${COLS} FROM lessons ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY sessions DESC, last_seen DESC`, args });
   return r.rows as unknown as Lesson[];
 }
-export async function lessonVectors(db: Client, repo: string): Promise<{ id: string; status: string; text: string; vector: Float32Array | null }[]> {
-  const r = await db.execute({ sql: "SELECT id,status,text,vector_extract(embedding) v FROM lessons WHERE repo_id=? AND embedding IS NOT NULL", args: [repo] });
-  return r.rows.map((x) => ({ id: String(x.id), status: String(x.status), text: String(x.text), vector: x.v ? Float32Array.from(JSON.parse(String(x.v))) : null }));
+export async function lessonVectors(db: Client, repo: string): Promise<{ id: string; status: string; text: string; vector: Float32Array | null; role?: string | null }[]> {
+  const r = await db.execute({ sql: "SELECT id,status,text,role,vector_extract(embedding) v FROM lessons WHERE repo_id=? AND embedding IS NOT NULL", args: [repo] });
+  return r.rows.map((x) => ({ id: String(x.id), status: String(x.status), text: String(x.text), role: x.role == null ? null : String(x.role), vector: x.v ? Float32Array.from(JSON.parse(String(x.v))) : null }));
 }
 export async function addEvidence(db: Client, id: string, quotes: { tool: string; session: string; ts: string; quote: string }[]) {
   for (const q of quotes) await db.execute({ sql: "INSERT OR IGNORE INTO evidence (lesson_id,tool,session,seen_at,quote) VALUES (?,?,?,?,?)", args: [id, q.tool, q.session, q.ts, q.quote] });

@@ -90,3 +90,22 @@ describe("runs, as the page and insights read them", () => {
     expect((await listRuns(db, repo)).map((r) => r.id)).toEqual([runs[0]!.id]);
   });
 });
+
+describe("work fixed after it was approved", () => {
+  it("becomes a lesson for the role that approved it, and a send-back quotes its whole sentence", async () => {
+    const { sentenceAround } = await import("../src/workflow/runs.js");
+    const { REJECTS } = await import("../src/workflow/runs.js");
+    expect(REJECTS.test("The schedule's RunTask is rejected (for example, overrides not accepted).")).toBe(false);
+    expect(REJECTS.test("Rejecting this PR: the migration is missing.")).toBe(true);
+    expect(sentenceAround("Looks fine overall. But the migration is wrong, so changes requested here. Thanks", 50)).toBe("But the migration is wrong, so changes requested here.");
+    const msg = (m: number, text: string) => ({ ts: T(m), dir: "out" as const, from: null, to: [...text.matchAll(/@([\w-]+)/g)].map((x) => x[1]!), text });
+    const agent = (id: string, type: string, m: number, messages: ReturnType<typeof msg>[]): Session => ({ id, tool: "antigravity", cwd: root, clientVersion: "1", unknown: 0, parent: "p", agentType: type, events: [{ k: "agent", text: "x", ts: T(m) }], messages });
+    const lead: Session = { id: "p", tool: "antigravity", cwd: root, clientVersion: "1", unknown: 0, events: [{ k: "typed", text: "go", ts: T(0) }, { k: "agent", text: "ok", ts: T(9) }], subagents: [
+      agent("v", "reviewer", 2, [msg(2, "@builder [done] PR #1 APPROVE"), msg(5, "@builder [done] PR #2 APPROVE")]),
+      agent("b", "builder", 4, [msg(4, "@everyone PR #2 opened\n- fix: null guard (M1 #3 follow-up)"), msg(7, "@everyone PR #3 opened\n- fix: bad parse (M2 #5 follow-up)")]),
+    ] };
+    const ms = feedbackMoments(repo, [lead]);
+    expect(ms.map((m) => [m.signal, m.role]).sort()).toEqual([["missed", "reviewer"], ["sent_back", "builder"]]);
+    expect(ms.find((m) => m.signal === "missed")!.quotes[0]!.quote).toBe("fixed after reviewer approved: - fix: null guard (M1 #3 follow-up)");
+  });
+});

@@ -61,7 +61,8 @@ export async function learnRepo(db: Client, repo: string, sessions: Session[], d
     const neg = NEG.test(k.text);
     const blocked = existing.find((e) => e.vector && ["rejected", "retired"].includes(e.status) && cosine(e.vector, k.vector) >= 0.98);
     if (blocked) { res.dropped++; continue; }
-    const same = existing.find((e) => e.vector && ["proposed", "live"].includes(e.status) && cosine(e.vector, k.vector) >= deps.cutoff && NEG.test(e.text) === neg);
+    // The same advice for two roles is two lessons: each role is told only its own.
+    const same = existing.find((e) => e.vector && ["proposed", "live"].includes(e.status) && (e.role ?? null) === (k.m.role ?? null) && cosine(e.vector, k.vector) >= deps.cutoff && NEG.test(e.text) === neg);
     if (same) {
       await addEvidence(db, same.id, k.m.quotes); await touchSeen(db, same.id, k.m.sessions, k.m.last);
       if (k.why) await db.execute({ sql: "UPDATE lessons SET why=? WHERE id=? AND why IS NULL", args: [k.why, same.id] });
@@ -72,7 +73,7 @@ export async function learnRepo(db: Client, repo: string, sessions: Session[], d
     const source = k.m.signal === "repeat" && !deps.writer ? "own_words" : "inferred";
     const id = await createLesson(db, { repo_id: repo, text: k.text, source, signal: k.m.signal, suggestedScope: k.scope, kind: k.m.signal === "explained" ? "note" : "rule", suggestedKeywords: k.keywords, status: "proposed", sessions: k.m.sessions, last_seen: k.m.last, vector: k.vector, by: deps.writer ? `learn:${deps.writer.name}` : "learn", wasted: k.m.wasted, why: k.why, role: k.m.role });
     await addEvidence(db, id, k.m.quotes);
-    existing.push({ id, status: "proposed", text: k.text, vector: k.vector });
+    existing.push({ id, status: "proposed", text: k.text, vector: k.vector, role: k.m.role ?? null });
     res.newLessons++;
   }
   return res;
