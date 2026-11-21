@@ -72,6 +72,8 @@ export async function makeHandoff(db: Client, s: Session, runner: Runner, branch
   if (exists) {
     await db.execute({ sql: "UPDATE handoffs SET text=?, branch=?, created_at=? WHERE session=?", args: [text, branch, h.created_at, s.id] });
     h.id = String((await db.execute({ sql: "SELECT id FROM handoffs WHERE session=?", args: [s.id] })).rows[0]!.id);
+    // A rewritten handoff is new news for the branch's plan: fold it in again.
+    await db.execute({ sql: "DELETE FROM plan_applied WHERE handoff_id=?", args: [h.id] }).catch(() => undefined);
   }
   else await db.execute({ sql: "INSERT INTO handoffs (id,repo_id,branch,session,tool,text,created_at) VALUES (?,?,?,?,?,?,?)", args: [h.id, h.repo_id, h.branch, h.session, h.tool, h.text, h.created_at] });
   return h;
@@ -97,8 +99,14 @@ export const handoffText = (h: Handoff, staleDays = 7, now = Date.now()) => {
   return `Where the last session on branch ${h.branch} left off (${TOOL_NAMES[h.tool] ?? h.tool}, ${age(h.created_at, now)}). Written by muninn from that session's log. Check it against the code before relying on it${old ? `. It's ${age(h.created_at, now)} old, so run git log to see what changed since, and treat its next steps as possibly out of date` : ""}:\n${h.text}`;
 };
 
-/** For sessions that ended without a SessionEnd hook (Cursor, or hooks not installed): the newest recent session per branch with no handoff. */
-export function needsHandoff(sessions: Session[], have: Set<string>, days: number, now = Date.now()): Session[] {
+/** A session that carried on this long after its handoff was written gets a new one: the old one stops where it was written. */
+export const HANDOFF_STALE_MS = 30 * 60_000;
+/**
+ * For sessions that ended without a SessionEnd hook (Antigravity, Cursor, or hooks not installed): the newest recent
+ * session per branch whose handoff is missing, or was written while it was still running and it has carried on since.
+ * `have` maps a session to when its handoff was written.
+ */
+export function needsHandoff(sessions: Session[], have: Map<string, string> | Set<string>, days: number, now = Date.now()): Session[] {
   const since = new Date(now - days * 86_400_000).toISOString();
   const newest = new Map<string, Session>();
   for (const s of sessions) {
@@ -108,5 +116,10 @@ export function needsHandoff(sessions: Session[], have: Set<string>, days: numbe
     const cur = newest.get(key);
     if (!cur || (cur.events.at(-1)?.ts ?? "") < last) newest.set(key, s);
   }
-  return [...newest.values()].filter((s) => !have.has(s.id));
+  return [...newest.values()].filter((s) => {
+    if (!have.has(s.id)) return true;
+    const written = have instanceof Map ? have.get(s.id) : undefined;
+    const last = s.events.at(-1)?.ts ?? "";
+    return !!written && Date.parse(last) - Date.parse(written) > HANDOFF_STALE_MS;
+  });
 }

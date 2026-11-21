@@ -13,6 +13,11 @@ export function serverCommand(): { command: string; args: string[] } {
 /** The Claude desktop app's MCP settings file (or the one tests point at). */
 export const desktopConfig = () => process.env.MUNINN_DESKTOP_CONFIG ?? join(homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json");
 const hasClaude = () => spawnSync("claude", ["--version"], { stdio: "ignore" }).status === 0;
+/** Whether Claude Code lists muninn among its MCP servers. Null when Claude Code isn't installed here. */
+export function claudeHasMuninn(): boolean | null {
+  if (process.env.MUNINN_DESKTOP_CONFIG || !hasClaude()) return null;
+  return spawnSync("claude", ["mcp", "get", "muninn"], { stdio: "ignore", timeout: 20_000 }).status === 0;
+}
 
 /** Antigravity's global MCP settings (antigravity.google/docs/mcp), or the one tests point at. */
 export const antigravityConfig = () => process.env.MUNINN_ANTIGRAVITY_MCP ?? join(homedir(), ".gemini", "config", "mcp_config.json");
@@ -56,7 +61,8 @@ export function installMcp(): string[] {
   if (!process.env.MUNINN_DESKTOP_CONFIG && hasClaude()) {
     spawnSync("claude", ["mcp", "remove", "--scope", "user", "muninn"], { stdio: "ignore" });
     execFileSync("claude", ["mcp", "add", "--scope", "user", "muninn", "--", command, ...args], { stdio: "ignore" });
-    done.push("Claude Code (every project)");
+    // Claude Code sessions already running can rewrite its settings from memory and drop what was just added.
+    done.push(claudeHasMuninn() ? "Claude Code (every project)" : "Claude Code, though it doesn't list muninn yet: close running Claude Code sessions and run \"muninn mcp install\" again");
   }
   const file = desktopConfig();
   if (existsSync(dirname(file))) {
