@@ -123,11 +123,18 @@ export async function deliver(db: Client, client: string, input: HookInput): Pro
   const plan = freshStart && repo && branch ? planText(await getPlan(db, repo, branch), repo.split("/").pop() ?? repo, branch) : null;
   // Lessons and notes kept "only if an agent looks it up" reach agents only if they know to look: say so once, at the start.
   const searchable = freshStart ? Number((await db.execute({ sql: `SELECT count(*) n FROM lessons l WHERE ${scope} AND l.always_on=0 AND NOT EXISTS (SELECT 1 FROM triggers t WHERE t.lesson_id=l.id)`, args: [repo, repo, role] })).rows[0]?.n ?? 0) : 0;
-  // Past sessions here are stored and searchable: say so once, at the start, so agents look before redoing work.
-  const stored = freshStart ? Number((await db.execute({ sql: "SELECT count(DISTINCT session) n FROM chunks WHERE repo_id=?", args: [repo] })).rows[0]?.n ?? 0) : 0;
-  const askLine = [
+  // Past sessions here are stored and searchable: say so at the start, and again right after the conversation is
+  // compressed, when the agent has just lost detail and is most likely to guess instead of looking it up.
+  const compacted = event === "SessionStart" && input.source === "compact" && !!repo;
+  const stored = freshStart || compacted ? Number((await db.execute({ sql: "SELECT count(DISTINCT session) n FROM chunks WHERE repo_id=?", args: [repo] })).rows[0]?.n ?? 0) : 0;
+  const askLine = compacted ? (stored ? [
+    "This conversation was just compressed, so what happened earlier in it is now a summary. Before relying on a detail from earlier (a decision, a name, why something was done), check it instead of guessing:",
+    `- muninn recall "what you're looking for": this repo's stored sessions (${stored}), including earlier parts of this one up to muninn's last scan`,
+    `- muninn related "a decision or piece of work": what it led to, what replaced it, the commits and files behind it`,
+    `- muninn ask "your question": kept lessons and notes`,
+  ].join("\n") : null) : [
     searchable ? `muninn also keeps ${searchable} note(s) and lesson(s) about this work that aren't sent automatically. Before guessing how something here works or runs, look it up with: muninn ask "your question"` : "",
-    stored ? `muninn keeps ${stored} earlier session(s) in this repo. When the engineer refers to past work ("like last time", "the bug we fixed") or a problem may have come up before, search them with: muninn recall "what you're looking for"` : "",
+    stored ? `muninn keeps ${stored} earlier session(s) in this repo. Look things up instead of guessing when:\n- the engineer refers to past work ("like last time", "the bug we fixed", "what did we decide"): muninn recall "what you're looking for"\n- you're about to change something that was decided or fixed before: muninn related "that decision or fix" shows why it is the way it is and what depends on it` : "",
   ].filter(Boolean).join("\n") || null;
   if (!out.length && !waiting && !handoff && !plan && !loopHint && !askLine) { await log("no_match"); return null; }
   const lines: string[] = [];

@@ -64,10 +64,14 @@ export async function status() {
   for (const r of (await db.execute("SELECT tool, client_version, unknown_records FROM scan_counts WHERE unknown_records>0")).rows) notes.push(`Some ${r.tool} ${r.client_version} log records weren't recognised (${r.unknown_records}), so a log format may have changed.`);
   const shape = await meta("codex_tool_response_shape");
   if (shape) notes.push(`Codex command results look like ${shape}; muninn reads failures from an exit code in there.`);
+  // Claude Code deletes its logs after 30 days, but each scan keeps a compressed copy in ~/.muninn/archive.
+  // That only matters if scans have stopped for long enough that logs could go before they're copied.
   try {
-    const s = JSON.parse(readFileSync(join(homedir(), ".claude", "settings.json"), "utf8"));
-    if (!s.cleanupPeriodDays || s.cleanupPeriodDays <= 30) notes.push('Claude Code deletes session logs after 30 days. Add "cleanupPeriodDays": 365 to ~/.claude/settings.json so muninn can learn from more.');
-  } catch { /* no settings file */ }
+    const { archiveDir } = await import("../store/sessions.js");
+    const { readdirSync, statSync } = await import("node:fs");
+    const newest = readdirSync(archiveDir(), { recursive: true }).map((f) => { try { return statSync(join(archiveDir(), String(f))).mtimeMs; } catch { return 0; } }).reduce((a, b) => Math.max(a, b), 0);
+    if (!newest || Date.now() - newest > 20 * 86_400_000) notes.push(`Claude Code deletes session logs after 30 days, and muninn copies them only when it scans. ${newest ? "It hasn't copied any for over 20 days" : "It hasn't copied any yet"}: run "muninn learn --all-repos" so older sessions aren't lost.`);
+  } catch { notes.push('Claude Code deletes session logs after 30 days, and muninn copies them only when it scans. Run "muninn learn --all-repos" once so they are kept.'); }
   if (notes.length) { console.log(""); for (const n of notes) console.log(`Note: ${n}`); }
 }
 export async function keywords() {
