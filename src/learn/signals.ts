@@ -4,7 +4,7 @@ import { redact } from "../privacy/redact.js";
 import { cosine, type Embed } from "../embed/model.js";
 import type { Session } from "../logs/types.js";
 
-export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned" | "explained" | "loop" | "refetch" | "stopped" | "confused" | "friction" | "wrong_path" | "big_file" | "skimmed" | "stated" | "promised" | "sent_back" | "missed";
+export type Signal = "repeat" | "correction" | "failure_then_fix" | "mistake_returned" | "explained" | "loop" | "refetch" | "stopped" | "confused" | "friction" | "wrong_path" | "big_file" | "skimmed" | "stated" | "promised" | "sent_back" | "missed" | "unanswered";
 export type Moment = {
   signal: Signal; text: string; quotes: { tool: string; session: string; ts: string; quote: string }[];
   sessions: number; days: number; wordings: number; tools: string[]; last: string; vector?: Float32Array;
