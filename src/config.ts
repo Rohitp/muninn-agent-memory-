@@ -46,6 +46,8 @@ export const logRoots = () => {
     claude: r ? join(r, "claude", "projects") : join(homedir(), ".claude", "projects"),
     codex: r ? join(r, "codex", "sessions") : join(homedir(), ".codex", "sessions"),
     cursor: r ? join(r, "cursor", "projects") : join(homedir(), ".cursor", "projects"),
+    // Antigravity keeps one app-data folder per edition: the app, the IDE and the command line.
+    antigravity: r ? join(r, "antigravity") : join(homedir(), ".gemini"),
   };
 };
 export const isPaused = () => existsSync(join(home(), "paused"));

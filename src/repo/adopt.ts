@@ -43,10 +43,11 @@ async function move(db: Client, top: string, id: string) {
       await db.execute({ sql: "UPDATE OR IGNORE meta SET key=? WHERE key=?", args: [prefix + id + key.slice(prefix.length + top.length), key] });
     }
   }
-  const cursor = (await db.execute("SELECT value FROM meta WHERE key='cursor_repos'")).rows[0]?.value;
-  if (cursor) {
-    const list = (JSON.parse(String(cursor)) as string[]).map((r) => (r === top ? id : r));
-    await db.execute({ sql: "UPDATE meta SET value=? WHERE key='cursor_repos'", args: [JSON.stringify([...new Set(list)])] });
+  for (const key of ["cursor_repos", "antigravity_repos"]) {
+    const v = (await db.execute({ sql: "SELECT value FROM meta WHERE key=?", args: [key] })).rows[0]?.value;
+    if (!v) continue;
+    const list = (JSON.parse(String(v)) as string[]).map((r) => (r === top ? id : r));
+    await db.execute({ sql: "UPDATE meta SET value=? WHERE key=?", args: [JSON.stringify([...new Set(list)]), key] });
   }
   // Anything left on the old id (a row the new id already had) stays there rather than being lost.
   const left = (await db.execute({ sql: "SELECT (SELECT count(*) FROM lessons WHERE repo_id=?) + (SELECT count(*) FROM handoffs WHERE repo_id=?) n", args: [top, top] })).rows[0]?.n;

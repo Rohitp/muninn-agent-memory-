@@ -1,0 +1,73 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, statSync } from "node:fs";
+import { basename, dirname } from "node:path";
+import { notTyped, parseLines, readText, stripPrivate, type LogEvent, type Session } from "./types.js";
+
+/**
+ * Google Antigravity's plain-text transcripts: <app data>/brain/<conversation>/.system_generated/logs/transcript.jsonl,
+ * one step per line: {step_index, source: USER_EXPLICIT|MODEL|SYSTEM, type: USER_INPUT|PLANNER_RESPONSE|…, status,
+ * content, tool_calls}. Documented at antigravity.google/docs/hooks; the per-line fields are known only from the
+ * app's own prompt text, so anything unexpected is counted as unknown rather than guessed at.
+ * Steps carry no times and no folder: times are the file's, and the folder is the git repo the agent's paths fall in.
+ */
+const text = (c: unknown): string => typeof c === "string" ? c : Array.isArray(c) ? c.map(text).join("\n") : c && typeof c === "object" && "text" in c ? String((c as { text: unknown }).text ?? "") : "";
+const argsOf = (t: any): Record<string, unknown> => { const a = t?.args ?? t?.arguments ?? t?.input ?? {}; if (typeof a === "string") { try { return JSON.parse(a); } catch { return {}; } } return a; };
+/** Absolute paths in a tool call's arguments: files viewed or edited, the folder a command ran in. */
+const pathsIn = (a: Record<string, unknown>): string[] => Object.values(a).flatMap((v) => (typeof v === "string" ? [v.replace(/^file:\/\//, "")].filter((p) => p.startsWith("/")) : []));
+
+const tops = new Map<string, string | null>();
+function gitTop(path: string): string | null {
+  let dir = path;
+  while (dir !== "/" && !existsSync(dir)) dir = dirname(dir);
+  if (dir === "/") return null;
+  if (tops.has(dir)) return tops.get(dir)!;
+  let top: string | null = null;
+  try { top = execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 2000 }).trim() || null; } catch { /* not in a repo */ }
+  tops.set(dir, top);
+  return top;
+}
+
+export function readAntigravity(file: string): Session {
+  const events: LogEvent[] = [];
+  let unknown = 0;
+  let ts = ""; try { ts = statSync(file).mtime.toISOString(); } catch { /* keep empty */ }
+  const paths: string[] = [];
+  let pending: { cmd: string } | null = null;
+  for (const o of parseLines(file, readText)) {
+    if (typeof o?.type !== "string") { unknown++; continue; }
+    const body = text(o.content).trim();
+    if (o.type === "USER_INPUT" || o.source === "USER_EXPLICIT") {
+      if (body && !notTyped(body)) events.push({ k: "typed", text: stripPrivate(body), ts });
+      continue;
+    }
+    if (o.source === "MODEL" && body && o.type === "PLANNER_RESPONSE") events.push({ k: "agent", text: body, ts });
+    for (const t of Array.isArray(o.tool_calls) ? o.tool_calls : []) {
+      const name = String(t?.name ?? "");
+      const a = argsOf(t);
+      paths.push(...pathsIn(a));
+      const cmd = a.CommandLine ?? a.command ?? a.Command;
+      if (name === "run_command" && typeof cmd === "string") {
+        if (pending) events.push({ k: "cmd", cmd: pending.cmd, failed: false, output: "", ts });
+        pending = { cmd };
+      } else if (/^(view_file|edit_file|write_to_file|replace_file_content|create_file)$/.test(name)) {
+        const p = pathsIn(a)[0];
+        if (p) events.push({ k: "file", tool: name.startsWith("view") ? "read" : "edit", path: p, failed: o.status === "ERROR", output: "", ts });
+      }
+    }
+    // A command's result: the step after it, with its output and whether it errored.
+    if (pending && /COMMAND/.test(o.type) && o.source !== "MODEL") {
+      const failed = o.status === "ERROR" || /exit code[:\s]+[1-9]/i.test(body);
+      events.push({ k: "cmd", cmd: pending.cmd, failed, output: body.slice(-2000), ts });
+      pending = null;
+    }
+  }
+  const last = pending as { cmd: string } | null;
+  if (last) events.push({ k: "cmd", cmd: last.cmd, failed: false, output: "", ts });
+  // The repo most of the agent's paths fall in.
+  const count = new Map<string, number>();
+  for (const p of paths) { const t = gitTop(p); if (t) count.set(t, (count.get(t) ?? 0) + 1); }
+  const cwd = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+  // brain/<conversation>/.system_generated/logs/transcript.jsonl
+  const id = basename(dirname(dirname(dirname(file.replace(/\.gz$/, "")))));
+  return { id, tool: "antigravity", cwd, clientVersion: "unknown", events, unknown, file };
+}

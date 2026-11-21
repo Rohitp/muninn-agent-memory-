@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 import { repoIdentity } from "../repo/identity.js";
 import { openDb } from "../store/db.js";
 
-const TOOL: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor" };
+const TOOL: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", antigravity: "Antigravity" };
 export type LessonReport = {
   id: string; text: string; kind: string; repo: string | null; keptAt: string; route: string;
   sent: number; sentSessions: number; before: number; after: number; afterTools: string[]; verdict: string;

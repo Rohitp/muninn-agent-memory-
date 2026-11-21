@@ -78,6 +78,8 @@ export async function syncCursor(db: Client) {
   for (const repo of await enabled(db)) { try { await writeCursorRules(db, repo); } catch { /* a moved or deleted repo shouldn't stop the rest */ } }
   const { syncLessonFiles } = await import("./local-file.js");
   await syncLessonFiles(db);
+  const { syncAntigravity } = await import("./antigravity.js");
+  await syncAntigravity(db);
 }
 export async function disableCursor(db: Client, repo: string | null) {
   const repos = repo ? [repo] : await enabled(db);
