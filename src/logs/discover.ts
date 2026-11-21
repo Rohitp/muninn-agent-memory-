@@ -16,6 +16,8 @@ export function logFiles() {
   return {
     roots,
     claude: globSync("*/*.jsonl", { cwd: roots.claude }).map((f) => join(roots.claude, f)),
+    /** Subagents' own logs, beside the session that started them. */
+    claudeSub: globSync("*/*/subagents/*.jsonl", { cwd: roots.claude }).map((f) => join(roots.claude, f)),
     codex: globSync("**/rollout-*.jsonl", { cwd: roots.codex }).map((f) => join(roots.codex, f)),
     cursor: globSync("*/agent-transcripts/**/*.jsonl", { cwd: roots.cursor }).map((f) => join(roots.cursor, f)),
     antigravity: globSync("{antigravity,antigravity-ide,antigravity-cli}/brain/*/.system_generated/logs/transcript.jsonl", { cwd: roots.antigravity }).map((f) => join(roots.antigravity, f)),
@@ -36,6 +38,12 @@ export function scanLogs(): Scan {
   const all = [...f.claude.map(readClaude), ...f.codex.map(readCodex), ...f.cursor.map((x) => readCursor(x, f.roots.cursor)), ...f.antigravity.map(readAntigravity)];
   // Sessions whose log the tool has since deleted, read from muninn's compressed copy.
   for (const a of archivedOnly()) { try { all.push(a.tool === "claude" ? readClaude(a.file) : readCodex(a.file)); } catch { /* a damaged copy */ } }
+  // Subagents go with the session that started them: same repo, never counted as sessions of their own.
+  const subs = new Map<string, Session[]>();
+  for (const file of f.claudeSub) { try { const x = readClaude(file); if (x.parent) subs.set(x.parent, [...(subs.get(x.parent) ?? []), x]); } catch { /* a damaged log */ } }
+  // Antigravity swarm agents: conversations started by another conversation's message, not by you.
+  for (const x of all) if (x.tool === "antigravity" && x.parent) subs.set(x.parent, [...(subs.get(x.parent) ?? []), x]);
+  for (const s of all) if (subs.has(s.id)) s.subagents = subs.get(s.id);
   for (const s of all) {
     if (!s.events.some((e) => e.k === "typed")) continue;
     if (isOwnRun(s)) { scan.ownRuns++; continue; }

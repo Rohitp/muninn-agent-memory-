@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import { notTyped, parseLines, readText, stripPrivate, type LogEvent, type Session } from "./types.js";
+import { notTyped, parseLines, readText, stripPrivate, type AgentMessage, type LogEvent, type Session } from "./types.js";
 
 /**
  * Google Antigravity's plain-text transcripts: <app data>/brain/<conversation>/.system_generated/logs/transcript.jsonl,
@@ -43,10 +43,25 @@ export function readAntigravity(file: string): Session {
   let ts = ""; try { ts = statSync(file).mtime.toISOString(); } catch { /* keep empty */ }
   const paths: string[] = [];
   let pending: { cmd: string } | null = null;
+  const usage = { input: 0, output: 0, cacheRead: 0 }; let model = "";
+  const turns: { ts: string; input: number; output: number }[] = [];
+  const messages: AgentMessage[] = []; let task = "";
   for (const o of parseLines(file, readText)) {
     if (typeof o?.type !== "string") { unknown++; continue; }
+    if (o.source === "MODEL" && typeof o.input_tokens === "number") { usage.input += o.input_tokens; usage.output += o.output_tokens ?? 0; usage.cacheRead += o.cache_read_tokens ?? 0; if (o.model) model = String(o.model); turns.push({ ts: typeof o.created_at === "string" ? o.created_at : ts, input: o.input_tokens, output: o.output_tokens ?? 0 }); }
     const body = text(o.content).trim();
     if (typeof o.created_at === "string") ts = o.created_at;
+    // A message from another agent in a swarm: "[Message] timestamp=… sender=<conversation id> priority=… content=…".
+    // "[swarm] new board message #n" only says the board changed; the first real one is the assignment that started this agent.
+    if (o.type === "SYSTEM_MESSAGE") {
+      const m = body.match(/sender=([0-9a-f-]{8,})\s+priority=\S+\s+content=([\s\S]*?)(?:<\/SYSTEM_MESSAGE>|$)/);
+      if (m && !/^\[swarm\] new board message/.test(m[2]!.trim())) {
+        const text = stripPrivate(m[2]!.trim());
+        messages.push({ ts, dir: "in", from: m[1]!, to: [], text: text.slice(0, 2000) });
+        if (!task) task = text.slice(0, 2000);
+      }
+      continue;
+    }
     if (o.type === "USER_INPUT" || o.source === "USER_EXPLICIT") {
       const typed = typedIn(body).trim();
       if (typed && !notTyped(typed)) events.push({ k: "typed", text: stripPrivate(typed), ts });
@@ -58,6 +73,11 @@ export function readAntigravity(file: string): Session {
       const a = argsOf(t);
       paths.push(...pathsIn(a));
       const cmd = a.CommandLine ?? a.command ?? a.Command;
+      if (/^(post_message|send_message)$/.test(name) && typeof (a.text ?? a.message ?? a.content) === "string") {
+        const text = stripPrivate(String(a.text ?? a.message ?? a.content));
+        messages.push({ ts, dir: "out", from: null, to: [...new Set([...text.matchAll(/@([\w-]+)/g)].map((x) => x[1]!))], text: text.slice(0, 2000) });
+        continue;
+      }
       if (name === "run_command" && typeof cmd === "string") {
         if (pending) events.push({ k: "cmd", cmd: pending.cmd, failed: false, output: "", ts });
         pending = { cmd };
@@ -81,5 +101,8 @@ export function readAntigravity(file: string): Session {
   const cwd = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
   // brain/<conversation>/.system_generated/logs/transcript.jsonl
   const id = basename(dirname(dirname(dirname(file.replace(/\.gz$/, "")))));
-  return { id, tool: "antigravity", cwd, clientVersion: "unknown", events, unknown, file };
+  // An agent no one typed to, started by another conversation's message: that conversation is its parent.
+  const typed = events.some((e) => e.k === "typed");
+  const parent = !typed ? messages.find((x) => x.dir === "in")?.from ?? undefined : undefined;
+  return { id, tool: "antigravity", cwd, clientVersion: "unknown", events, unknown, file, usage, turns, ...(model ? { model } : {}), ...(messages.length ? { messages } : {}), ...(parent ? { parent, task } : {}) };
 }

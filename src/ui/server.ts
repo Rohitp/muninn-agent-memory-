@@ -187,6 +187,7 @@ const routes: Record<string, Handler> = {
     const r = await setLessonFile(db, repo, b.mode === "local" ? "local" : "off");
     return { mode: await lessonFileMode(db, repo), written: !!r };
   },
+  "GET /api/runs": async (db, q) => (await import("../workflow/runs.js")).listRuns(db, { repo: q.get("repo") || null, teamOnly: q.get("all") !== "1", limit: Number(q.get("limit") || 30) }),
   "GET /api/rules": async (db, q) => { const repo = q.get("repo"); if (!repo) throw new Error("Pick a repo first."); return (await import("../deliver/auto-rules.js")).rulesState(db, repo); },
   "POST /api/rules": async (db, _q, b) => {
     const repo = String(b.repo ?? ""); if (!repo) throw new Error("Pick a repo first.");
