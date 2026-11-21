@@ -19,6 +19,8 @@ export type RunSession = {
   typed: number;
   /** Estimated dollars at list price, from tokens and the model; null when the model's price isn't known. */
   cost_usd: number | null;
+  /** For a Claude Code workflow agent: the workflow run, its phase ("Check") and its label ("review:step-4:r1"). */
+  workflow_id?: string; phase?: string; label?: string;
 };
 export type Handoff = {
   from_role: string; to_role: string; at: string; kind: "started" | "handoff" | "review_rejected" | "approved" | "rework"; note?: string;
@@ -34,7 +36,7 @@ export type Run = {
   wasted_tokens: number;
   tokens_in: number; tokens_out: number;
   /** Claude Code workflow runs inside this run: name, phases, agents, tokens, and its own log lines ("Round 1: 3 blocking"). */
-  workflows?: { id: string; name: string; status: string; agents: number; tokens: number; phases: string[]; logs: string[] }[];
+  workflows?: { id: string; name: string; status: string; agents: number; tokens: number; phases: string[]; logs: string[]; blocking_left: number }[];
   /** Estimated dollars for the sessions whose model price is known; `cost_unpriced` counts the others. */
   cost_usd?: number; cost_unpriced?: number;
 };
@@ -73,7 +75,12 @@ export function roleFromTask(task: string | undefined): string | null {
   if (!task) return null;
   const head = task.trim().split("\n")[0]!;
   const named = head.match(/^([A-Za-z][A-Za-z -]{1,24}?)\s*:/)?.[1]?.trim().toLowerCase();
-  if (named && named.split(" ").length <= 3) { for (const w of named.split(" ")) { const hit = JOBS.find(([re]) => re.test(w)); if (hit) return hit[1]; } return named; }
+  if (named && named.split(" ").length <= 3) {
+    for (const w of named.split(" ")) { const hit = JOBS.find(([re]) => re.test(w)); if (hit) return hit[1]; }
+    // A name that is a role ("coder", "data migrator", "product"), not a description of the work ("write final report").
+    const words = named.split(" ");
+    if (words.length === 1 || (words.length === 2 && /(er|or|ist|ant|ian)$/.test(words[1]!))) return named;
+  }
   for (const w of head.toLowerCase().split(/[^a-z-]+/).filter(Boolean).slice(0, 6)) { const hit = JOBS.find(([re]) => re.test(w)); if (hit) return hit[1]; }
   return null;
 }
@@ -138,6 +145,7 @@ function toRunSession(s: Session): RunSession {
     started_at: t0, ended_at: t1, tokens_in: turns.reduce((n, t) => n + t.input, 0), tokens_out: turns.reduce((n, t) => n + t.output, 0), cache_read: turns.reduce((n, t) => n + (t.cacheRead ?? 0), 0), model: s.model ?? null,
     commands: cmds.length, failed_commands: cmds.filter((e) => e.k === "cmd" && e.failed).length, task: s.task?.slice(0, 300) ?? null,
     typed: s.events.filter((e) => e.k === "typed").length,
+    ...(s.workflow ? { workflow_id: s.workflow.id, ...(s.workflow.phase ? { phase: s.workflow.phase } : {}), ...(s.workflow.label ? { label: s.workflow.label } : {}) } : {}),
     cost_usd: costOf(s.model, { input: turns.reduce((n, t) => n + t.input, 0), output: turns.reduce((n, t) => n + t.output, 0), cacheRead: turns.reduce((n, t) => n + (t.cacheRead ?? 0), 0) }),
   };
 }
@@ -157,7 +165,16 @@ export function buildRuns(repo: string, sessions: Session[]): Run[] {
     groups.at(-1)!.push(x);
     end = Math.max(end, Date.parse(x.end));
   }
-  return groups.map((g) => {
+  // Each workflow belongs to one run: the one it started in, else the first one holding one of its agents.
+  const allWorkflows = sessions.flatMap((x) => x.workflowRuns ?? []).filter((w, i, arr) => arr.findIndex((v) => v.id === w.id) === i);
+  const windows = groups.map((g) => ({ from: g[0]!.start, to: g.map((x) => x.end).sort().at(-1)!, ids: new Set(g.map((x) => x.s.workflow?.id).filter(Boolean)) }));
+  const home = new Map<string, number>();
+  for (const w of allWorkflows) {
+    const i = windows.findIndex((x) => w.started >= x.from && w.started <= x.to);
+    const j = i >= 0 ? i : windows.findIndex((x) => x.ids.has(w.id));
+    if (j >= 0) home.set(w.id, j);
+  }
+  return groups.map((g, gi) => {
     const from = g[0]!.start, to = g.map((x) => x.end).sort().at(-1)!;
     const all: Session[] = [];
     for (const x of g) all.push(sliceOf(x.s, x.start, x.end));
@@ -205,7 +222,7 @@ export function buildRuns(repo: string, sessions: Session[]): Run[] {
       handoffs.push({ from_role: from, to_role: to.length > 2 ? "everyone" : to.join(", ") || "board", at: m.ts, kind, note: (kind === "rework" ? m.text.split("\n").find((l) => /follow-?up/i.test(l)) ?? m.text : m.text).replace(/^["\s]+/, "").replace(/(@[\w-]+\s*)+/, "").replace(/\s+/g, " ").slice(0, 160), evidence: m.text.replace(/^["\s]+/, "").replace(/(@[\w-]+\s*)+/, "").replace(/\s+/g, " ").slice(0, 200) });
     }
     // A workflow's own log lines say when a check round sent work back ("Round 1: 3 blocking").
-    const workflows = sessions.flatMap((x) => x.workflowRuns ?? []).filter((w, i, arr) => arr.findIndex((v) => v.id === w.id) === i && all.some((a) => a.workflow?.id === w.id));
+    const workflows = allWorkflows.filter((w) => home.get(w.id) === gi);
     for (const w of workflows) {
       const agents = all.filter((x) => x.workflow?.id === w.id);
       const checker = agents.map(roleOf).find((r) => /review/.test(r)) ?? agents.map(roleOf).find((r) => REVIEWER.test(r)) ?? "reviewer";
@@ -221,14 +238,29 @@ export function buildRuns(repo: string, sessions: Session[]): Run[] {
       id: createHash("sha1").update(`${repo}\u0000${from}`).digest("hex").slice(0, 16), repo_id: repo,
       started_at: from, ended_at: [to, ...rs.map((r) => r.ended_at)].sort().at(-1)!, roles, team: roles.length > 1, sessions: rs, handoffs, bounces,
       wasted_tokens: wasted, tokens_in: rs.reduce((n, r) => n + r.tokens_in, 0), tokens_out: rs.reduce((n, r) => n + r.tokens_out, 0),
-      ...(workflows.length ? { workflows: workflows.map(({ id, name, status, agents, tokens, phases, logs }) => ({ id, name, status, agents, tokens, phases, logs })) } : {}),
+      ...(workflows.length ? { workflows: workflows.map(({ id, name, status, agents, tokens, phases, logs }) => ({ id, name, status, agents, tokens, phases, logs, blocking_left: blockingLeft(logs) })) } : {}),
       cost_usd: rs.reduce((n, r) => n + (r.cost_usd ?? 0), 0), cost_unpriced: rs.filter((r) => r.cost_usd === null && (r.tokens_in || r.tokens_out)).length,
     };
   });
 }
 
+/** Blocking issues a workflow's last check round left open ("Round 3: 4 blocking", "Fix round 2: 0 blocking left"). */
+export function blockingLeft(logs: string[]): number {
+  const last = [...logs].reverse().find((l) => /\d+\s+blocking/i.test(l));
+  return Number(last?.match(/(\d+)\s+blocking/i)?.[1] ?? 0);
+}
+
 /** Stores a repo's runs, replacing earlier versions of the same runs. */
 export async function saveRuns(db: Client, runs: Run[]) {
+  // Runs are rebuilt from every session each scan: an earlier version of a regrouped run is replaced, not kept beside it.
+  const byRepo = new Map<string, Run[]>();
+  for (const r of runs) byRepo.set(r.repo_id, [...(byRepo.get(r.repo_id) ?? []), r]);
+  for (const [repo, rs] of byRepo) {
+    const since = rs.map((r) => r.started_at).sort()[0]!;
+    const keep = new Set(rs.map((r) => r.id));
+    const old = (await db.execute({ sql: "SELECT id FROM runs WHERE repo_id=? AND started_at>=?", args: [repo, since] })).rows.map((x) => String(x.id)).filter((id) => !keep.has(id));
+    for (const id of old) await db.execute({ sql: "DELETE FROM runs WHERE id=?", args: [id] });
+  }
   for (const r of runs) await db.execute({ sql: "INSERT OR REPLACE INTO runs (id,repo_id,started_at,ended_at,team,data) VALUES (?,?,?,?,?,?)", args: [r.id, r.repo_id, r.started_at, r.ended_at, r.team ? 1 : 0, JSON.stringify(r)] });
 }
 /** Recent runs, newest first. Takes a repo (null for all repos) or options. */
@@ -265,6 +297,7 @@ export async function runsCmd(db: Client, repo: string | null, opts: { all?: boo
     }
     const n = (k: Handoff["kind"]) => r.handoffs.filter((h) => h.kind === k).length;
     if (r.handoffs.length) console.log(`  between roles: ${n("handoff")} handoff(s), ${n("approved")} approval(s), ${n("review_rejected")} sent back, ${n("rework")} follow-up fix(es)`);
+    for (const w of r.workflows ?? []) if (w.blocking_left) console.log(`  workflow ${w.name} ${w.status === "completed" ? "completed" : `ended (${w.status})`} with ${w.blocking_left} blocking issue(s) still open after its last check round`);
     for (const h of r.handoffs.filter((h) => h.kind === "review_rejected" || h.kind === "rework"))
       console.log(`  ${h.at.slice(11, 16)} ${h.from_role} ${h.kind === "rework" ? "fixed something raised earlier" : `sent work back to ${h.to_role}`}${h.note ? `: "${h.note.slice(0, 110)}"` : ""}`);
   }
