@@ -12,12 +12,14 @@ import { getPlan, type PlanItem } from "./plan.js";
  * fold away; and each decision as what was decided and why.
  */
 export type Links = { because?: string[]; ledTo?: string[]; sessions?: number; files?: string[] };
-export type Outcome = { id: string; title: string; result: string; kind: "shipped" | "fixed" | "checked" | "explored"; area: string; ref: string | null; at: string; steps: { id: string; text: string; routine: boolean; at: string; reopenable: boolean }[]; links?: Links };
+export type Outcome = { id: string; title: string; result: string; kind: "shipped" | "fixed" | "checked" | "explored"; area: string; ref: string | null; at: string; steps: { id: string; text: string; routine: boolean; at: string; reopenable: boolean; closedBy: "person" | "session" | null }[]; links?: Links };
 export type Decision = { id: string; what: string; why: string | null; area: string | null; at: string; links?: Links };
 export type History = { outcomes: Outcome[]; ungrouped: Outcome["steps"]; decisions: Decision[]; areas: string[] };
 
 const stepAt = (i: PlanItem) => i.closed_at ?? i.created_at;
-const stepOf = (i: PlanItem & { routine?: number }) => ({ id: i.id, text: i.text, routine: !!i.routine, at: stepAt(i), reopenable: i.kind === "open" });
+const stepOf = (i: PlanItem & { routine?: number }) => ({ id: i.id, text: i.text, routine: !!i.routine, at: stepAt(i), reopenable: i.kind === "open",
+  // Who ticked off a step that was in Next: you, or a session (which may have been early).
+  closedBy: i.kind === "open" ? (i.closed_by === "person" ? "person" as const : "session" as const) : null });
 
 export async function getHistory(db: Client, repo: string, branch: string): Promise<History> {
   const plan = await getPlan(db, repo, branch);
