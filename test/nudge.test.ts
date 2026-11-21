@@ -28,3 +28,19 @@ describe("telling agents to look things up", () => {
     expect(await deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "resume", session_id: "a", cwd: root })).toBeNull();
   });
 });
+
+describe("with muninn's MCP server set up in Claude Code", () => {
+  it("names the tools first, with the commands as the fallback", async () => {
+    const db = await openDb();
+    const file = join(tmp(), "log.jsonl"); writeFileSync(file, "x");
+    await indexSessions(db, [{ id: "s1", tool: "claude-code", cwd: root, clientVersion: "1", unknown: 0, file, events: [
+      { k: "typed", text: "rename the package", ts: "2026-11-20T13:55:00.000Z" }, { k: "agent", text: "Renamed.", ts: "2026-11-20T13:55:10.000Z" },
+    ] }], fakeEmbed);
+    writeFileSync(process.env.MUNINN_CLAUDE_JSON!, JSON.stringify({ mcpServers: { muninn: { command: "node" } } }));
+    const start = await deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "startup", session_id: "b", cwd: root });
+    expect(start).toContain('the muninn tool search_history (or run muninn recall "what you\'re looking for")');
+    expect(start).toContain("the muninn tool get_runs");
+    const after = await deliver(db, "claude-code", { hook_event_name: "SessionStart", source: "compact", session_id: "b", cwd: root });
+    expect(after).toContain("the muninn tools where_left_off and get_plan");
+  });
+});
