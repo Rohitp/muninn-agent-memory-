@@ -64,6 +64,11 @@ export async function status() {
   for (const r of (await db.execute("SELECT tool, client_version, unknown_records FROM scan_counts WHERE unknown_records>0")).rows) notes.push(`Some ${r.tool} ${r.client_version} log records weren't recognised (${r.unknown_records}), so a log format may have changed.`);
   const shape = await meta("codex_tool_response_shape");
   if (shape) notes.push(`Codex command results look like ${shape}; muninn reads failures from an exit code in there.`);
+  // muninn's MCP server lets agents ask it questions; Claude Code can lose it if a running session rewrites its settings.
+  try {
+    const { claudeHasMuninn } = await import("../mcp/install.js");
+    if (claudeHasMuninn() === false) notes.push('Claude Code doesn\'t list muninn\'s MCP server, so its agents can\'t ask muninn questions (where_left_off, get_plan, search_history). Close running Claude Code sessions, then run "muninn mcp install".');
+  } catch { /* status shouldn't fail on this */ }
   // Claude Code deletes its logs after 30 days, but each scan keeps a compressed copy in ~/.muninn/archive.
   // That only matters if scans have stopped for long enough that logs could go before they're copied.
   try {

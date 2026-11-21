@@ -133,7 +133,7 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
   }
   // Handoffs for recent sessions that ended without the SessionEnd hook, such as Cursor's.
   if (runner && !isPaused()) {
-    const have = new Set((await db.execute("SELECT session FROM handoffs")).rows.map((r) => String(r.session)));
+    const have = new Map((await db.execute("SELECT session, max(created_at) at FROM handoffs GROUP BY session")).rows.map((r) => [String(r.session), String(r.at)] as [string, string]));
     let made = 0;
     for (const repo of repos) for (const s of needsHandoff(scan.byRepo.get(repo)!, have, 2)) {
       if (made >= cfg.handoffsPerRun) break;
