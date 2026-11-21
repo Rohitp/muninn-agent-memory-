@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import { effortMoments } from "../learn/signals.js";
+import { costOf } from "./prices.js";
 import { spanOf, type Session } from "../logs/types.js";
 
 /**
@@ -16,6 +17,8 @@ export type RunSession = {
   commands: number; failed_commands: number; task: string | null;
   /** Messages the engineer typed: 0 for a session that ran on its own. */
   typed: number;
+  /** Estimated dollars at list price, from tokens and the model; null when the model's price isn't known. */
+  cost_usd: number | null;
 };
 export type Handoff = {
   from_role: string; to_role: string; at: string; kind: "handoff" | "review_rejected" | "approved" | "rework"; note?: string;
@@ -30,6 +33,8 @@ export type Run = {
   /** Output tokens spent on failed retries, loops and re-reads. */
   wasted_tokens: number;
   tokens_in: number; tokens_out: number;
+  /** Estimated dollars for the sessions whose model price is known; `cost_unpriced` counts the others. */
+  cost_usd?: number; cost_unpriced?: number;
 };
 
 /** Sessions this far apart in time are separate runs. */
@@ -52,7 +57,23 @@ export function worktreeOf(cwd: string): string | null {
   return name;
 }
 /** A session's role: a subagent's type, else the worktree it ran in, else "main". */
-export const roleOf = (s: Session) => s.parent ? (s.agentType ?? worktreeOf(s.cwd) ?? "subagent") : worktreeOf(s.cwd) ?? "main";
+export const roleOf = (s: Session) => s.teammate ?? (s.parent ? (s.agentType ?? worktreeOf(s.cwd) ?? "subagent") : worktreeOf(s.cwd) ?? "main");
+
+/** Claude Code agent teams: names teammates' sessions from muninn's team hooks, and adds the tasks they finished as handoffs. */
+export async function teamFacts(db: Client): Promise<{ names: Map<string, string>; done: { session: string; teammate: string | null; subject: string; ts: string }[] }> {
+  const rows = (await db.execute("SELECT session, event, teammate, agent_type, subject, ts FROM team_events WHERE session IS NOT NULL ORDER BY ts").catch(() => ({ rows: [] }))).rows;
+  const names = new Map<string, string>();
+  for (const r of rows) { const n = r.teammate ?? (r.agent_type && r.agent_type !== "team-lead" ? r.agent_type : null); if (n && r.event === "TeammateIdle") names.set(String(r.session), String(n)); }
+  return { names, done: rows.filter((r) => r.event === "TaskCompleted" && r.subject).map((r) => ({ session: String(r.session), teammate: r.teammate ? String(r.teammate) : null, subject: String(r.subject), ts: String(r.ts) })) };
+}
+/** Applies team facts to sessions before runs are built. */
+export function applyTeam(sessions: Session[], f: Awaited<ReturnType<typeof teamFacts>>) {
+  for (const s of sessions) for (const x of [s, ...(s.subagents ?? [])]) {
+    const n = f.names.get(x.id); if (n) { x.teammate = n; x.role = n; }
+    // A finished task becomes a message from that teammate, so runs show it as a handoff with its subject.
+    for (const d of f.done.filter((d) => d.session === x.id)) (x.messages ??= []).push({ ts: d.ts, dir: "out", from: null, to: [], text: `[done] ${d.subject}` });
+  }
+}
 
 /** A reviewer, checker or qa role sending work back. Read from what that role's agent said. */
 export const REJECTS = /\b(changes requested|request(ed|ing)? changes|--request-changes|REQUEST_CHANGES|not ready to merge|(do not|don'?t) merge|(cannot|can'?t|won'?t) approve|\[reject(ed)?\]|\[blocked\]|\bI reject\b|reject(ed|ing)? (this|the|your) (pr|pull request|change|diff|patch|work|build)|blocking (issue|problem)s? (found|remain)|fails? (the )?(acceptance|review)|send(ing)? (it|this|the pr) back)/i;
@@ -91,9 +112,10 @@ function toRunSession(s: Session): RunSession {
   const t1 = [end, turns.at(-1)?.ts].filter(Boolean).sort().at(-1) ?? "";
   return {
     id: s.id, tool: s.tool, role: roleOf(s), branch: s.branch ?? null, worktree: s.parent ? null : worktreeOf(s.cwd), parent_session: s.parent ?? null, agent_type: s.agentType ?? null,
-    started_at: t0, ended_at: t1, tokens_in: turns.reduce((n, t) => n + t.input, 0), tokens_out: turns.reduce((n, t) => n + t.output, 0), cache_read: 0, model: s.model ?? null,
+    started_at: t0, ended_at: t1, tokens_in: turns.reduce((n, t) => n + t.input, 0), tokens_out: turns.reduce((n, t) => n + t.output, 0), cache_read: turns.reduce((n, t) => n + (t.cacheRead ?? 0), 0), model: s.model ?? null,
     commands: cmds.length, failed_commands: cmds.filter((e) => e.k === "cmd" && e.failed).length, task: s.task?.slice(0, 300) ?? null,
     typed: s.events.filter((e) => e.k === "typed").length,
+    cost_usd: costOf(s.model, { input: turns.reduce((n, t) => n + t.input, 0), output: turns.reduce((n, t) => n + t.output, 0), cacheRead: turns.reduce((n, t) => n + (t.cacheRead ?? 0), 0) }),
   };
 }
 
@@ -158,6 +180,7 @@ export function buildRuns(repo: string, sessions: Session[]): Run[] {
       id: createHash("sha1").update(`${repo}\u0000${from}`).digest("hex").slice(0, 16), repo_id: repo,
       started_at: from, ended_at: [to, ...rs.map((r) => r.ended_at)].sort().at(-1)!, roles, team: roles.length > 1, sessions: rs, handoffs, bounces,
       wasted_tokens: wasted, tokens_in: rs.reduce((n, r) => n + r.tokens_in, 0), tokens_out: rs.reduce((n, r) => n + r.tokens_out, 0),
+      cost_usd: rs.reduce((n, r) => n + (r.cost_usd ?? 0), 0), cost_unpriced: rs.filter((r) => r.cost_usd === null && (r.tokens_in || r.tokens_out)).length,
     };
   });
 }
@@ -175,6 +198,13 @@ export async function listRuns(db: Client, o: { repo?: string | null; teamOnly?:
 }
 
 /** muninn runs: recent workflow runs in this repo (or all repos), most recent first. */
+/** "about $4.20", or "price unknown" for roles whose model muninn has no price for. */
+export function dollars(ss: { cost_usd: number | null; tokens_in: number; tokens_out: number }[]): string {
+  const priced = ss.filter((s) => s.cost_usd !== null), sum = priced.reduce((n, s) => n + (s.cost_usd ?? 0), 0);
+  const unknown = ss.some((s) => s.cost_usd === null && (s.tokens_in || s.tokens_out));
+  if (!priced.length) return unknown ? "price unknown" : "";
+  return `about $${sum < 10 ? sum.toFixed(2) : Math.round(sum)}${unknown ? " plus some at an unknown price" : ""}`;
+}
 export async function runsCmd(db: Client, repo: string | null, opts: { all?: boolean } = {}) {
   const runs = await listRuns(db, { repo, teamOnly: !opts.all, limit: 15 });
   if (!runs.length) { console.log(opts.all ? "No runs yet. muninn groups sessions into runs when it scans." : "No runs with more than one role yet: a run needs subagents, or sessions in different worktrees. \"muninn runs --all\" shows single sessions too."); return; }
@@ -182,12 +212,14 @@ export async function runsCmd(db: Client, repo: string | null, opts: { all?: boo
   for (const r of runs) {
     const mins = Math.round((Date.parse(r.ended_at) - Date.parse(r.started_at)) / 60_000);
     console.log(`\n${r.started_at.slice(0, 16).replace("T", " ")}  ${repo ? "" : r.repo_id + "  "}${mins} min, ${r.sessions.length} session(s), roles: ${r.roles.join(", ")}`);
-    console.log(`  tokens: ${k(r.tokens_in)} in, ${k(r.tokens_out)} out${r.wasted_tokens ? `, ${k(r.wasted_tokens)} on failed retries and re-reads` : ""}${r.bounces ? `, ${r.bounces} bounce(s) back to an earlier role` : ""}`);
+    const total = dollars(r.sessions.map((x) => ({ ...x, cost_usd: x.cost_usd ?? null })));
+    console.log(`  tokens: ${k(r.tokens_in)} in, ${k(r.tokens_out)} out${total ? `, ${total}${total.startsWith("about") ? " at list price" : ""}` : ""}${r.wasted_tokens ? `, ${k(r.wasted_tokens)} on failed retries and re-reads` : ""}${r.bounces ? `, ${r.bounces} bounce(s) back to an earlier role` : ""}`);
     const byRole = new Map<string, RunSession[]>();
     for (const s of r.sessions) byRole.set(s.role, [...(byRole.get(s.role) ?? []), s]);
     for (const [role, ss] of byRole) {
       const out = ss.reduce((n, s) => n + s.tokens_out, 0), cmds = ss.reduce((n, s) => n + s.commands, 0), failed = ss.reduce((n, s) => n + s.failed_commands, 0);
-      console.log(`  ${role.padEnd(18)} ${ss.length} session(s), ${k(out)} tokens out, ${cmds} command(s)${failed ? `, ${failed} failed` : ""}`);
+      const cost = dollars(ss);
+      console.log(`  ${role.padEnd(18)} ${ss.length} session(s), ${k(out)} tokens out, ${cmds} command(s)${failed ? `, ${failed} failed` : ""}${cost ? `, ${cost}` : ""}`);
     }
     const n = (k: Handoff["kind"]) => r.handoffs.filter((h) => h.kind === k).length;
     if (r.handoffs.length) console.log(`  between roles: ${n("handoff")} handoff(s), ${n("approved")} approval(s), ${n("review_rejected")} sent back, ${n("rework")} follow-up fix(es)`);

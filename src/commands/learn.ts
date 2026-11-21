@@ -62,7 +62,8 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
     // Workflow runs: sessions that worked together, with their subagents and roles. Agents sending each other's work back become moments.
     let extra: import("../learn/signals.js").Moment[] = [];
     try {
-      const w = await import("../workflow/runs.js"); const runs = w.buildRuns(repo, sessions); await w.saveRuns(db, runs);
+      const w = await import("../workflow/runs.js"); w.applyTeam(sessions, await w.teamFacts(db));
+      const runs = w.buildRuns(repo, sessions); await w.saveRuns(db, runs);
       extra = (await import("../workflow/feedback.js")).feedbackMoments(repo, sessions, runs);
     } catch { /* runs are a view, not needed to learn */ }
     // Subagents learn too: their failed commands, loops and wrong paths. They never typed anything, so your-words signals skip them.

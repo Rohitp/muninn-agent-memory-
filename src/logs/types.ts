@@ -24,11 +24,13 @@ export type Session = {
   /** Tokens the session's model read and wrote, when the log records them. */
   usage?: Usage; model?: string;
   /** Tokens per model reply, with its time, so a slice of a long session can be measured on its own. */
-  turns?: { ts: string; input: number; output: number }[];
+  turns?: { ts: string; input: number; output: number; cacheRead?: number }[];
   /** A subagent: the session that started it, its type ("Explore", "general-purpose", a custom agent), and the task it was handed. */
   parent?: string; agentType?: string; task?: string;
   /** In a team of agents: the subagent's type, the worktree's name, or "main". Set by scans. */
   role?: string;
+  /** A Claude Code agent-team teammate's name ("researcher"), from muninn's team hooks. */
+  teammate?: string;
   /** Messages between agents in a swarm: posted to the shared board ("out"), or sent to this agent ("in", with the sender's session id). */
   messages?: AgentMessage[];
   /** Subagents this session started, read from their own logs. */

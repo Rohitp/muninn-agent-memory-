@@ -44,7 +44,7 @@ describe("answers from everything muninn keeps", () => {
 
 describe("the MCP tools", () => {
   it("lists its tools, each with a schema", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["search_history", "get_plan", "get_week", "get_related", "list_repos", "suggest_lesson", "get_runs", "list_lessons", "where_left_off"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(["search_history", "get_plan", "get_week", "get_related", "list_repos", "suggest_lesson", "get_runs", "list_lessons", "where_left_off", "review_lesson"]);
     for (const t of TOOLS) expect(t.inputSchema.type).toBe("object");
   });
   it("finds a repo by its short name, and says which ones exist when it can't", async () => {
@@ -75,7 +75,7 @@ describe("the MCP tools", () => {
     await new Promise<void>((ok, fail) => { const t = setInterval(() => { if (lines.length >= 3) { clearInterval(t); ok(); } }, 50); setTimeout(() => { clearInterval(t); fail(new Error(`only ${lines.length} replies`)); }, 15000); });
     child.kill();
     expect(lines[0]).toMatchObject({ id: 1, result: { protocolVersion: "2025-06-18", serverInfo: { name: "muninn" } } });
-    expect(lines[1].result.tools).toHaveLength(9);
+    expect(lines[1].result.tools).toHaveLength(10);
     expect(lines[2].result.content[0].text).toContain("shop");
   }, 30000);
 });
@@ -199,5 +199,40 @@ describe("autonomous work, lessons and handoffs, from a chat", () => {
     expect(await callTool(db, "where_left_off", { repo: "shop", branch: "main" }, embed)).toMatch(/^No session on main in .* has left a note/);
     await db.execute({ sql: "INSERT INTO handoffs (id,repo_id,branch,session,tool,text,created_at) VALUES ('h1',?,?,?,?,?,?)", args: [repo, "main", "s1", "claude-code", "Goal: ship it. Next: run the release.", new Date().toISOString()] });
     expect(await callTool(db, "where_left_off", { repo: "shop", branch: "main" }, embed)).toContain("Next: run the release.");
+  });
+});
+
+describe("MCP in Cursor and Codex", () => {
+  it("adds muninn to Cursor's mcp.json and Codex's config.toml where they're installed, keeping what's there", async () => {
+    const { codexConfig, cursorConfig, installMcp, uninstallMcp } = await import("../src/mcp/install.js");
+    mkdirSync(join(cursorConfig(), ".."), { recursive: true }); mkdirSync(join(codexConfig(), ".."), { recursive: true });
+    writeFileSync(codexConfig(), 'model = "gpt-5"\n\n[mcp_servers.other]\ncommand = "x"\n');
+    const done = installMcp();
+    expect(done).toEqual(expect.arrayContaining(["Cursor", "Codex"]));
+    expect(JSON.parse(readFileSync(cursorConfig(), "utf8")).mcpServers.muninn.args.at(-1)).toBe("mcp");
+    const toml = readFileSync(codexConfig(), "utf8");
+    expect(toml).toContain('model = "gpt-5"'); expect(toml).toContain("[mcp_servers.other]");
+    expect(toml).toMatch(/\[mcp_servers\.muninn\]\ncommand = ".+"\nargs = \[".+cli\.js", "mcp"\]/);
+    installMcp();
+    expect(readFileSync(codexConfig(), "utf8").match(/\[mcp_servers\.muninn\]/g)).toHaveLength(1);
+    uninstallMcp();
+    expect(readFileSync(codexConfig(), "utf8")).not.toContain("muninn");
+    expect(readFileSync(codexConfig(), "utf8")).toContain("[mcp_servers.other]");
+  });
+});
+
+describe("reviewing a suggestion from a chat", () => {
+  it("keeps or dismisses only a waiting lesson the engineer asked about, quoting them", async () => {
+    const db = await openDb();
+    const { createLesson, getLesson } = await import("../src/store/lessons.js");
+    const a = await createLesson(db, { repo_id: repo, text: "From now on, put each feature on its own branch", source: "own_words", signal: "stated", status: "proposed", by: "t" });
+    const b = await createLesson(db, { repo_id: repo, text: "Something not worth keeping", source: "inferred", status: "proposed", by: "t" });
+    expect(await callTool(db, "list_lessons", { repo: "shop", waiting: true }, embed)).toContain(`[${a.slice(0, 8)}]`);
+    await expect(callTool(db, "review_lesson", { id: a.slice(0, 8), action: "keep", engineer_said: "" }, embed)).rejects.toThrow(/Quote what the engineer said/);
+    expect(await callTool(db, "review_lesson", { id: a.slice(0, 8), action: "keep", engineer_said: "yes keep the branch one" }, embed)).toMatch(/^Kept: .*every session/);
+    expect(await getLesson(db, a)).toMatchObject({ status: "live", always_on: 1 });
+    await expect(callTool(db, "review_lesson", { id: a, action: "keep", engineer_said: "keep it" }, embed)).rejects.toThrow(/already kept/);
+    expect(await callTool(db, "review_lesson", { id: b, action: "dismiss", engineer_said: "drop that one" }, embed)).toMatch(/^Dismissed/);
+    expect((await getLesson(db, b))?.status).toBe("rejected");
   });
 });

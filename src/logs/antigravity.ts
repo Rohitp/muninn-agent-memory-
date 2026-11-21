@@ -44,11 +44,11 @@ export function readAntigravity(file: string): Session {
   const paths: string[] = [];
   let pending: { cmd: string } | null = null;
   const usage = { input: 0, output: 0, cacheRead: 0 }; let model = "";
-  const turns: { ts: string; input: number; output: number }[] = [];
+  const turns: { ts: string; input: number; output: number; cacheRead?: number }[] = [];
   const messages: AgentMessage[] = []; let task = "";
   for (const o of parseLines(file, readText)) {
     if (typeof o?.type !== "string") { unknown++; continue; }
-    if (o.source === "MODEL" && typeof o.input_tokens === "number") { usage.input += o.input_tokens; usage.output += o.output_tokens ?? 0; usage.cacheRead += o.cache_read_tokens ?? 0; if (o.model) model = String(o.model); turns.push({ ts: typeof o.created_at === "string" ? o.created_at : ts, input: o.input_tokens, output: o.output_tokens ?? 0 }); }
+    if (o.source === "MODEL" && typeof o.input_tokens === "number") { usage.input += o.input_tokens; usage.output += o.output_tokens ?? 0; usage.cacheRead += o.cache_read_tokens ?? 0; if (o.model) model = String(o.model); turns.push({ ts: typeof o.created_at === "string" ? o.created_at : ts, input: o.input_tokens, output: o.output_tokens ?? 0, cacheRead: o.cache_read_tokens ?? 0 }); }
     const body = text(o.content).trim();
     if (typeof o.created_at === "string") ts = o.created_at;
     // A message from another agent in a swarm: "[Message] timestamp=… sender=<conversation id> priority=… content=…".

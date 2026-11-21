@@ -16,6 +16,22 @@ const hasClaude = () => spawnSync("claude", ["--version"], { stdio: "ignore" }).
 
 /** Antigravity's global MCP settings (antigravity.google/docs/mcp), or the one tests point at. */
 export const antigravityConfig = () => process.env.MUNINN_ANTIGRAVITY_MCP ?? join(homedir(), ".gemini", "config", "mcp_config.json");
+/** Cursor's global MCP settings, same shape as Antigravity's (docs.cursor.com/context/mcp), or the one tests point at. */
+export const cursorConfig = () => process.env.MUNINN_CURSOR_MCP ?? join(homedir(), ".cursor", "mcp.json");
+/** Codex's settings (TOML, with [mcp_servers.<name>] tables), or the one tests point at. */
+export const codexConfig = () => process.env.MUNINN_CODEX_CONFIG ?? join(homedir(), ".codex", "config.toml");
+const tomlStr = (s: string) => JSON.stringify(s);
+/** Adds or removes muninn's [mcp_servers.muninn] table in Codex's config.toml, keeping everything else and a backup. */
+export function setCodexServer(file: string, entry: { command: string; args: string[] } | null): boolean {
+  const raw = existsSync(file) ? readFileSync(file, "utf8") : "";
+  // The table runs from its header to the next table header.
+  const without = raw.replace(/(^|\n)\[mcp_servers\.muninn\][\s\S]*?(?=\n\[|$)/, "").replace(/\n{3,}/g, "\n\n");
+  if (!entry) { if (without === raw) return false; writeFileSync(file, without.trimEnd() + "\n"); return true; }
+  if (raw) copyFileSync(file, `${file}.muninn-backup`);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, `${without.trimEnd()}${without.trim() ? "\n\n" : ""}[mcp_servers.muninn]\ncommand = ${tomlStr(entry.command)}\nargs = [${entry.args.map(tomlStr).join(", ")}]\n`);
+  return true;
+}
 /** Adds or removes muninn in a JSON file of the {"mcpServers": {...}} shape, keeping everything else and a backup. */
 function setServer(file: string, entry: { command: string; args: string[] } | null): boolean {
   let cfg: Record<string, any> = {};
@@ -55,6 +71,9 @@ export function installMcp(): string[] {
     done.push("the Claude desktop app (restart it to pick this up)");
   }
   if (existsSync(dirname(antigravityConfig())) && setServer(antigravityConfig(), { command, args })) done.push("Antigravity");
+  // Cursor and Codex, where they're installed (their settings folder exists).
+  if (existsSync(dirname(cursorConfig())) && setServer(cursorConfig(), { command, args })) done.push("Cursor");
+  if (existsSync(dirname(codexConfig())) && setCodexServer(codexConfig(), { command, args })) done.push("Codex");
   return done;
 }
 export function uninstallMcp(): string[] {
@@ -68,6 +87,8 @@ export function uninstallMcp(): string[] {
     } catch { /* leave a file muninn can't read alone */ }
   }
   try { if (setServer(antigravityConfig(), null)) done.push("Antigravity"); } catch { /* leave a file muninn can't read alone */ }
+  try { if (setServer(cursorConfig(), null)) done.push("Cursor"); } catch { /* leave a file muninn can't read alone */ }
+  try { if (setCodexServer(codexConfig(), null)) done.push("Codex"); } catch { /* leave a file muninn can't read alone */ }
   return done;
 }
 
@@ -79,7 +100,7 @@ export async function mcpCmd(args: string[]) {
     const done = installMcp();
     const { command, args: a } = serverCommand();
     console.log(done.length ? `Added muninn's MCP server to ${done.join(" and ")}. Ask Claude about your past work in any chat, for example "what did we decide about the npm name?".` : "Found neither the claude command nor the Claude desktop app.");
-    console.log(`For Cursor or another app, add an MCP server that runs:\n  ${command} ${a.join(" ")}`);
+    console.log(`Cursor and Codex get it too when they are installed here. For another app, add an MCP server that runs:\n  ${command} ${a.join(" ")}`);
     return;
   }
   if (args[0] === "uninstall") { const d = uninstallMcp(); console.log(d.length ? `Removed muninn's MCP server from ${d.join(" and ")}.` : "It wasn't added anywhere."); return; }

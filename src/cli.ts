@@ -243,7 +243,7 @@ async function main() {
     case "keywords": return (await import("./commands/status.js")).keywords();
     case "pause": writeFileSync(join(ensureHome(), "paused"), ""); console.log("Paused."); return;
     case "resume": rmSync(join(ensureHome(), "paused"), { force: true }); console.log("Resumed."); return;
-    case "hook": return runHook(args[args.indexOf("--client") + 1] ?? "unknown");
+    case "hook": return runHook(args[args.indexOf("--client") + 1] ?? "unknown", args.includes("--event") ? args[args.indexOf("--event") + 1] : undefined);
     default: console.log(USAGE); if (cmd && cmd !== "help" && cmd !== "--help") process.exitCode = 1;
   }
 }
@@ -259,12 +259,20 @@ async function neverScanned(cwd: unknown): Promise<boolean> {
 }
 
 /** Hook failures must never interrupt the agent, so every path exits 0, and the client's own timeout is the hard stop. */
-async function runHook(client: string) {
+async function runHook(client: string, agEvent?: string) {
   const errors = (e: unknown) => { try { appendFileSync(join(ensureHome(), "hook-errors.log"), `${new Date().toISOString()} ${client} ${e instanceof Error ? e.message : String(e)}\n`); } catch { /* nothing else to do */ } };
   if (process.env.MUNINN_INTERNAL) return;
   const timer = setTimeout(() => { errors(new Error("timed out")); process.exit(0); }, 500);
   try {
     const input = JSON.parse(readFileSync(0, "utf8") || "{}");
+    // Antigravity's hooks: camelCase input, and the event named in muninn's own command.
+    if (client === "antigravity" && agEvent) {
+      if (!existsSync(join(home(), "muninn.db"))) return;
+      const [{ openDb }, { antigravityHook }] = await Promise.all([import("./store/db.js"), import("./deliver/antigravity-hook.js")]);
+      const out = await antigravityHook(await openDb({ lockWaitMs: 100 }), agEvent, input);
+      if (out) process.stdout.write(out);
+      return;
+    }
     const event = String(input.hook_event_name ?? "");
     if (event === "SessionEnd") {
       const auto = await import("./commands/auto.js");
@@ -273,6 +281,14 @@ async function runHook(client: string) {
       auto.startAutoScan({ force: await neverScanned(input.cwd) }); return;
     }
     if (!existsSync(join(home(), "muninn.db"))) return;
+    // Agent teams: record who did what, for workflow runs. Nothing is told to the agent.
+    if (event === "TaskCreated" || event === "TaskCompleted" || event === "TeammateIdle") {
+      const { openDb } = await import("./store/db.js");
+      const db = await openDb({ lockWaitMs: 100 });
+      const str = (v: unknown) => (typeof v === "string" && v ? v : null);
+      await db.execute({ sql: "INSERT INTO team_events (ts,session,event,team,teammate,agent_type,task_id,subject) VALUES (?,?,?,?,?,?,?,?)", args: [new Date().toISOString(), str(input.session_id), event, str(input.team_name), str(input.teammate_name), str(input.agent_type), str(input.task_id), str(input.task_subject)?.slice(0, 300) ?? null] });
+      return;
+    }
     // Claude finished a reply, or is about to compact: if the session has grown enough, update the plan in the background.
     if (event === "Stop" || event === "PreCompact") {
       const t = typeof input.transcript_path === "string" ? input.transcript_path : "";

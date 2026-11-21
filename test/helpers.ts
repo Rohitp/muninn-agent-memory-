@@ -12,6 +12,9 @@ export function useHome() {
   process.env.MUNINN_CODEX_HOOKS = join(h, "codex-hooks.json");
   // Antigravity's MCP settings: a folder that doesn't exist, so tests never write the real one.
   process.env.MUNINN_ANTIGRAVITY_MCP = join(h, "antigravity", "mcp_config.json");
+  process.env.MUNINN_CURSOR_MCP = join(h, "cursor", "mcp.json");
+  process.env.MUNINN_CODEX_CONFIG = join(h, "codex", "config.toml");
+  process.env.MUNINN_ANTIGRAVITY_HOOKS = join(h, "antigravity", "hooks.json");
   return h;
 }
 

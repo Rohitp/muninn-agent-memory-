@@ -32,6 +32,15 @@ It also proposes changes to what your agents read, each one waiting for you to a
 - **Skills.** The same steps run in the same order across sessions become a drafted Claude Code skill, so the agent follows them in one go.
 - **Edits to CLAUDE.md, AGENTS.md and skills.** On request, your Claude reviews those files against your sessions and proposes a few exact edits.
 
+## Teams of agents and long autonomous runs
+
+muninn learns from work you don't steer, too: Claude Code subagents, Claude Code agent teams, and Antigravity agent swarms (a builder, a reviewer, a checker and qa, each in its own worktree, posting to a shared board).
+
+- **Runs.** Sessions, subagents and worktrees that worked together become one workflow run, each part with a role. A run records, per role, the time, tokens and estimated cost at list price, the commands and failures, and every handoff between roles: approvals, work sent back, and fixes made after approval. `muninn runs` shows them, and the page shows findings your Claude writes about each run.
+- **Agents correcting agents.** When a reviewer sends a builder's work back, or the builder fixes something after it was approved, that becomes a suggested lesson for the role that missed it: the builder ("check edge cases before marking a milestone done"), and the reviewers that approved it ("test malformed input before approving").
+- **Lessons per role.** A role's lesson is told only to that role: a Claude Code subagent by its type, an agent by the worktree it works in.
+- **Did it work?** For each role lesson, muninn compares the runs before it was kept with the runs since, and says whether the role's problems went down, or whether the lesson never reached it. `muninn report` shows it.
+
 And two things for you rather than your agents: `muninn pr` writes the "why" for a branch's pull request (what was tried, what was decided, how to test) from your sessions, and `muninn insights` shows your week: where agents wasted effort, and whether lessons helped.
 
 ## Ask it about your work
@@ -39,7 +48,13 @@ And two things for you rather than your agents: `muninn pr` writes the "why" for
 Ask muninn a question about your own work and it answers from everything it keeps: kept lessons, the decisions and finished work in your branch plans, and your past sessions. It cites each source with its date, and you can ask follow-ups.
 
 - **On the page:** the Ask muninn box at the top.
-- **In any chat with Claude:** run `muninn mcp install` once. It adds muninn's MCP server (the standard way chat apps call outside tools) to Claude Code, the Claude desktop app and Antigravity. Then ask, in a normal chat, "what did we decide about the npm name?" or "how did we fix the webhook last time?". Claude can also suggest a lesson when you say "remember that…"; it waits in your review queue like any other. For Cursor or another app, `muninn mcp install` prints the command to add.
+- **In any chat with Claude:** run `muninn mcp install` once. It adds muninn's MCP server (the standard way chat apps call outside tools) to Claude Code, the Claude desktop app, Antigravity, and Cursor and Codex where they're installed. Then ask, in a normal chat:
+  - "what did we decide about the npm name?" or "how did we fix the webhook last time?" (searches everything)
+  - "where did the last session on this branch leave off?"
+  - "how did the agent swarm do today?" (runs, roles, cost, and whether role lessons worked)
+  - "what does muninn tell agents in this repo?" (kept lessons and waiting suggestions, with why)
+
+  Claude can also suggest a lesson when you say "remember that…", and keep or dismiss a waiting suggestion when you ask it to by name; it quotes your request, and you can change it on the page. For another app, `muninn mcp install` prints the command to add.
 
 ## What it looks like
 
@@ -60,10 +75,10 @@ claude plugin install muninn-panel@muninn
 
 | Tool | How |
 |---|---|
-| Claude Code (terminal and desktop app) | Hooks: session start, your prompt, failed commands, subagents |
+| Claude Code (terminal and desktop app) | Hooks: session start, your prompt, failed commands, subagents (each told its role's lessons). Agent-team hooks record which teammate did which task |
 | Codex | The same hooks, in `~/.codex/hooks.json`. Built from Codex's documentation, not yet tested live |
-| Cursor | Rules files in `.cursor/rules/` in each repo where you switch it on |
-| Antigravity | Rules files in `.agents/rules/` in each repo where you switch it on (`muninn antigravity on`): lessons told every session are always on, keyword lessons are read when they fit the task. Its sessions are read from its plain-text transcripts. Built from Antigravity's documentation; not yet tried on a real session |
+| Cursor | Rules files in `.cursor/rules/`, turned on by themselves once you use Cursor in a repo |
+| Antigravity | Rules files in `.agents/rules/`, turned on by themselves once you use Antigravity in a repo, and written into each agent's worktree with that role's lessons. Hooks in `~/.gemini/config/hooks.json` warn an agent mid-run when a command keeps failing the same way, and pass on keyword lessons. Its sessions, and its swarms' board messages, are read from its plain-text transcripts |
 | Claude Code, without hooks | Optional, per repo: always-on lessons in `CLAUDE.local.md`, for this machine only and ignored by git (`muninn local-file on`, or the switch on the page) |
 | Any agent | `muninn ask "how do the benchmarks run?"` searches what you've kept |
 
@@ -94,7 +109,7 @@ npm link            # puts `muninn` and `secondnature` on your PATH
 muninn setup
 ```
 
-After that you don't need any commands. muninn checks for new lessons on its own after your sessions end, and the page has a **Check now** button.
+After that you don't need any commands. muninn checks for new lessons on its own after your sessions end, and the page has a **Check now** button. On a Mac, `muninn schedule on` adds a background job that also checks every few hours, for days spent only in Antigravity or Cursor.
 
 ## Commands
 
@@ -111,6 +126,9 @@ After that you don't need any commands. muninn checks for new lessons on its own
 | `muninn changes` | Proposed rules, skills and instruction edits; `check` reviews CLAUDE.md now |
 | `muninn pr [--apply]` | Write the "why" for this branch's pull request |
 | `muninn insights` | Your week with coding agents |
+| `muninn runs` | Workflow runs: subagents, agent teams and swarms, with roles, handoffs and cost (`--all` for single sessions too) |
+| `muninn report` | Whether kept lessons worked, including lessons for one role in a team of agents |
+| `muninn schedule on` / `off` | A macOS background job that checks for lessons every few hours |
 | `muninn ignore-repo [name]` | Leave a repo alone: not listed, scanned or told anything (`--undo` to reverse) |
 | `muninn status` | Check everything is working |
 | `muninn pause` / `resume` | Stop or restart muninn |
@@ -120,7 +138,7 @@ Run `muninn` with no arguments for the full list.
 
 ## Status
 
-Early, and built for one person's daily use first. It works day to day with Claude Code. Codex delivery hasn't been tested live yet, and Cursor's chats are read but only through an undocumented format.
+Early, and built for one person's daily use first. It works day to day with Claude Code and with Antigravity agent swarms. Not yet tested live: Codex delivery, and Claude Code agent teams, whose message format in the logs isn't documented (muninn reads it defensively, and relies on the documented team hooks). Cursor's chats are read through an undocumented format. Costs are estimates at Anthropic's list prices; set your own in `~/.muninn/config.json` under `prices` for other models, such as Gemini.
 
 ## For contributors
 

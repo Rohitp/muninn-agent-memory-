@@ -2,7 +2,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { notTyped, parseLines, readText, sessionIdOf, STOPPED, stripPrivate, textOf, type LogEvent, type Session } from "./types.js";
+import { notTyped, parseLines, readText, sessionIdOf, STOPPED, stripPrivate, textOf, type AgentMessage, type LogEvent, type Session } from "./types.js";
 
 /** Claude Code's own tools that name a file or folder. */
 const FILE_TOOLS = new Set(["Read", "Edit", "MultiEdit", "Write", "NotebookEdit", "Grep", "Glob", "Skill"]);
@@ -16,8 +16,9 @@ export function readClaude(file: string): Session {
   const sub = isSubagentLog(file);
   const events: LogEvent[] = [];
   const usage = { input: 0, output: 0, cacheRead: 0 }; const counted = new Set<string>(); let model = "";
-  const turns: { ts: string; input: number; output: number }[] = [];
+  const turns: { ts: string; input: number; output: number; cacheRead?: number }[] = [];
   let task = "";
+  const messages: AgentMessage[] = [];
   // What each tool call asked for, until its result arrives: a shell command, or a file tool and the path it named.
   const pending = new Map<string, { cmd: string } | { tool: string; path: string; pattern?: string }>();
   let cwd = "", clientVersion = "unknown", unknown = 0, branch = "";
@@ -32,7 +33,7 @@ export function readClaude(file: string): Session {
     if (u && !counted.has(o.message.id ?? o.uuid)) {
       counted.add(o.message.id ?? o.uuid);
       usage.input += (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0); usage.output += u.output_tokens ?? 0; usage.cacheRead += u.cache_read_input_tokens ?? 0;
-      turns.push({ ts: o.timestamp ?? "", input: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), output: u.output_tokens ?? 0 });
+      turns.push({ ts: o.timestamp ?? "", input: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), output: u.output_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0 });
       if (o.message.model && o.message.model !== "<synthetic>") model = o.message.model;
     }
     // In a subagent's own log every record is a "sidechain". Its first message is the task its parent handed it, not you.
@@ -47,6 +48,13 @@ export function readClaude(file: string): Session {
     }
     const c = o.message?.content;
     const ts = o.timestamp ?? "";
+    // A message from a teammate arrives as a user turn wrapped in a tag naming the sender (agent teams; not documented).
+    const wrapped = o.type === "user" ? (typeof c === "string" ? c : textOf(c)).match(/^\s*<(teammate-message|agent-message|cross-session-message)\b([^>]*)>([\s\S]*?)<\/\1>/) : null;
+    if (wrapped) {
+      const from = wrapped[2]!.match(/\b(?:teammate_id|from|from-name|sender|name)="([^"]+)"/)?.[1] ?? null;
+      messages.push({ ts, dir: "in", from, to: [], text: stripPrivate(wrapped[3]!.trim()).slice(0, 2000) });
+      continue;
+    }
     if (o.type === "user") {
       if (typeof c === "string") { if (INTERRUPTED.test(c)) events.push({ k: "interrupt", ts }); else if (!notTyped(c)) events.push({ k: "typed", text: stripPrivate(c), ts }); continue; }
       for (const x of Array.isArray(c) ? c : []) {
@@ -71,15 +79,22 @@ export function readClaude(file: string): Session {
     if (o.type === "assistant") for (const x of Array.isArray(c) ? c : []) {
       if (x?.type === "text") events.push({ k: "agent", text: x.text ?? "", ts });
       if (x?.type === "tool_use" && x.name === "Bash") pending.set(x.id, { cmd: x.input?.command ?? "" });
+      // A message to a teammate (agent teams). The field names aren't documented, so the likely ones are tried.
+      if (x?.type === "tool_use" && x.name === "SendMessage") {
+        const i = x.input ?? {};
+        const to = [i.to, i.recipient, i.name, i.target, i.teammate].find((v) => typeof v === "string" && v) as string | undefined;
+        const text = [i.message, i.content, i.text, i.body, i.summary].find((v) => typeof v === "string" && v) as string | undefined;
+        if (text) messages.push({ ts, dir: "out", from: null, to: to ? [to] : [], text: stripPrivate(text).slice(0, 2000) });
+      }
       const path = x?.type === "tool_use" && FILE_TOOLS.has(x.name) ? x.input?.file_path ?? x.input?.notebook_path ?? x.input?.path ?? x.input?.skill : undefined;
       if (typeof path === "string" && path) pending.set(x.id, { tool: String(x.name).toLowerCase(), path, ...(typeof x.input?.pattern === "string" ? { pattern: x.input.pattern } : {}) });
     }
   }
-  const base: Session = { id: sessionIdOf(file), tool: "claude-code", cwd, clientVersion, events, unknown, branch: branch || undefined, file, usage, turns, ...(model ? { model } : {}) };
+  const base: Session = { id: sessionIdOf(file), tool: "claude-code", cwd, clientVersion, events, unknown, branch: branch || undefined, file, usage, turns, ...(model ? { model } : {}), ...(messages.length ? { messages } : {}) };
   if (!sub) return base;
-  let meta: { agentType?: string; description?: string } = {};
+  let meta: { agentType?: string; description?: string; name?: string } = {};
   const metaFile = join(dirname(file), `${sessionIdOf(file)}.meta.json`);
   try { if (existsSync(metaFile)) meta = JSON.parse(readFileSync(metaFile, "utf8")); } catch { /* no type then */ }
   // Text after the first item of a subagent's own user records is tool output, never you.
-  return { ...base, events: events.filter((e) => e.k !== "typed"), parent: basename(dirname(dirname(file))), agentType: meta.agentType ?? "subagent", task: (meta.description ? `${meta.description}: ` : "") + task.slice(0, 2000) };
+  return { ...base, events: events.filter((e) => e.k !== "typed"), parent: basename(dirname(dirname(file))), agentType: meta.name ?? meta.agentType ?? "subagent", task: (meta.description ? `${meta.description}: ` : "") + task.slice(0, 2000) };
 }

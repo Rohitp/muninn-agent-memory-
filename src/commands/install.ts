@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureHome } from "../config.js";
+import { setAntigravityHooks } from "../deliver/antigravity-hook.js";
 
 export type Client = "claude-code" | "codex";
 const files: Record<Client, () => string> = {
@@ -20,7 +21,9 @@ const isOurs = (h: any) => typeof h?.command === "string" && h.command.includes(
 export const EVENTS: Record<Client, Record<string, string | undefined>> = {
   // Stop (Claude finished a reply) and PreCompact keep the branch's plan current during long sessions.
   // Failures of file reads, edits and searches too, so a wrong path retried over and over is caught as it happens.
-  "claude-code": { SessionStart: undefined, UserPromptSubmit: undefined, PostToolUseFailure: "Bash|Read|Edit|MultiEdit|Write|NotebookEdit|Grep|Glob", SubagentStart: undefined, Stop: undefined, PreCompact: undefined, SessionEnd: undefined },
+  "claude-code": { SessionStart: undefined, UserPromptSubmit: undefined, PostToolUseFailure: "Bash|Read|Edit|MultiEdit|Write|NotebookEdit|Grep|Glob", SubagentStart: undefined, Stop: undefined, PreCompact: undefined, SessionEnd: undefined,
+    // Agent teams: which session is which teammate, and the tasks they hand each other. Recorded only; nothing is told.
+    TaskCreated: undefined, TaskCompleted: undefined, TeammateIdle: undefined },
   codex: { SessionStart: undefined, UserPromptSubmit: undefined, PostToolUse: "Bash", SubagentStart: undefined, Stop: undefined, PreCompact: undefined, SessionEnd: undefined },
 };
 export const DELIVERY_EVENTS = Object.fromEntries(Object.entries(EVENTS["claude-code"]).filter(([e]) => e !== "SessionEnd"));
@@ -68,6 +71,12 @@ export function install(events = ALL_EVENTS) {
   // The `muninn` command reruns itself on this Node when the PATH offers an older one (the hooks use it directly).
   writeFileSync(join(ensureHome(), "node"), realpathSync(process.execPath));
   const done = installFor("claude-code", events);
+  // Antigravity: mid-run warnings for its agents, where it's installed.
+  if (events.includes("PostToolUseFailure")) {
+    try {
+      if (setAntigravityHooks((ev: string) => `"${realpathSync(process.execPath)}" "${cli()}" hook --client antigravity --event ${ev}`, true)) console.log("Added muninn to Antigravity's hooks (~/.gemini/config/hooks.json): its agents get a warning when a command keeps failing the same way, and lessons whose keywords match what you typed.");
+    } catch (e) { console.log(`Couldn't add Antigravity's hooks: ${e instanceof Error ? e.message : String(e)}`); }
+  }
   const codex = codexPresent() ? installFor("codex", events.map((e) => (e === "PostToolUseFailure" ? "PostToolUse" : e))) : [];
   if (!done.length && !codex.length) { console.log("muninn's hooks are already installed."); return; }
   if ([...done, ...codex].includes("SessionEnd")) console.log('When a session ends, muninn writes a short handoff and may scan for lessons. Both send redacted excerpts to your Claude Code or Codex. Turn scans off with "autoLearn": false in muninn\'s config.json.');
@@ -76,6 +85,7 @@ export function install(events = ALL_EVENTS) {
 }
 export const installLearnHook = () => install(["SessionEnd"]);
 export function uninstall() {
+  try { setAntigravityHooks(() => "", false); } catch { /* leave a file muninn can't read alone */ }
   for (const client of Object.keys(files) as Client[]) {
     const file = files[client]();
     if (!existsSync(file)) continue;
