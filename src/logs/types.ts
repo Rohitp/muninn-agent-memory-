@@ -17,6 +17,7 @@ export const eventLine = (e: LogEvent): string =>
   : e.k === "file" ? `${e.tool.toUpperCase()}${e.failed ? " (failed)" : ""}: ${e.path.slice(0, 200)}`
   : "ENGINEER stopped the answer";
 export type Tool = "claude-code" | "codex" | "cursor" | "antigravity";
+export type WorkflowRun = { id: string; name: string; status: string; started: string; durationMs: number; agents: number; tokens: number; phases: string[]; logs: string[] };
 export type AgentMessage = { ts: string; dir: "in" | "out"; from: string | null; to: string[]; text: string };
 export type Usage = { input: number; output: number; cacheRead: number };
 export type Session = {
@@ -33,6 +34,10 @@ export type Session = {
   teammate?: string;
   /** Messages between agents in a swarm: posted to the shared board ("out"), or sent to this agent ("in", with the sender's session id). */
   messages?: AgentMessage[];
+  /** A Claude Code workflow agent: the workflow run, its phase ("Check") and its label ("review:step-4:r1"). */
+  workflow?: { id: string; phase?: string; label?: string };
+  /** Claude Code workflow runs this session started, from their summary files. */
+  workflowRuns?: WorkflowRun[];
   /** Subagents this session started, read from their own logs. */
   subagents?: Session[];
 };

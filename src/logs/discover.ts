@@ -1,12 +1,12 @@
-import { closeSync, globSync, openSync, readSync } from "node:fs";
-import { join } from "node:path";
+import { closeSync, globSync, openSync, readFileSync, readSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { logRoots } from "../config.js";
 import { repoIdentity } from "../repo/identity.js";
 import { readClaude } from "./claude-code.js";
 import { readCodex } from "./codex.js";
 import { readAntigravity } from "./antigravity.js";
 import { readCursor, slugToPath } from "./cursor.js";
-import { isOwnRun, type Session } from "./types.js";
+import { isOwnRun, type Session, type WorkflowRun } from "./types.js";
 import { archivedOnly } from "../store/sessions.js";
 import { roleOf } from "../workflow/runs.js";
 
@@ -18,7 +18,9 @@ export function logFiles() {
     roots,
     claude: globSync("*/*.jsonl", { cwd: roots.claude }).map((f) => join(roots.claude, f)),
     /** Subagents' own logs, beside the session that started them. */
-    claudeSub: globSync("*/*/subagents/*.jsonl", { cwd: roots.claude }).map((f) => join(roots.claude, f)),
+    claudeSub: [...globSync("*/*/subagents/*.jsonl", { cwd: roots.claude }), ...globSync("*/*/subagents/workflows/*/*.jsonl", { cwd: roots.claude })].map((f) => join(roots.claude, f)),
+    /** Claude Code workflow runs' summary files: name, phases, agents, tokens, and the log lines the workflow wrote. */
+    claudeWorkflows: globSync("*/*/workflows/*.json", { cwd: roots.claude }).map((f) => join(roots.claude, f)),
     codex: globSync("**/rollout-*.jsonl", { cwd: roots.codex }).map((f) => join(roots.codex, f)),
     cursor: globSync("*/agent-transcripts/**/*.jsonl", { cwd: roots.cursor }).map((f) => join(roots.cursor, f)),
     antigravity: globSync("{antigravity,antigravity-ide,antigravity-cli}/brain/*/.system_generated/logs/transcript.jsonl", { cwd: roots.antigravity }).map((f) => join(roots.antigravity, f)),
@@ -45,6 +47,17 @@ export function scanLogs(): Scan {
   // Antigravity swarm agents: conversations started by another conversation's message, not by you.
   for (const x of all) if (x.tool === "antigravity" && x.parent) subs.set(x.parent, [...(subs.get(x.parent) ?? []), x]);
   for (const s of all) if (subs.has(s.id)) s.subagents = subs.get(s.id);
+  // Workflow runs a session started, from their summary files.
+  const wfs = new Map<string, WorkflowRun[]>();
+  for (const file of f.claudeWorkflows) {
+    try {
+      const o = JSON.parse(readFileSync(file, "utf8"));
+      const session = basename(dirname(dirname(file)));
+      const w: WorkflowRun = { id: String(o.runId ?? basename(file, ".json")), name: String(o.workflowName ?? ""), status: String(o.status ?? ""), started: typeof o.startTime === "number" ? new Date(o.startTime).toISOString() : String(o.timestamp ?? ""), durationMs: Number(o.durationMs ?? 0), agents: Number(o.agentCount ?? 0), tokens: Number(o.totalTokens ?? 0), phases: Array.isArray(o.phases) ? o.phases.map((p: { title?: string }) => String(p.title ?? "")) : [], logs: Array.isArray(o.logs) ? o.logs.map(String).slice(0, 50) : [] };
+      wfs.set(session, [...(wfs.get(session) ?? []), w]);
+    } catch { /* a summary being written */ }
+  }
+  for (const s of all) if (wfs.has(s.id)) s.workflowRuns = wfs.get(s.id);
   // Each session's role in a team of agents, for runs, session reviews and insights.
   for (const s of all) for (const x of [s, ...(s.subagents ?? [])]) { try { x.role = roleOf(x); } catch { /* roles are extra */ } }
   for (const s of all) {

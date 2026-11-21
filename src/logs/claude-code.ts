@@ -10,7 +10,9 @@ const FILE_TOOLS = new Set(["Read", "Edit", "MultiEdit", "Write", "NotebookEdit"
 const INTERRUPTED = /^\s*\[Request interrupted by user\]/;
 
 /** A subagent's log: <project>/<parent session>/subagents/agent-<id>.jsonl, with agent-<id>.meta.json beside it. */
-export const isSubagentLog = (file: string) => basename(dirname(file)) === "subagents";
+export const isSubagentLog = (file: string) => /[\\/]subagents[\\/]/.test(file);
+/** The session folder a subagent log sits under: <project>/<session>/subagents/[workflows/<run>/]agent-x.jsonl. */
+const sessionDirOf = (file: string) => { let d = dirname(file); while (basename(d) !== "subagents" && d !== dirname(d)) d = dirname(d); return dirname(d); };
 
 export function readClaude(file: string): Session {
   const sub = isSubagentLog(file);
@@ -92,9 +94,9 @@ export function readClaude(file: string): Session {
   }
   const base: Session = { id: sessionIdOf(file), tool: "claude-code", cwd, clientVersion, events, unknown, branch: branch || undefined, file, usage, turns, ...(model ? { model } : {}), ...(messages.length ? { messages } : {}) };
   if (!sub) return base;
-  let meta: { agentType?: string; description?: string; name?: string } = {};
+  let meta: { agentType?: string; description?: string; name?: string; workflowPhase?: string; inWorkflowRun?: boolean } = {};
   const metaFile = join(dirname(file), `${sessionIdOf(file)}.meta.json`);
   try { if (existsSync(metaFile)) meta = JSON.parse(readFileSync(metaFile, "utf8")); } catch { /* no type then */ }
   // Text after the first item of a subagent's own user records is tool output, never you.
-  return { ...base, events: events.filter((e) => e.k !== "typed"), parent: basename(dirname(dirname(file))), agentType: meta.name ?? meta.agentType ?? "subagent", task: (meta.description ? `${meta.description}: ` : "") + task.slice(0, 2000) };
+  return { ...base, events: events.filter((e) => e.k !== "typed"), parent: basename(sessionDirOf(file)), ...(meta.inWorkflowRun || basename(dirname(dirname(file))) === "workflows" ? { workflow: { id: basename(dirname(file)), phase: meta.workflowPhase, label: meta.description } } : {}), agentType: meta.name ?? meta.agentType ?? "subagent", task: (meta.description ? `${meta.description}: ` : "") + task.slice(0, 2000) };
 }
