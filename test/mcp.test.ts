@@ -43,8 +43,8 @@ describe("answers from everything muninn keeps", () => {
 });
 
 describe("the MCP tools", () => {
-  it("lists five tools, each with a schema", () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(["search_history", "get_plan", "get_week", "list_repos", "suggest_lesson"]);
+  it("lists its tools, each with a schema", () => {
+    expect(TOOLS.map((t) => t.name)).toEqual(["search_history", "get_plan", "get_week", "get_related", "list_repos", "suggest_lesson"]);
     for (const t of TOOLS) expect(t.inputSchema.type).toBe("object");
   });
   it("finds a repo by its short name, and says which ones exist when it can't", async () => {
@@ -75,7 +75,7 @@ describe("the MCP tools", () => {
     await new Promise<void>((ok, fail) => { const t = setInterval(() => { if (lines.length >= 3) { clearInterval(t); ok(); } }, 50); setTimeout(() => { clearInterval(t); fail(new Error(`only ${lines.length} replies`)); }, 15000); });
     child.kill();
     expect(lines[0]).toMatchObject({ id: 1, result: { protocolVersion: "2025-06-18", serverInfo: { name: "muninn" } } });
-    expect(lines[1].result.tools).toHaveLength(5);
+    expect(lines[1].result.tools).toHaveLength(6);
     expect(lines[2].result.content[0].text).toContain("shop");
   }, 30000);
 });

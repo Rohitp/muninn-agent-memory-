@@ -11,8 +11,9 @@ import { getPlan, type PlanItem } from "./plan.js";
  * shipped, 21 Nov, ffbf07e), each in a plain-language area, with routine steps (tests run, pushed) marked so they
  * fold away; and each decision as what was decided and why.
  */
-export type Outcome = { id: string; title: string; result: string; kind: "shipped" | "fixed" | "checked" | "explored"; area: string; ref: string | null; at: string; steps: { id: string; text: string; routine: boolean; at: string; reopenable: boolean }[] };
-export type Decision = { id: string; what: string; why: string | null; area: string | null; at: string };
+export type Links = { because?: string[]; ledTo?: string[]; sessions?: number; files?: string[] };
+export type Outcome = { id: string; title: string; result: string; kind: "shipped" | "fixed" | "checked" | "explored"; area: string; ref: string | null; at: string; steps: { id: string; text: string; routine: boolean; at: string; reopenable: boolean }[]; links?: Links };
+export type Decision = { id: string; what: string; why: string | null; area: string | null; at: string; links?: Links };
 export type History = { outcomes: Outcome[]; ungrouped: Outcome["steps"]; decisions: Decision[]; areas: string[] };
 
 const stepAt = (i: PlanItem) => i.closed_at ?? i.created_at;
@@ -28,6 +29,7 @@ export async function getHistory(db: Client, repo: string, branch: string): Prom
     steps: done.filter((d) => d.outcome_id === String(r.id)).map(stepOf).sort((a, b) => a.at.localeCompare(b.at)),
   })).filter((o) => o.steps.length);
   const decisions = plan.decisions.map((d) => { const x = extra.get(d.id); return { id: d.id, what: x?.what ? String(x.what) : d.text, why: x?.why ? String(x.why) : null, area: x?.area ? String(x.area) : null, at: d.created_at }; });
+  await attachLinks(db, outcomes, decisions);
   const areas = [...new Set([...outcomes.map((o) => o.area), ...decisions.flatMap((d) => (d.area ? [d.area] : []))])];
   return { outcomes, ungrouped: done.filter((d) => !d.outcome_id).map(stepOf), decisions, areas };
 }
@@ -122,4 +124,20 @@ export async function groupHistory(db: Client, repo: string, branch: string, run
 /** Branches of a repo with steps or decisions not yet organised. */
 export async function branchesToGroup(db: Client, repo: string): Promise<string[]> {
   return (await db.execute({ sql: "SELECT DISTINCT branch FROM plan_items WHERE repo_id=? AND branch IS NOT NULL AND status!='removed' AND ((outcome_id IS NULL AND ((kind='done' AND status='active') OR (kind='open' AND status='closed'))) OR (kind='decision' AND status='active' AND area IS NULL))", args: [repo] })).rows.map((r) => String(r.branch));
+}
+
+/** What each outcome and decision links to, short enough for one line under it on the page. */
+async function attachLinks(db: Client, outcomes: Outcome[], decisions: Decision[]) {
+  const q = async (sql: string, args: string[]) => { try { return (await db.execute({ sql, args })).rows; } catch { return []; } };
+  for (const o of outcomes) {
+    const because = (await q("SELECT coalesce(p.what, p.text) t FROM links l JOIN plan_items p ON p.id=l.src_id WHERE l.rel='motivates' AND l.dst_id=? ORDER BY l.score DESC LIMIT 3", [o.id])).map((r) => String(r.t));
+    const sessions = Number((await q("SELECT count(*) n FROM links WHERE src_id=? AND rel='built_in'", [o.id]))[0]?.n ?? 0);
+    let files: string[] = [];
+    try { const { filesFor } = await import("../links/links.js"); files = (await filesFor(db, [o.id], 4)).files; } catch { /* no links yet */ }
+    o.links = { because, sessions, files };
+  }
+  for (const d of decisions) {
+    const ledTo = (await q("SELECT o.title FROM links l JOIN plan_outcomes o ON o.id=l.dst_id WHERE l.rel='motivates' AND l.src_id=? ORDER BY l.score DESC LIMIT 3", [d.id])).map((r) => String(r.title));
+    d.links = { ledTo };
+  }
 }

@@ -16,6 +16,7 @@ const USAGE = `muninn: lessons that carry across coding sessions
   muninn edit <id> [--text "..."] [--always-on|--not-always-on] [--trigger word] [--global|--repo-scope]
   muninn retire <id>
   muninn ask "question"         Search kept lessons and notes in every repo
+  muninn related "what" [--all-repos]  What a decision or piece of work led to, and where it was done
   muninn recall "what" [--all-repos] [--days N] [--full]
                                 Search your past sessions: what was asked, said and run
   muninn memory [--all-repos]   Lines in CLAUDE.md that may be out of date
@@ -158,6 +159,13 @@ async function main() {
     case "uninstall": { (await import("./commands/install.js")).uninstall(); console.log("Removed muninn's hooks. Lessons are kept."); return; }
     case "ask": return (await import("./commands/ask.js")).ask(args);
     case "mcp": return (await import("./mcp/install.js")).mcpCmd(args);
+    case "related": {
+      const about = args.filter((x) => !x.startsWith("--")).join(" ").trim();
+      if (!about) { console.error('Usage: muninn related "a decision or piece of work" [--all-repos]'); process.exitCode = 1; return; }
+      const [{ openDb }, { repoIdentity }, { loadEmbedder }, { relatedText }] = await Promise.all([import("./store/db.js"), import("./repo/identity.js"), import("./embed/model.js"), import("./links/links.js")]);
+      console.log(await relatedText(await openDb(), about, args.includes("--all-repos") ? null : repoIdentity(process.cwd()), await loadEmbedder()));
+      return;
+    }
     case "recall": return (await import("./commands/recall.js")).recall(args);
     case "cursor": return cursorCmd(args[0] ?? "");
     case "local-file": return localFileCmd(args[0] ?? "");

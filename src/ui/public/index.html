@@ -187,7 +187,7 @@ function histList() {
   if (hist.tab === "decisions") {
     if (!decisions.length) return `<p class="note">No decisions match.</p>`;
     const areas = [...new Set(decisions.map((d) => d.area || "Other"))];
-    return areas.map((a) => `<div class="hday">${esc(a)}</div>${decisions.filter((d) => (d.area || "Other") === a).map((d) => `<div class="hdec"><div><div class="htitle">${esc(d.what)}</div>${d.why ? `<div class="why">Because ${esc(d.why)}</div>` : ""}</div><span class="hdate">${esc(shortDate(d.at))}</span><button class="x" data-plan-remove="${esc(d.id)}" aria-label="Remove this decision" title="Remove">×</button></div>`).join("")}`).join("");
+    return areas.map((a) => `<div class="hday">${esc(a)}</div>${decisions.filter((d) => (d.area || "Other") === a).map((d) => `<div class="hdec"><div><div class="htitle">${esc(d.what)}</div>${d.why ? `<div class="why">Because ${esc(d.why)}</div>` : ""}${d.links?.ledTo?.length ? `<div class="why">Led to: ${d.links.ledTo.map(esc).join(" · ")}</div>` : ""}</div><span class="hdate">${esc(shortDate(d.at))}</span><button class="x" data-plan-remove="${esc(d.id)}" aria-label="Remove this decision" title="Remove">×</button></div>`).join("")}`).join("");
   }
   if (!outcomes.length) return `<p class="note">${hist.q || hist.area !== "All" ? "Nothing done matches. Clear the search or pick All." : "Nothing done on this branch yet."}</p>`;
   const searching = !!hist.q;
@@ -202,6 +202,7 @@ function histList() {
       <span><span class="htitle">${esc(o.title)}</span><div class="hres">${esc(o.result)}</div>
         <span class="hmeta"><span class="hkind ${o.kind}">${KIND_LABEL[o.kind] || o.kind}</span>${o.area ? `<span>${esc(o.area)}</span><span aria-hidden="true">·</span>` : ""}<span>${o.steps.length} step${o.steps.length === 1 ? "" : "s"}${hidden ? `, ${hidden} routine hidden` : ""}</span></span></span>
       <span class="href">${esc(o.ref || "")}</span></button>
+      ${isOpen && (o.links?.because?.length || o.links?.sessions || o.links?.files?.length) ? `<div class="hres" style="margin:0 0 8px 28px">${[o.links.because?.length ? `Because of: ${o.links.because.map(esc).join(" · ")}` : "", o.links.sessions ? `Built in ${o.links.sessions} session${o.links.sessions === 1 ? "" : "s"}` : "", o.links.files?.length ? `Files: ${o.links.files.map((f) => `<code>${esc(f)}</code>`).join(", ")}` : ""].filter(Boolean).join(". ")}</div>` : ""}
       ${isOpen ? `<ol class="hsteps">${steps.map((s) => `<li class="${s.routine ? "routine" : ""}">${esc(s.text)}${s.reopenable ? ` <button class="linkbtn" data-plan-reopen="${esc(s.id)}">reopen</button>` : ""}</li>`).join("")}</ol>` : ""}</div>`;
   }).join("")}`).join("") + (shown.length < outcomes.length ? `<button class="more" data-hist-more>Show ${Math.min(8, outcomes.length - shown.length)} earlier outcomes of ${outcomes.length - shown.length}</button>` : "");
 }

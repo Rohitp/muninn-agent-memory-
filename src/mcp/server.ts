@@ -33,6 +33,11 @@ export const TOOLS = [
     inputSchema: { type: "object", properties: { repo: repoArg, all_repos: { type: "boolean" }, days: { type: "number", description: "How many days back; default 7." } } },
   },
   {
+    name: "get_related",
+    description: "What a decision or piece of finished work connects to in the engineer's history: the outcomes a decision led to, the decisions behind an outcome, the sessions it was discussed and built in, the commits it shipped in, and the files those sessions worked on. Use it for questions like \"what did deciding X affect?\" or \"why was Y built?\", then check the code itself for what is affected today.",
+    inputSchema: { type: "object", properties: { about: { type: "string", description: "The decision or work, in plain words." }, repo: repoArg, all_repos: { type: "boolean" } }, required: ["about"] },
+  },
+  {
     name: "list_repos",
     description: "The repos muninn knows, with how many lessons each has kept and waiting.",
     inputSchema: { type: "object", properties: {} },
@@ -77,6 +82,12 @@ export async function callTool(db: Client, name: string, a: Args, embed: () => P
     if (!repo) throw new Error("Say which repo: the chat isn't running inside one.");
     const branch = typeof a.branch === "string" && a.branch ? a.branch : (currentBranch(process.cwd()) && repoIdentity(process.cwd()) === repo ? currentBranch(process.cwd())! : "main");
     return planMarkdown(await getPlan(db, repo, branch), repo.split("/").pop() ?? repo, branch);
+  }
+  if (name === "get_related") {
+    const e = await embed();
+    if (!e) throw new Error("muninn's local model isn't downloaded yet. Run \"muninn learn --all-repos\" once in a terminal.");
+    const { relatedText } = await import("../links/links.js");
+    return relatedText(db, String(a.about ?? ""), repo, e);
   }
   if (name === "get_week") return insightsText(await insightsData(db, repo, typeof a.days === "number" ? a.days : 7));
   if (name === "suggest_lesson") {
