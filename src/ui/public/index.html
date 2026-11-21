@@ -876,6 +876,27 @@ function runPageView() {
         <div class="note" style="margin:0">Most is reading: context taken in, not code written.${r.wasted_tokens ? ` About ${tok(r.wasted_tokens)} went on failed retries and re-reads.` : ""}</div></div></section>` : ""}
     </div>`;
 }
+/** Where a lesson applies while you keep or edit it: this repo, all repos or another repo, and which role hears it. */
+function whereFields(l, global) {
+  const roles = [...new Set([...data.runs.flatMap((r) => r.roles), ...data.kept.map((k) => k.role), l.role].filter((x) => x && !/^(main|general-purpose|subagent|fork|agent|workflow-subagent)$/.test(x)))].sort();
+  const showRole = !!l.role || roles.length > 0;
+  return `<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-top:4px">
+    <div><label for="r-${esc(l.id)}">Applies to</label>
+      <select id="r-${esc(l.id)}" data-f="applies" style="height:34px;border:1px solid var(--line-strong);border-radius:var(--radius-md);background:var(--group);padding:0 10px;font-size:14px;max-width:100%">
+        <option value="*" ${global ? "selected" : ""}>All repos</option>
+        ${[...new Set([l.repo_id, ...data.repos.map((r) => r.id)].filter(Boolean))].map((r) => `<option value="${esc(r)}" ${!global && r === l.repo_id ? "selected" : ""}>${esc(short(r))}${r === l.repo_id ? " (where it was learned)" : ""}</option>`).join("")}
+      </select></div>
+    ${showRole ? `<div><label for="ro-${esc(l.id)}">Role</label>
+      <input id="ro-${esc(l.id)}" data-f="role" list="roles-${esc(l.id)}" value="${esc(l.role || "")}" placeholder="Every agent" style="height:34px;border:1px solid var(--line-strong);border-radius:var(--radius-md);background:var(--group);padding:0 10px;width:200px;font-size:14px;max-width:100%">
+      <datalist id="roles-${esc(l.id)}">${roles.map((r) => `<option value="${esc(r)}"></option>`).join("")}</datalist></div>` : ""}
+  </div>
+  ${showRole ? `<p class="hint">Leave Role empty for every agent. A role (builder, reviewer…) means only agents working as it are told.</p>` : ""}`;
+}
+/** The where-fields' values as /api/decide takes them. */
+function whereBody(box) {
+  const applies = box.querySelector("[data-f=applies]")?.value; const role = box.querySelector("[data-f=role]");
+  return { ...(applies ? { global: applies === "*", ...(applies !== "*" ? { repo: applies } : {}) } : {}), ...(role ? { role: role.value.trim() } : {}) };
+}
 /** Whether a role lesson is helping, in one word. Not reaching is a setup problem, so it's amber, not orange. */
 const VERDICT = { working: ["Helping", "good"], not_working: ["Still happening", "warn"], not_told: ["Not reaching the {role}", "caution"], too_early: ["Too early", ""], no_runs_yet: ["Waiting for a run", ""] };
 /** A lesson meant for one role only (a reviewer, say) says so; lessons for everyone show nothing. */
@@ -940,7 +961,7 @@ function suggestionRow(l) {
       <label for="t-${esc(l.id)}">What agents are told</label>
       <textarea id="t-${esc(l.id)}" rows="3" data-f="text">${esc(l.text)}</textarea>
       ${whenChoices(d.route, (d.keywords.length ? d.keywords : l.suggested || []).join(", "))}${roleNote(l)}
-      ${l.scope !== "global" ? `<label class="checkline"><input type="checkbox" data-f="global" ${d.global ? "checked" : ""}> Tell agents in all my repos, not just this one</label>` : ""}
+      ${whereFields(l, l.scope === "global" || d.global)}
       ${ev ? `<div class="evidence">${runs ? "What ran in your session:" : ["repeat", "correction", "explained", "confused", "friction", "stated", "steered"].includes(l.signal) ? "You said:" : l.signal === "promised" ? "The agent said:" : l.signal === "sent_back" || l.signal === "missed" ? "What the agents said:" : "From your session:"} ${ev}</div>` : ""}
       <div class="btns"><button class="btn primary" data-add="${esc(l.id)}" data-custom="1">Keep</button><button class="btn" data-open="${esc(l.id)}">Cancel</button></div>
     </div>` : ""}
@@ -966,13 +987,9 @@ function lessonRow(l) {
     ${isOpen ? `<div class="detail">
       <label for="t-${esc(l.id)}">What agents are told</label>
       <textarea id="t-${esc(l.id)}" rows="3" data-f="text">${esc(l.text)}</textarea>
-      ${l.why ? `<p class="hint">Why muninn kept this: ${esc(l.why)}</p>` : ""}
+      ${l.why ? `<p class="hint">Why: ${esc(l.why)}</p>` : ""}
       ${whenChoices(route, l.triggers.join(", "))}${roleNote(l)}
-      <label for="r-${esc(l.id)}">Applies to</label>
-      <select id="r-${esc(l.id)}" data-f="applies" style="height:38px;border:1px solid var(--line-strong);border-radius:10px;background:var(--group);padding:0 10px;font-size:14px">
-        <option value="*" ${l.scope === "global" ? "selected" : ""}>All repos</option>
-        ${[...new Set([l.repo_id, ...data.repos.map((r) => r.id)].filter(Boolean))].map((r) => `<option value="${esc(r)}" ${l.scope !== "global" && r === l.repo_id ? "selected" : ""}>${esc(short(r))}${r === l.repo_id ? " (where it was learned)" : ""}</option>`).join("")}
-      </select>
+      ${whereFields(l, l.scope === "global")}
       <div class="btns"><button class="btn primary" data-save="${esc(l.id)}">Save</button><button class="btn" data-open="${esc(l.id)}">Cancel</button><button class="btn textbtn" data-remove="${esc(l.id)}">Remove lesson</button></div>
     </div>` : ""}
   </li>`;
@@ -1300,8 +1317,7 @@ document.addEventListener("click", async (e) => {
       if (el.dataset.custom) {
         const box = li.querySelector(".detail"); const route = box.querySelector("[data-route][aria-checked=true]").dataset.route; const kws = box.querySelector("[data-f=kw]").value;
         if (route === "keyword" && !kws.trim()) { toast("Add a word, or pick another option."); return; }
-        const g = box.querySelector("[data-f=global]");
-        body = { id: l.id, action: "keep", text: box.querySelector("[data-f=text]").value, route, keywords: kws, ...(g ? { global: g.checked } : {}) };
+        body = { id: l.id, action: "keep", text: box.querySelector("[data-f=text]").value, route, keywords: kws, ...whereBody(box) };
       }
       el.disabled = true; await api("/api/decide", body); open = null; toast("Kept. Agents are told it from their next session."); await refresh(); return;
     }
@@ -1317,8 +1333,7 @@ document.addEventListener("click", async (e) => {
       const box = li.querySelector(".detail"); const route = box.querySelector("[data-route][aria-checked=true]").dataset.route; const kws = box.querySelector("[data-f=kw]").value;
       if (route === "keyword" && !kws.trim()) { toast("Add a word, or pick another option."); return; }
       el.disabled = true;
-      const applies = box.querySelector("[data-f=applies]").value;
-      await api("/api/decide", { id: el.dataset.save, action: "save", text: box.querySelector("[data-f=text]").value, route, keywords: kws, global: applies === "*", ...(applies !== "*" ? { repo: applies } : {}) });
+      await api("/api/decide", { id: el.dataset.save, action: "save", text: box.querySelector("[data-f=text]").value, route, keywords: kws, ...whereBody(box) });
       open = null; toast("Saved. Agents get the new version from their next session."); await refresh(); return;
     }
     if (el.dataset.remove) {
