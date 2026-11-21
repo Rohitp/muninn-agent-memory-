@@ -68,7 +68,7 @@ export async function learn(opts: { allRepos?: boolean; auto?: boolean; noReview
     } catch { /* runs are a view, not needed to learn */ }
     // Subagents learn too: their failed commands, loops and wrong paths. They never typed anything, so your-words signals skip them.
     const withSubs = [...sessions, ...sessions.flatMap((s) => s.subagents ?? [])];
-    const r = await learnRepo(db, repo, withSubs, { embed, writer, cutoff: cfg.similarityCutoff, minSessions: cfg.minSessions, notesPerRun: cfg.notesPerRun, extra });
+    const r = await learnRepo(db, repo, withSubs, { embed, writer, cutoff: cfg.similarityCutoff, minSessions: cfg.minSessions, notesPerRun: cfg.notesPerRun, extra: [...extra, ...(await (await import("../learn/unanswered.js")).unansweredMoments(db, repo, embed).catch(() => []))] });
     await saveUsage(db, writer?.runner ?? null, "lesson writing");
     // Long sessions read in chunks by your Claude: what you steered toward, and what the session showed.
     if (writer) {

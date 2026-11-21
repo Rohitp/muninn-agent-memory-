@@ -71,7 +71,7 @@ export async function learnRepo(db: Client, repo: string, sessions: Session[], d
       res.addedEvidence++; continue;
     }
     const source = k.m.signal === "repeat" && !deps.writer ? "own_words" : "inferred";
-    const id = await createLesson(db, { repo_id: repo, text: k.text, source, signal: k.m.signal, suggestedScope: k.scope, kind: k.m.signal === "explained" ? "note" : "rule", suggestedKeywords: k.keywords, status: "proposed", sessions: k.m.sessions, last_seen: k.m.last, vector: k.vector, by: deps.writer ? `learn:${deps.writer.name}` : "learn", wasted: k.m.wasted, why: k.why, role: k.m.role });
+    const id = await createLesson(db, { repo_id: repo, text: k.text, source, signal: k.m.signal, suggestedScope: k.scope, kind: k.m.signal === "explained" || k.m.signal === "unanswered" ? "note" : "rule", suggestedKeywords: k.keywords, status: "proposed", sessions: k.m.sessions, last_seen: k.m.last, vector: k.vector, by: deps.writer ? `learn:${deps.writer.name}` : "learn", wasted: k.m.wasted, why: k.why, role: k.m.role });
     await addEvidence(db, id, k.m.quotes);
     existing.push({ id, status: "proposed", text: k.text, vector: k.vector, role: k.m.role ?? null });
     res.newLessons++;
