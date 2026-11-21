@@ -59,7 +59,7 @@ export function withBlock(text: string, block: string | null): string {
 }
 
 export async function blockFor(db: Client, repo: string): Promise<string> {
-  const rows = (await db.execute({ sql: "SELECT text FROM lessons WHERE status='live' AND off=0 AND always_on=1 AND (scope='global' OR repo_id=?) ORDER BY updated_at", args: [repo] })).rows;
+  const rows = (await db.execute({ sql: "SELECT text FROM lessons WHERE status='live' AND off=0 AND always_on=1 AND role IS NULL AND (scope='global' OR repo_id=?) ORDER BY updated_at", args: [repo] })).rows;
   return [
     START,
     "## Lessons from muninn",

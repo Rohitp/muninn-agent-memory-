@@ -15,8 +15,8 @@ const norm = (s: string) => s.toLowerCase().replace(/\W+/g, " ").trim();
 /** Identifies a moment by its quotes, so the writer's verdict can be remembered. */
 export const momentKey = (m: Moment) => createHash("sha1").update(m.signal + "\u0000" + m.quotes.map((q) => `${q.session}\u0000${q.quote}`).sort().join("\u0001")).digest("hex");
 
-export async function learnRepo(db: Client, repo: string, sessions: Session[], deps: { embed: Embed; writer: Writer | null; cutoff: number; minSessions: number; notesPerRun?: number }): Promise<LearnResult> {
-  const found = await findMoments(sessions, deps.embed, { cutoff: deps.cutoff, minSessions: deps.minSessions });
+export async function learnRepo(db: Client, repo: string, sessions: Session[], deps: { embed: Embed; writer: Writer | null; cutoff: number; minSessions: number; notesPerRun?: number; extra?: Moment[] }): Promise<LearnResult> {
+  const found = [...(await findMoments(sessions, deps.embed, { cutoff: deps.cutoff, minSessions: deps.minSessions })), ...(deps.extra ?? [])];
   const res: LearnResult = { moments: {}, written: 0, discarded: 0, newLessons: 0, addedEvidence: 0, dropped: 0, skippedNoWriter: 0, known: 0 };
   for (const m of found) res.moments[m.signal] = (res.moments[m.signal] ?? 0) + 1;
 
@@ -70,7 +70,7 @@ export async function learnRepo(db: Client, repo: string, sessions: Session[], d
       res.addedEvidence++; continue;
     }
     const source = k.m.signal === "repeat" && !deps.writer ? "own_words" : "inferred";
-    const id = await createLesson(db, { repo_id: repo, text: k.text, source, signal: k.m.signal, suggestedScope: k.scope, kind: k.m.signal === "explained" ? "note" : "rule", suggestedKeywords: k.keywords, status: "proposed", sessions: k.m.sessions, last_seen: k.m.last, vector: k.vector, by: deps.writer ? `learn:${deps.writer.name}` : "learn", wasted: k.m.wasted, why: k.why });
+    const id = await createLesson(db, { repo_id: repo, text: k.text, source, signal: k.m.signal, suggestedScope: k.scope, kind: k.m.signal === "explained" ? "note" : "rule", suggestedKeywords: k.keywords, status: "proposed", sessions: k.m.sessions, last_seen: k.m.last, vector: k.vector, by: deps.writer ? `learn:${deps.writer.name}` : "learn", wasted: k.m.wasted, why: k.why, role: k.m.role });
     await addEvidence(db, id, k.m.quotes);
     existing.push({ id, status: "proposed", text: k.text, vector: k.vector });
     res.newLessons++;
