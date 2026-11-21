@@ -34,6 +34,8 @@ export const DEFAULTS = {
   backgroundModel: "haiku",
   /** Model for deciding what is worth a lesson. "" uses the client default. */
   judgeModel: "",
+  /** Your own prices per million tokens, for models muninn doesn't know (Gemini, a discount): {"gemini-4-neon-high": {"input": 1.25, "output": 10, "cacheRead": 0.31}}. Matched by name prefix. */
+  prices: {} as Record<string, { input: number; output: number; cacheRead?: number }>,
 };
 export type Settings = typeof DEFAULTS;
 export function settings(): Settings {

@@ -71,3 +71,35 @@ describe("workflow runs", () => {
     expect(run!.handoffs[0]!.note).toBe("- fix: null guard (M1 #4 follow-up)");
   });
 });
+
+describe("Claude Code agent teams", () => {
+  it("read messages sent to teammates and received from them, whatever the undocumented field names", () => {
+    const f = join(tmp(), "proj", "lead.jsonl");
+    write(f, [
+      { type: "user", cwd: "/r", timestamp: T(0), message: { role: "user", content: "build the app with a team" } },
+      { type: "assistant", timestamp: T(1), message: { id: "m1", content: [{ type: "tool_use", id: "t1", name: "SendMessage", input: { to: "reviewer", message: "Please review PR #2", summary: "review PR 2" } }] } },
+      { type: "user", timestamp: T(2), message: { role: "user", content: '<teammate-message teammate_id="reviewer">Changes requested: missing tests</teammate-message>' } },
+    ]);
+    const s = readClaude(f);
+    expect(s.messages).toEqual([
+      { ts: T(1), dir: "out", from: null, to: ["reviewer"], text: "Please review PR #2" },
+      { ts: T(2), dir: "in", from: "reviewer", to: [], text: "Changes requested: missing tests" },
+    ]);
+    expect(s.events.filter((e) => e.k === "typed").map((e) => e.k === "typed" && e.text)).toEqual(["build the app with a team"]);
+  });
+  it("name teammates' sessions from muninn's team hooks, and show finished tasks as handoffs", async () => {
+    const { openDb } = await import("../src/store/db.js");
+    const { applyTeam, buildRuns, teamFacts } = await import("../src/workflow/runs.js");
+    const db = await openDb();
+    const ev = (session: string, event: string, teammate: string | null, subject: string | null) =>
+      db.execute({ sql: "INSERT INTO team_events (ts,session,event,team,teammate,agent_type,task_id,subject) VALUES (?,?,?,?,?,?,?,?)", args: [T(3), session, event, "session-abc", teammate, null, subject ? "1" : null, subject] });
+    await ev("mate-1", "TeammateIdle", "researcher", null);
+    await ev("mate-1", "TaskCompleted", "researcher", "Compare three price feeds");
+    const lead = session("lead", "/nowhere", [0, 5]); const mate = session("mate-1", "/nowhere", [2, 3]);
+    applyTeam([lead, mate], await teamFacts(db));
+    expect(mate.role).toBe("researcher");
+    const [run] = buildRuns("r", [lead, mate]);
+    expect(run!.roles).toEqual(["main", "researcher"]);
+    expect(run!.handoffs.find((h) => h.from_role === "researcher")).toMatchObject({ evidence: "[done] Compare three price feeds" });
+  });
+});

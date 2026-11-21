@@ -65,6 +65,15 @@ export const TOOLS = [
     description: "Where the last coding-agent session on a branch left off: what it was doing, what was done, and what's next. Use it when starting work, or when the engineer asks where things stand.",
     inputSchema: { type: "object", properties: { repo: repoArg, branch: { type: "string", description: "Branch name. Leave out for the branch checked out, else main." } } },
   },
+  {
+    name: "review_lesson",
+    description: "Keep or dismiss a lesson waiting for the engineer's review, by the id list_lessons shows. Only when the engineer has said, in this chat, to keep or dismiss that specific lesson: never on your own judgement, and never for several lessons from one general instruction. Keeping makes agents be told it, with muninn's usual choice of when (every session, or on a keyword).",
+    inputSchema: { type: "object", properties: {
+      id: { type: "string", description: "The lesson's id or its first 8 characters, as list_lessons shows it." },
+      action: { type: "string", enum: ["keep", "dismiss"] },
+      engineer_said: { type: "string", description: "The engineer's own words in this chat asking for this, quoted." },
+    }, required: ["id", "action", "engineer_said"] },
+  },
 ] as const;
 
 type Args = Record<string, unknown>;
@@ -120,6 +129,23 @@ export async function callTool(db: Client, name: string, a: Args, embed: () => P
     const id = await createLesson(db, { repo_id: global ? null : repo, scope: global ? "global" : "repo", text: text.slice(0, 1000), source: "own_words", status: "proposed", suggestedScope: global ? "global" : "repo", by: "mcp" });
     return `Added to the engineer's suggestions (${id.slice(0, 8)}). Nothing reaches an agent until they keep it in muninn ui or with "muninn review".`;
   }
+  if (name === "review_lesson") {
+    const said = String(a.engineer_said ?? "").trim();
+    if (said.length < 2) throw new Error("Quote what the engineer said asking for this. muninn changes what agents are told only when they ask.");
+    const { getLesson, decide } = await import("../store/lessons.js");
+    const l = await getLesson(db, String(a.id ?? "").trim());
+    if (!l) throw new Error("No lesson with that id. list_lessons shows the ids.");
+    if (l.status !== "proposed") throw new Error(`That lesson isn't waiting for review: it's ${l.status === "live" ? "already kept" : l.status}.`);
+    if (a.action === "dismiss") { await decide(db, l.id, { status: "rejected" }); await db.execute({ sql: "INSERT INTO lesson_versions (id,lesson_id,snapshot,changed_by,changed_at) VALUES (lower(hex(randomblob(16))),?,?,?,?)", args: [l.id, JSON.stringify({ status: "rejected", said }), "mcp", new Date().toISOString()] }); return `Dismissed: "${l.text.slice(0, 120)}". muninn won't suggest it again.`; }
+    if (a.action !== "keep") throw new Error("action is keep or dismiss.");
+    const { defaultRoute } = await import("../commands/review.js");
+    const d = defaultRoute(l);
+    await decide(db, l.id, { status: "live", ...(d.route === "always" ? { alwaysOn: true } : {}), ...(d.route === "keyword" && d.keywords.length ? { triggers: d.keywords } : {}), ...(d.global ? { global: true } : {}) });
+    await db.execute({ sql: "INSERT INTO lesson_versions (id,lesson_id,snapshot,changed_by,changed_at) VALUES (lower(hex(randomblob(16))),?,?,?,?)", args: [l.id, JSON.stringify({ status: "live", said }), "mcp", new Date().toISOString()] });
+    try { const { syncCursor } = await import("../deliver/cursor.js"); await syncCursor(db); } catch { /* rules files are a convenience */ }
+    const when = d.route === "always" ? "every session" : d.route === "keyword" && d.keywords.length ? `when "${d.keywords.join('", "')}" comes up` : "only when searched";
+    return `Kept: "${l.text.slice(0, 120)}". Agents are told it ${when}${l.role ? `, the ${l.role} only` : ""}${d.global ? ", in every repo" : ""}. Change it in muninn ui.`;
+  }
   if (name === "get_runs") return runsText(db, repo, { limit: typeof a.limit === "number" ? a.limit : 5, all: a.include_single === true });
   if (name === "list_lessons") return lessonsText(db, repo, a.waiting === true);
   if (name === "where_left_off") {
@@ -147,7 +173,9 @@ export async function runsText(db: Client, repo: string | null, o: { limit: numb
   for (const r of runs) {
     const n = runNumbers(r);
     out.push(`RUN ${r.started_at.slice(0, 16).replace("T", " ")}${repo ? "" : ` · ${short(r.repo_id)}`} · ${n.minutes} min · ${k(n.tokens)} tokens · roles: ${r.roles.join(", ")}${n.typed ? ` · the engineer typed ${n.typed} message(s)` : " · ran on its own"}`);
-    for (const x of n.roles) out.push(`- ${x.role}: ${x.sessions} session(s), ${Math.round(x.minutes)} min, ${k(x.tokens)} tokens (${Math.round(x.share * 100)}%), ${x.commands} command(s)${x.failed ? `, ${x.failed} failed` : ""}${x.approvals ? `, ${x.approvals} approval(s)` : ""}${x.sentBack ? `, work sent back to it ${x.sentBack} time(s)` : ""}`);
+    const { dollars } = await import("../workflow/runs.js");
+    const costOfRole = (role: string) => dollars(r.sessions.filter((x) => x.role === role).map((x) => ({ ...x, cost_usd: x.cost_usd ?? null })));
+    for (const x of n.roles) out.push(`- ${x.role}: ${x.sessions} session(s), ${Math.round(x.minutes)} min, ${k(x.tokens)} tokens (${Math.round(x.share * 100)}%)${costOfRole(x.role) ? `, ${costOfRole(x.role)}` : ""}, ${x.commands} command(s)${x.failed ? `, ${x.failed} failed` : ""}${x.approvals ? `, ${x.approvals} approval(s)` : ""}${x.sentBack ? `, work sent back to it ${x.sentBack} time(s)` : ""}`);
     out.push(`Between roles: ${n.approvals} approval(s), ${n.sentBack} sent back, ${n.rework} fix(es) after approval${n.stalls.length ? `, ${n.stalls.length} gap(s) of ${n.stalls.map((g) => `${g.minutes} min`).join(", ")} with no agent working` : ""}.`);
     for (const h of r.handoffs.filter((h) => h.kind === "review_rejected" || h.kind === "rework").slice(0, 6)) out.push(`  ${h.at.slice(11, 16)} ${h.kind === "rework" ? `${h.from_role} fixed later` : `${h.from_role} sent back to ${h.to_role}`}: ${h.note ?? h.evidence ?? ""}`);
     const f = found[r.id];
@@ -172,7 +200,7 @@ export async function lessonsText(db: Client, repo: string | null, waitingOnly: 
   const line = (r: Record<string, unknown>) => {
     const when = r.status === "proposed" ? "waiting for review" : r.always_on ? "told every session" : r.kw ? `told when "${r.kw}" comes up` : "only when searched";
     const where = r.scope === "global" ? "every repo" : repo ? null : short(String(r.repo_id));
-    return `- ${String(r.text).slice(0, 400)}\n  (${[when, r.role ? `for the ${r.role} only` : null, where].filter(Boolean).join(", ")})${r.why ? `\n  Why: ${r.why}` : ""}${verdict.get(String(r.id)) ? `\n  How it's doing: ${verdict.get(String(r.id))}` : ""}`;
+    return `- [${String(r.id).slice(0, 8)}] ${String(r.text).slice(0, 400)}\n  (${[when, r.role ? `for the ${r.role} only` : null, where].filter(Boolean).join(", ")})${r.why ? `\n  Why: ${r.why}` : ""}${verdict.get(String(r.id)) ? `\n  How it's doing: ${verdict.get(String(r.id))}` : ""}`;
   };
   const kept = rows.filter((r) => r.status === "live"), waiting = rows.filter((r) => r.status === "proposed");
   return [kept.length ? `KEPT (${kept.length}):\n${kept.map(line).join("\n")}` : "", waiting.length ? `WAITING FOR REVIEW (${waiting.length}):\n${waiting.map(line).join("\n")}` : ""].filter(Boolean).join("\n\n");
